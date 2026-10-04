@@ -1,6 +1,8 @@
 # ⏪ Rewind
 
-**Undo history for AI coding agents.** Rewind records every step an agent takes as a Git snapshot. You can see what changed at each step, which prompt caused it, and put your files back to any earlier step.
+**Undo history and a code map for AI coding agents.** Rewind records every step an agent takes as a Git snapshot. You can see what changed at each step, which prompt caused it, and put your files back to any earlier step. Then open a live map of your codebase and replay the session on it: what the agent touched, what depends on it, and where it added a dependency or an import cycle.
+
+![Rewind map replaying an agent session on Flask: the step that created an import cycle is highlighted, with its prompt, structural changes and the 76 files it can affect](docs/map-step.png)
 
 ```
 $ rewind log
@@ -63,6 +65,46 @@ Tool calls that don't change any file, such as reads, searches or `ls`, add no s
 
 Steps are numbers in the current session (`7`), `last`, or `session:number` for another session.
 
+## The code map
+
+```sh
+rewind map            # opens http://127.0.0.1:<port>/ in your browser
+```
+
+A single binary with an embedded viewer. It runs offline on localhost and loads nothing from the internet.
+
+- **Architecture at a glance.** Folders are laid out top-down by dependency: the code that imports others sits above the code it imports, so entry points end up at the top and foundations at the bottom. Click a box to see its files and its dependencies in both directions, double-click to drill into it, and use the breadcrumbs to come back out.
+- **Every file explained.** See what a file defines, what it imports, what imports it, its third-party packages and its source, with search across files and symbols (press `/`).
+- **Impact.** "Show impact" lights up every file that depends on the selected one, directly or transitively. That's the list of what to re-test.
+- **Cycles.** Import cycles between files and between folders are drawn in red. Imports that never run at load time are left out: TypeScript `import type`, Python `if TYPE_CHECKING:` and imports inside a function.
+- **Hotspots.** Files ranked by commits in the last year × complexity, which is where bugs cluster.
+- **Session replay.** Pick a session and scrub its timeline (or press ▶). Each step shows its prompt, the files it changed, the folders that depend on them, and **structural changes**: new dependencies between folders, new third-party packages, new import cycles. While an agent is working, new steps appear on their own.
+
+![Drilled into src/flask: the agent's new ratelimit.py and app.py now import each other](docs/map-drill.png)
+
+### From the terminal
+
+| Command | What it does |
+|---|---|
+| `rewind deps src/app.py` | What a file imports, what imports it, and what it defines |
+| `rewind impact src/db.go` | Every file that depends on it, grouped by distance |
+| `rewind impact --step 7` | Everything that depends on what step 7 changed |
+| `rewind cycles --fail` | List import cycles; exits 1 if there are any, for CI |
+| `rewind map --json` / `--dot` | The dependency graph as JSON, or folders as Graphviz |
+| `rewind show 7` | Now also reports how the step changed the structure |
+
+`map`, `deps` and `cycles` take `--at <step|revision>`, for example `--at HEAD`, `--at 7` or `--at main~10`.
+
+### Language support
+
+| | Parser | Resolves |
+|---|---|---|
+| **Go** | the standard library's `go/parser` | packages across nested `go.mod` modules; links to the exact file that defines each `pkg.Name` used, and files within a package by the names they share |
+| **Python** | tokenizer that skips strings and comments | absolute and relative imports, `src/` layouts, packages in subfolders, sibling scripts |
+| **TypeScript / JavaScript** | tokenizer that handles regexes, template literals and JSX | relative paths and extensions (`.js` → `.ts`), `index` files, `tsconfig` `paths`/`baseUrl`, monorepo packages by name (including `exports`, and `dist/` mapped back to `src/`), `#subpath` imports, `require()` and `import()` |
+
+The parsers are deliberately small and dependency-free, so `rewind` stays a single static binary with no cgo. Calls between functions are not traced; the map works at the level of files and imports. Tested on Flask (83 files, mapped in 74 ms), Vite (1,549 files, 234 ms) and Hugo (936 files, 298 ms).
+
 ## How it works
 
 Every snapshot is an ordinary Git commit on its own ref, `refs/rewind/<session>`, so the whole history can be read with plain `git`:
@@ -80,12 +122,16 @@ git log --oneline refs/rewind/claude-1a2b3c4d
 
 Step metadata (kind, tool, prompt) is stored as one JSON line at the end of each commit message.
 
+The code map reads snapshots straight from Git's object database (`git ls-tree` plus one long-running `git cat-file --batch`), so any step can be analysed without checking it out. Parsed files are cached by blob ID. Consecutive steps share almost all of their blobs, so comparing step 6 with step 7 only re-parses the files that changed.
+
+The viewer's server only binds to loopback addresses and refuses requests whose `Host` isn't local, which blocks DNS-rebinding attacks from other websites. It only serves files that are part of the map.
+
 ## Roadmap
 
 - [x] **Stage 1:** snapshots, log, show, diff, restore, Claude Code hooks
-- [ ] **Stage 2:** code map: an architecture view of the whole program in the browser (modules, imports, definitions) using tree-sitter, for Go, TypeScript and Python
-- [ ] **Stage 3:** replay a session on the map: watch the touched code light up step by step, see what depends on each change, and get warnings when a step adds a new dependency or an import cycle
-- [ ] **Stage 4:** hotspots from Git history, a guided tour of a codebase, hooks for more agents
+- [x] **Stage 2:** code map for Go, Python and TypeScript/JavaScript: architecture view, drill-down, search, impact, cycles, hotspots
+- [x] **Stage 3:** session replay on the map, with structural diffs per step and live updates
+- [ ] **Stage 4:** a guided tour of a codebase, hooks for more agents (Cursor, Aider, Codex), Rust and Java
 
 ## Development
 

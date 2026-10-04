@@ -23,5 +23,7 @@ jobs:
           cache-dependency-path: rewind/go.mod
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: check viewer script
+        run: node --check internal/server/web/app.js
       - run: go vet ./...
       - run: go test -race ./...

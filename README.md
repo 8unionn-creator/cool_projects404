@@ -4,14 +4,18 @@ Things I build to sharpen my skills and make my own work easier.
 
 | Project | What it is | Stack |
 |---|---|---|
-| [⏪ Rewind](rewind/) | Undo history for AI coding agents: every agent step saved as a Git snapshot you can inspect, diff and restore | Go, Git internals |
+| [⏪ Rewind](rewind/) | Undo history and a code map for AI coding agents: every agent step saved as a Git snapshot you can restore, plus an interactive map of the codebase that replays what the agent changed | Go, Git internals, static analysis |
 | [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
 
 ## ⏪ Rewind — [`rewind/`](rewind/)
 
 ![rewind CI](https://github.com/8unionn-creator/cool_projects404/actions/workflows/rewind.yml/badge.svg)
 
-When an AI agent breaks something at step 14 of 30, `rewind restore 13` gets you back, without losing steps 1–12 or touching your branch. Each step is stored as a real Git commit under `refs/rewind/`, tagged with the prompt that caused it. Install the Claude Code hooks with `rewind init claude`. [Read more →](rewind/README.md)
+When an AI agent breaks something at step 14 of 30, `rewind restore 13` gets you back, without losing steps 1–12 or touching your branch. Each step is stored as a real Git commit under `refs/rewind/`, tagged with the prompt that caused it. Install the Claude Code hooks with `rewind init claude`.
+
+`rewind map` opens an interactive map of the codebase (Go, Python, TypeScript/JavaScript) and replays the session on it: which code each step touched, what depends on it, and which step added a dependency or an import cycle. [Read more →](rewind/README.md)
+
+![Rewind map](rewind/docs/map-step.png)
 
 ## 🍅 Tomato Dial — [`tomato-dial/`](tomato-dial/index.html)
 

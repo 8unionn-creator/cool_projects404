@@ -1,0 +1,157 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/8unionn-creator/cool_projects404/rewind/internal/store"
+)
+
+func setup(t *testing.T) (*store.Store, http.Handler) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "t@e"}, {"config", "user.name", "t"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+	}
+	write := func(p, c string) {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755)
+		os.WriteFile(filepath.Join(dir, p), []byte(c), 0o644)
+	}
+	write("app/main.py", "from app import util\n")
+	write("app/util.py", "def f(): pass\n")
+	write("app/__init__.py", "")
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.Snapshot("demo", store.Meta{}); err != nil {
+		t.Fatal(err)
+	}
+	write("app/new.py", "from app import main\n")
+	if _, _, err := st.Snapshot("demo", store.Meta{Kind: store.KindTool, Summary: "add new.py"}); err != nil {
+		t.Fatal(err)
+	}
+	return st, New(st).Handler()
+}
+
+func get(t *testing.T, h http.Handler, url string, v any) int {
+	t.Helper()
+	req := httptest.NewRequest("GET", url, nil)
+	req.Host = "127.0.0.1:7777"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if v != nil && rec.Code == 200 {
+		if err := json.Unmarshal(rec.Body.Bytes(), v); err != nil {
+			t.Fatalf("%s: %v\n%s", url, err, rec.Body.String())
+		}
+	}
+	return rec.Code
+}
+
+func TestAPI(t *testing.T) {
+	_, h := setup(t)
+
+	var meta struct {
+		Sessions []struct {
+			Name  string
+			Steps int
+		}
+	}
+	if get(t, h, "/api/meta", &meta) != 200 || len(meta.Sessions) != 1 || meta.Sessions[0].Steps != 2 {
+		t.Fatalf("meta = %+v", meta)
+	}
+
+	var sess struct {
+		Steps []struct {
+			Tree    string
+			Changes []struct{ Path string }
+		}
+	}
+	if get(t, h, "/api/session?name=demo", &sess) != 200 || len(sess.Steps) != 2 || sess.Steps[1].Changes[0].Path != "app/new.py" {
+		t.Fatalf("session = %+v", sess)
+	}
+
+	var graph struct {
+		Graph struct {
+			Files []struct{ P string }
+			Edges [][4]int
+		}
+	}
+	if code := get(t, h, "/api/graph?at="+sess.Steps[1].Tree, &graph); code != 200 || len(graph.Graph.Files) != 4 || len(graph.Graph.Edges) != 2 {
+		t.Fatalf("graph (%d) = %+v", code, graph)
+	}
+	if get(t, h, "/api/graph", nil) != 200 {
+		t.Fatal("the working tree should be mappable")
+	}
+
+	var diff struct {
+		AddedFiles []string
+		AddedDeps  [][2]string
+	}
+	get(t, h, "/api/diff?from="+sess.Steps[0].Tree+"&to="+sess.Steps[1].Tree, &diff)
+	if len(diff.AddedFiles) != 1 || diff.AddedFiles[0] != "app/new.py" {
+		t.Fatalf("diff = %+v", diff)
+	}
+
+	req := httptest.NewRequest("GET", "/api/file?at="+sess.Steps[1].Tree+"&path=app/util.py", nil)
+	req.Host = "localhost:7777"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "def f()") {
+		t.Fatalf("file: %d %s", rec.Code, rec.Body.String())
+	}
+
+	if get(t, h, "/", nil) != 200 || get(t, h, "/app.js", nil) != 200 {
+		t.Fatal("the viewer should be served")
+	}
+}
+
+func TestAPIRejectsBadInput(t *testing.T) {
+	st, h := setup(t)
+	if code := get(t, h, "/api/file?at=HEAD&path=../../etc/passwd", nil); code == 200 {
+		t.Fatal("only mapped files may be read")
+	}
+	os.WriteFile(filepath.Join(st.Repo.Root, "secret.txt"), []byte("x"), 0o644)
+	if code := get(t, h, "/api/file?path=secret.txt", nil); code == 200 {
+		t.Fatal("files outside the map must not be served")
+	}
+	if code := get(t, h, "/api/graph?at=--output=x", nil); code != 400 {
+		t.Fatalf("option-like revisions must be rejected, got %d", code)
+	}
+	if code := get(t, h, "/api/session?name=../x", nil); code != 400 {
+		t.Fatalf("bad session names must be rejected, got %d", code)
+	}
+}
+
+func TestOnlyLoopbackHosts(t *testing.T) {
+	_, h := setup(t)
+	for host, want := range map[string]int{
+		"127.0.0.1:1234": 200, "localhost:1234": 200, "[::1]:1234": 200,
+		"evil.example:1234": 403, "192.168.1.5:1234": 403,
+	} {
+		req := httptest.NewRequest("GET", "/api/meta", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("host %s: got %d, want %d", host, rec.Code, want)
+		}
+	}
+	req := httptest.NewRequest("POST", "/api/meta", nil)
+	req.Host = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST should be refused, got %d", rec.Code)
+	}
+}

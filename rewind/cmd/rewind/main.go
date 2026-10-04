@@ -17,9 +17,9 @@ import (
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/store"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
-const usage = `rewind: undo history for AI coding agents
+const usage = `rewind: undo history and a code map for AI coding agents
 
 Usage:
   rewind init claude [--shared]   install Claude Code hooks for this repo
@@ -31,6 +31,16 @@ Usage:
   rewind diff [--stat] <a> [<b>]  diff step a against b (default: the step before a)
   rewind diff -w <step>           diff a step against the current files
   rewind restore [-n] <step>      put the files back as they were at a step
+
+Understand the code:
+  rewind map                      open the interactive code map in your browser
+  rewind map --json | --dot       print the dependency graph instead
+  rewind deps <file>              what a file imports, what imports it, what it defines
+  rewind impact <file>...         every file that depends on these files
+  rewind impact --step <step>     every file that depends on what a step changed
+  rewind cycles [--fail]          list import cycles (--fail: exit 1 for CI)
+  (map, deps and cycles take --at <step|revision> to look at a snapshot)
+
   rewind hook claude              (used by Claude Code; reads a hook event on stdin)
 
 Steps are numbers within the current session ("7"), "last", or
@@ -86,6 +96,14 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return c.diff(rest)
 	case "restore":
 		return c.restore(rest)
+	case "map":
+		return c.mapCmd(rest)
+	case "deps":
+		return c.depsCmd(rest)
+	case "impact":
+		return c.impactCmd(rest)
+	case "cycles":
+		return c.cyclesCmd(rest)
 	}
 	return fmt.Errorf("unknown command %q (run `rewind help`)", cmd)
 }
@@ -267,11 +285,33 @@ func (c *cli) show(args []string) error {
 	for _, f := range files {
 		fmt.Fprintf(c.out, "  %s  %s\n", pad(c.numstat(f), 14, c.color), f.Path)
 	}
+	c.structure(from, s.Tree, files)
 	if *patch && len(files) > 0 {
 		fmt.Fprintln(c.out)
 		return c.st.Diff(c.out, from, s.Tree, c.diffColor()...)
 	}
 	return nil
+}
+
+// relToRoot turns a path given on the command line into a path relative to
+// the repository root.
+func (c *cli) relToRoot(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	root := c.st.Repo.Root
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
+	}
+	if realDir, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
+		abs = filepath.Join(realDir, filepath.Base(abs))
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("%s is outside the repository", p)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 func (c *cli) diff(args []string) error {
