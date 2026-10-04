@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/diff", s.diff)
 	mux.HandleFunc("/api/file", s.file)
 	mux.HandleFunc("/api/patch", s.patch)
+	mux.HandleFunc("/api/symbol", s.symbol)
 	mux.HandleFunc("/api/restore", s.restore)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !loopbackHost(r.Host) {
@@ -269,6 +271,56 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte(out))
+}
+
+// symbol returns who calls a function and what it calls.
+func (s *Server) symbol(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	tree, err := s.tree(q.Get("at"))
+	if err != nil {
+		fail(w, err, 400)
+		return
+	}
+	g, err := s.an.Analyze(tree)
+	if err != nil {
+		fail(w, err, 400)
+		return
+	}
+	fi := g.Index(q.Get("path"))
+	si, err := strconv.Atoi(q.Get("i"))
+	if fi < 0 || err != nil || si < 0 || si >= len(g.Files[fi].Symbols) {
+		fail(w, errBadRequest("unknown symbol"), 404)
+		return
+	}
+	type ref struct {
+		Path   string `json:"path"`
+		Name   string `json:"name"`
+		Sym    int    `json:"sym"`
+		Line   int    `json:"line"`   // where the call is made
+		Def    int    `json:"def"`    // where the other function starts
+		Likely bool   `json:"likely"` // matched by method name only
+	}
+	conv := func(calls []codemap.Call, callers bool) []ref {
+		out := []ref{}
+		for _, c := range calls {
+			other := c.To
+			if callers {
+				other = c.From
+			}
+			def := 0
+			if other.Sym >= 0 {
+				def = g.Files[other.File].Symbols[other.Sym].Line
+			}
+			out = append(out, ref{g.Files[other.File].Path, g.SymbolLabel(other), other.Sym, c.Line, def, c.Likely})
+		}
+		return out
+	}
+	sym := g.Files[fi].Symbols[si]
+	reply(w, map[string]any{
+		"name": sym.Name, "kind": sym.Kind, "line": sym.Line, "end": sym.End,
+		"callers": conv(g.CallersOf(fi, si), true),
+		"callees": conv(g.CalleesOf(fi, si), false),
+	})
 }
 
 // patch returns a unified diff between two snapshots (tree ids, HEAD or

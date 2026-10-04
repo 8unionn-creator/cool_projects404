@@ -105,11 +105,20 @@ func parseBrace(f *File, src string, spec langSpec) []jsTok {
 		}
 		return ""
 	}
+	words := map[int]map[string]bool{} // identifiers per line, for visibility modifiers
+	for _, t := range toks {
+		if t.kind == tIdent {
+			if words[t.line] == nil {
+				words[t.line] = map[string]bool{}
+			}
+			words[t.line][t.text] = true
+		}
+	}
 	add := func(name, kind string, line int) {
 		if t := typeName(); t != "" && (kind == "func" || kind == "method") {
 			name, kind = t+"."+name, "method"
 		}
-		f.Symbols = append(f.Symbols, Symbol{Name: name, Kind: kind, Line: line, Exported: exported(f.Lang, toks, line, name)})
+		f.Symbols = append(f.Symbols, Symbol{Name: name, Kind: kind, Line: line, Exported: exported(f.Lang, words[line], name)})
 	}
 
 	for k := 0; k < len(toks); k++ {
@@ -150,6 +159,7 @@ func parseBrace(f *File, src string, spec langSpec) []jsTok {
 			if j, body := funcBody(toks, k+1); body {
 				f.Symbols = append(f.Symbols, Symbol{Name: at(k-2).text + "." + t.text, Kind: "method", Line: t.line, Exported: true})
 				pending = scope{kind: "block"}
+				addRefs(f, toks[k+1:j])
 				k = j
 			}
 			continue
@@ -260,6 +270,7 @@ func parseBrace(f *File, src string, spec langSpec) []jsTok {
 				if body {
 					pending = scope{kind: "block"}
 				}
+				addRefs(f, toks[k+1:j]) // parameter types are references too
 				k = j
 			}
 			continue
@@ -286,17 +297,8 @@ func parseBrace(f *File, src string, spec langSpec) []jsTok {
 }
 
 // exported decides visibility from the modifiers on the declaration's line.
-func exported(lang Lang, toks []jsTok, line int, name string) bool {
+func exported(lang Lang, words map[string]bool, name string) bool {
 	base := name[strings.LastIndex(name, ".")+1:]
-	words := map[string]bool{}
-	for _, t := range toks {
-		if t.line == line && t.kind == tIdent {
-			words[t.text] = true
-		}
-		if t.line > line {
-			break
-		}
-	}
 	switch lang {
 	case Rust:
 		return words["pub"]
@@ -344,6 +346,7 @@ func parseCLike(f *File, src []byte) {
 		s = phpOnly(s)
 	}
 	toks := parseBrace(f, s, specs[f.Lang])
+	scanCalls(f, toks)
 	at := func(k int) jsTok {
 		if k < 0 || k >= len(toks) {
 			return jsTok{kind: tPunct}
@@ -715,4 +718,12 @@ func funcBody(toks []jsTok, k int) (int, bool) {
 		return j, false
 	}
 	return j, false
+}
+
+func addRefs(f *File, toks []jsTok) {
+	for _, t := range toks {
+		if t.kind == tIdent {
+			f.refs[t.text] = true
+		}
+	}
 }

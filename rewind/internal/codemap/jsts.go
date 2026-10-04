@@ -64,7 +64,11 @@ func parseJS(f *File, src []byte) {
 		case "from":
 			if at(k+1).kind == tString && stmtStart >= 0 && k-stmtStart < 400 {
 				typeOnly := isIdent(stmtStart+1, "type") && !isIdent(stmtStart+2, "from") && !isPunct(stmtStart+2, ",")
-				f.Imports = append(f.Imports, Import{Spec: at(k + 1).text, Line: t.line, TypeOnly: typeOnly})
+				imp := Import{Spec: at(k + 1).text, Line: t.line, TypeOnly: typeOnly}
+				if at(stmtStart).text == "import" {
+					imp.Names = jsBindings(toks[stmtStart+1 : k])
+				}
+				f.Imports = append(f.Imports, imp)
 				stmtStart = -1
 			}
 		case "require":
@@ -108,6 +112,7 @@ func parseJS(f *File, src []byte) {
 			f.Symbols = append(f.Symbols, Symbol{Name: name.text, Kind: kind, Line: t.line, Exported: exported})
 		}
 	}
+	scanCalls(f, toks)
 }
 
 // ---------------------------------------------------------------- resolver
@@ -160,6 +165,7 @@ func resolveJS(b *builder) {
 			continue
 		}
 		for _, imp := range f.Imports {
+			b.cur = imp.Line
 			if j := r.resolve(f.Path, imp.Spec); j >= 0 {
 				b.link(i, j, 1, imp.TypeOnly)
 			} else if name := jsPackageName(imp.Spec); name != "" && !strings.HasPrefix(name, "#") {
@@ -167,6 +173,7 @@ func resolveJS(b *builder) {
 			}
 		}
 	}
+	b.cur = 0
 }
 
 func (r *jsResolver) loadConfigs() {
@@ -491,6 +498,44 @@ func stripJSONC(b []byte) []byte {
 			out = append(out, c)
 		default:
 			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// jsBindings reads the names an import statement binds, as "imported=local":
+// `X` -> default=X, `{ a, b as c }` -> a=a, b=c, `* as ns` -> *=ns.
+func jsBindings(toks []jsTok) []string {
+	var out []string
+	inBraces := false
+	for k := 0; k < len(toks); k++ {
+		t := toks[k]
+		if t.kind == tPunct {
+			switch t.text {
+			case "{":
+				inBraces = true
+			case "}":
+				inBraces = false
+			case "*":
+				if k+2 < len(toks) && toks[k+1].text == "as" {
+					out = append(out, "*="+toks[k+2].text)
+					k += 2
+				}
+			}
+			continue
+		}
+		if t.kind != tIdent || t.text == "type" || t.text == "typeof" {
+			continue
+		}
+		name, local := t.text, t.text
+		if k+2 < len(toks) && toks[k+1].text == "as" {
+			local = toks[k+2].text
+			k += 2
+		}
+		if inBraces {
+			out = append(out, name+"="+local)
+		} else {
+			out = append(out, "default="+local)
 		}
 	}
 	return out

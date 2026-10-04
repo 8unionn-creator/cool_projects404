@@ -138,11 +138,18 @@ func parsePython(f *File, src []byte) {
 	type class struct {
 		name   string
 		indent int
+		sym    int // symbol whose body this scope is, or -1
 	}
 	var classes []class
+	closeScope := func(c class, end int) {
+		if c.sym >= 0 {
+			f.Symbols[c.sym].End = max(end, f.Symbols[c.sym].Line)
+		}
+	}
 	for _, l := range pyLogicalLines(string(src)) {
 		f.Complexity += len(pyBranch.FindAllStringIndex(l.text, -1))
 		for len(classes) > 0 && l.indent <= classes[len(classes)-1].indent {
+			closeScope(classes[len(classes)-1], l.line-1)
 			classes = classes[:len(classes)-1]
 		}
 		// Imports under `if TYPE_CHECKING:` or inside a function body do not
@@ -154,14 +161,20 @@ func parsePython(f *File, src []byte) {
 			}
 		}
 		if pyTypeCheck.MatchString(l.text) {
-			classes = append(classes, class{typeChecking, l.indent})
+			classes = append(classes, class{typeChecking, l.indent, -1})
 			continue
 		}
 		if m := pyImport.FindStringSubmatch(l.text); m != nil {
 			for _, part := range strings.Split(m[1], ",") {
-				if name := firstWord(part); name != "" {
-					f.Imports = append(f.Imports, Import{Spec: name, Line: l.line, TypeOnly: lazy})
+				words := strings.Fields(part)
+				if len(words) == 0 {
+					continue
 				}
+				imp := Import{Spec: words[0], Line: l.line, TypeOnly: lazy}
+				if len(words) == 3 && words[1] == "as" {
+					imp.Alias = words[2]
+				}
+				f.Imports = append(f.Imports, imp)
 			}
 			continue
 		}
@@ -177,28 +190,39 @@ func parsePython(f *File, src []byte) {
 			continue
 		}
 		if m := pyClass.FindStringSubmatch(l.text); m != nil {
+			sym := -1
 			if l.indent == 0 {
 				f.Symbols = append(f.Symbols, Symbol{Name: m[1], Kind: "class", Line: l.line, Exported: !strings.HasPrefix(m[1], "_")})
+				sym = len(f.Symbols) - 1
 			}
-			classes = append(classes, class{m[1], l.indent})
+			classes = append(classes, class{m[1], l.indent, sym})
 			continue
 		}
 		if m := pyDef.FindStringSubmatch(l.text); m != nil {
+			sym := -1
 			switch {
 			case l.indent == 0:
 				f.Symbols = append(f.Symbols, Symbol{Name: m[1], Kind: "func", Line: l.line, Exported: !strings.HasPrefix(m[1], "_")})
+				sym = len(f.Symbols) - 1
 			case len(classes) > 0 && len(classes) == 1 && classes[0].indent == 0:
 				f.Symbols = append(f.Symbols, Symbol{Name: classes[0].name + "." + m[1], Kind: "method", Line: l.line, Exported: !strings.HasPrefix(m[1], "_")})
+				sym = len(f.Symbols) - 1
 			}
 			// A def opens a scope; nested defs inside it are not methods.
-			classes = append(classes, class{"", l.indent})
+			classes = append(classes, class{"", l.indent, sym})
+			// Default arguments and decorators on the def line can call things too.
+			addDottedCalls(f, l.text[strings.Index(l.text, "(")+1:], l.line, "")
 			continue
 		}
+		addDottedCalls(f, l.text, l.line, "")
 		if l.indent == 0 {
 			if m := pyConst.FindStringSubmatch(l.text); m != nil {
 				f.Symbols = append(f.Symbols, Symbol{Name: m[1], Kind: "const", Line: l.line, Exported: true})
 			}
 		}
+	}
+	for k := len(classes) - 1; k >= 0; k-- {
+		closeScope(classes[k], f.Lines)
 	}
 }
 
@@ -285,6 +309,7 @@ func resolvePython(b *builder) {
 		}
 		dir := path.Dir(f.Path)
 		for _, imp := range f.Imports {
+			b.cur = imp.Line
 			if strings.HasPrefix(imp.Spec, ".") { // relative import
 				level := len(imp.Spec) - len(strings.TrimLeft(imp.Spec, "."))
 				base := dir
@@ -346,6 +371,7 @@ func resolvePython(b *builder) {
 			}
 		}
 	}
+	b.cur = 0
 }
 
 var pyStdlib = func() map[string]bool {

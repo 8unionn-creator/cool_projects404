@@ -57,8 +57,9 @@ func parseRuby(f *File, src []byte) {
 	type scope struct {
 		name   string
 		indent int
+		sym    int
 	}
-	var classes []scope
+	var classes, defs []scope
 	inBlockComment := false
 	for n, raw := range strings.Split(string(src), "\n") {
 		line := n + 1
@@ -89,14 +90,25 @@ func parseRuby(f *File, src []byte) {
 		for _, ref := range rbConstRef.FindAllString(code, -1) {
 			f.refs[ref] = true
 		}
-		// A class or module closes with `end` at its own indentation.
-		if len(classes) > 0 && indent == classes[len(classes)-1].indent && (trimmed == "end" || strings.HasPrefix(trimmed, "end ") || strings.HasPrefix(trimmed, "end.")) {
+		// A class, module or def closes with `end` at its own indentation.
+		isEnd := trimmed == "end" || strings.HasPrefix(trimmed, "end ") || strings.HasPrefix(trimmed, "end.")
+		for len(defs) > 0 && (indent < defs[len(defs)-1].indent || (isEnd && indent == defs[len(defs)-1].indent)) {
+			f.Symbols[defs[len(defs)-1].sym].End = line
+			closed := indent == defs[len(defs)-1].indent
+			defs = defs[:len(defs)-1]
+			if closed {
+				isEnd = false // this `end` is used up
+			}
+		}
+		if len(classes) > 0 && indent == classes[len(classes)-1].indent && isEnd {
+			f.Symbols[classes[len(classes)-1].sym].End = line
 			classes = classes[:len(classes)-1]
 			continue
 		}
 		for len(classes) > 0 && indent < classes[len(classes)-1].indent {
 			classes = classes[:len(classes)-1]
 		}
+		addRubyCalls(f, code, line)
 		if m := rbClass.FindStringSubmatch(code); m != nil {
 			name := m[2]
 			if len(classes) > 0 && !strings.Contains(name, "::") {
@@ -105,7 +117,7 @@ func parseRuby(f *File, src []byte) {
 			f.Symbols = append(f.Symbols, Symbol{Name: name, Kind: m[1], Line: line, Exported: true})
 			// `class Foo < Bar; end` on one line opens and closes.
 			if !strings.HasSuffix(code, "end") {
-				classes = append(classes, scope{name, indent})
+				classes = append(classes, scope{name, indent, len(f.Symbols) - 1})
 			}
 			continue
 		}
@@ -115,6 +127,14 @@ func parseRuby(f *File, src []byte) {
 				name, kind = classes[len(classes)-1].name+"."+name, "method"
 			}
 			f.Symbols = append(f.Symbols, Symbol{Name: name, Kind: kind, Line: line, Exported: !strings.HasPrefix(m[1], "_")})
+			if !strings.HasSuffix(code, "end") && !strings.Contains(code, "=") { // `def x = expr` and one-liners
+				defs = append(defs, scope{name, indent, len(f.Symbols) - 1})
+			}
+		}
+	}
+	for _, d := range append(defs, classes...) {
+		if f.Symbols[d.sym].End == 0 {
+			f.Symbols[d.sym].End = f.Lines
 		}
 	}
 }

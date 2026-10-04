@@ -169,6 +169,10 @@ ul.list li.static:hover { background: none; }
 .pill.entry { background: color-mix(in srgb, var(--entry) 18%, transparent); color: var(--entry); }
 .empty { color: var(--muted); font-size: 12px; }
 .bar-mini { height: 4px; background: var(--agent); border-radius: 2px; opacity: 0.8; }
+ul.list li[aria-current="true"] { background: color-mix(in srgb, var(--select) 14%, transparent); }
+.symcalls { margin-top: 4px; padding: 2px 10px 8px; border-left: 3px solid var(--select); background: color-mix(in srgb, var(--select) 5%, transparent); border-radius: 0 8px 8px 0; }
+.symcalls h3 { margin-top: 10px; }
+.symcalls .sub { font-size: 10px; margin-left: 4px; }
 .prompt {
   background: var(--raised); border-left: 3px solid var(--agent); padding: 8px 10px; border-radius: 0 6px 6px 0;
   white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; font-size: 12px;

@@ -637,8 +637,10 @@ function drill(dir) {
   rebuild(true);
 }
 
-function selectFile(path, line) {
-  S.selected = { kind: "file", id: path, line };
+function selectFile(path, line, sym) {
+  const f = S.data.graph.files[S.data.graph.byPath.get(path)];
+  const end = sym !== undefined && f?.s?.[sym] ? f.s[sym].z : undefined;
+  S.selected = { kind: "file", id: path, line, sym, end };
   S.manualImpact = null;
   render();
   renderPanel();
@@ -677,7 +679,7 @@ function renderPanel() {
   else if (S.selected.kind === "group") html += groupPanel(S.selected.id);
   else html += filePanel(S.selected.id);
   p.innerHTML = html;
-  p.querySelectorAll("[data-file]").forEach((x) => x.addEventListener("click", () => selectFile(x.dataset.file, +x.dataset.line || undefined)));
+  p.querySelectorAll("[data-file]").forEach((x) => x.addEventListener("click", () => selectFile(x.dataset.file, +x.dataset.line || undefined, x.dataset.sym === undefined ? undefined : +x.dataset.sym)));
   p.querySelectorAll("[data-group]").forEach((x) => x.addEventListener("click", () => selectGroup(x.dataset.group)));
   p.querySelectorAll("[data-drill]").forEach((x) => x.addEventListener("click", () => drill(x.dataset.drill)));
   p.querySelectorAll("[data-impact]").forEach((x) => x.addEventListener("click", () => {
@@ -685,7 +687,10 @@ function renderPanel() {
     render(); renderPanel();
   }));
   p.querySelectorAll("[data-act]").forEach((x) => x.addEventListener("click", () => panelAction(x.dataset.act, x.dataset)));
-  if (S.selected?.kind === "file" && S.data.graph.byPath.has(S.selected.id)) loadCode(S.selected.id, S.selected.line);
+  if (S.selected?.kind === "file" && S.data.graph.byPath.has(S.selected.id)) {
+    loadCode(S.selected.id, S.selected.line, S.selected.end);
+    if (S.selected.sym !== undefined) loadSymbol(S.selected.id, S.selected.sym);
+  }
 }
 
 async function panelAction(act, data) {
@@ -929,7 +934,14 @@ function filePanel(path) {
   html += `</div>`;
   const syms = f.s || [];
   html += `<h3>Defines <small>${plural(syms.length, "symbol")}</small></h3>`;
-  html += syms.length ? `<ul class="list">${syms.slice(0, 120).map((s) => `<li data-file="${esc(path)}" data-line="${s.l}"><span class="pill">${esc(s.k)}</span><span class="name">${esc(s.n)}</span><span class="meta">:${s.l}</span></li>`).join("")}</ul>` : `<p class="empty">No top-level definitions.</p>`;
+  html += syms.length ? `<ul class="list">${syms.slice(0, 160).map((s, si) => {
+    const callers = f.k?.[si] || 0;
+    const sel = S.selected?.sym === si ? ` aria-current="true"` : "";
+    return `<li data-file="${esc(path)}" data-line="${s.l}" data-sym="${si}"${sel}><span class="pill">${esc(s.k)}</span><span class="name">${esc(s.n)}</span><span class="meta">${callers ? `${callers} caller${callers === 1 ? "" : "s"} · ` : ""}:${s.l}</span></li>`;
+  }).join("")}</ul>` : `<p class="empty">No top-level definitions.</p>`;
+  if (S.selected?.sym !== undefined && syms[S.selected.sym]) {
+    html += `<div class="symcalls" id="symcalls"><h3>${esc(syms[S.selected.sym].n)} <small>loading calls…</small></h3></div>`;
+  }
   const outs = g.out[i].map((e) => g.files[e.to].p).sort();
   const ins = g.in[i].map((e) => g.files[e.from].p).sort();
   html += `<h3>Imports <small>${outs.length}</small></h3>` + (outs.length ? `<ul class="list">${outs.map((p) => fileRow(p)).join("")}</ul>` : `<p class="empty">No files in this repository.</p>`);
@@ -943,8 +955,30 @@ function filePanel(path) {
   return html;
 }
 
+let symToken = 0;
+async function loadSymbol(path, sym) {
+  const token = ++symToken;
+  let d;
+  try { d = await api(`/api/symbol?at=${encodeURIComponent(S.tree)}&path=${encodeURIComponent(path)}&i=${sym}`); }
+  catch (e) { return; }
+  const box = $("symcalls");
+  if (!box || token !== symToken) return;
+  const row = (r, verb) => `<li data-file="${esc(r.path)}" data-line="${r.def || r.line}"${r.sym >= 0 && r.def ? ` data-sym="${r.sym}"` : ""}>
+    <span class="name" title="${esc(r.path)}">${esc(r.name)}${r.path !== path ? ` <span class="sub">${esc(baseOf(r.path))}</span>` : ""}</span>
+    <span class="meta">${r.likely ? `<span class="pill" title="Matched by method name only; the receiver's type is not known">likely</span> ` : ""}${verb} :${r.line}</span></li>`;
+  const list = (rows, verb, empty) => rows.length ? `<ul class="list">${rows.map((r) => row(r, verb)).join("")}</ul>` : `<p class="empty">${empty}</p>`;
+  box.innerHTML = `<h3>Called by <small>${plural(d.callers.length, "place")}</small></h3>${list(d.callers, "calls at", "No callers found in the repository.")}
+    <h3>Calls <small>${plural(d.callees.length, "function")}</small></h3>${list(d.callees, "at", "No calls to code in this repository.")}`;
+  box.querySelectorAll("[data-file]").forEach((x) => x.addEventListener("click", () => {
+    const p = x.dataset.file;
+    const dir = dirOf(p);
+    if (S.focus && dir !== S.focus && !dir.startsWith(S.focus + "/")) { S.focus = ""; rebuild(false); }
+    selectFile(p, +x.dataset.line || undefined, x.dataset.sym === undefined ? undefined : +x.dataset.sym);
+  }));
+}
+
 let codeToken = 0;
-async function loadCode(path, line) {
+async function loadCode(path, line, end) {
   const token = ++codeToken;
   let text;
   try { text = await api(`/api/file?at=${encodeURIComponent(S.tree)}&path=${encodeURIComponent(path)}`); }
@@ -953,7 +987,8 @@ async function loadCode(path, line) {
   if (!pre || token !== codeToken) return;
   const lines = String(text).split("\n");
   if (lines.length > 4000) lines.length = 4000;
-  pre.innerHTML = lines.map((l, i) => `<span class="l${i + 1 === line ? " hl" : ""}">${esc(l) || " "}</span>`).join("");
+  const last = end && end >= line ? end : line;
+  pre.innerHTML = lines.map((l, i) => `<span class="l${line && i + 1 >= line && i + 1 <= last ? " hl" : ""}">${esc(l) || " "}</span>`).join("");
   if (line) {
     const target = pre.children[line - 1];
     if (target) pre.scrollTop = target.offsetTop - pre.clientHeight / 3;

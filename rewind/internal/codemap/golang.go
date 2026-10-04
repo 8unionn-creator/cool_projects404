@@ -37,7 +37,38 @@ func parseGo(f *File, src []byte) {
 			if d.Recv != nil && len(d.Recv.List) > 0 {
 				name, kind = recvName(d.Recv.List[0].Type)+"."+name, "method"
 			}
-			f.Symbols = append(f.Symbols, Symbol{Name: name, Kind: kind, Line: line(d.Pos()), Exported: d.Name.IsExported()})
+			f.Symbols = append(f.Symbols, Symbol{Name: name, Kind: kind, Line: line(d.Pos()), End: line(d.End()), Exported: d.Name.IsExported()})
+			if d.Body != nil {
+				// The receiver's name tells us the type of `s` in s.lock().
+				recv, recvType := "", ""
+				if d.Recv != nil && len(d.Recv.List) > 0 && len(d.Recv.List[0].Names) > 0 {
+					recv, recvType = d.Recv.List[0].Names[0].Name, recvName(d.Recv.List[0].Type)
+				}
+				ast.Inspect(d.Body, func(n ast.Node) bool {
+					c, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					switch fn := c.Fun.(type) {
+					case *ast.Ident:
+						if !callNoise[fn.Name] {
+							f.calls = append(f.calls, call{"", fn.Name, line(fn.Pos())})
+						}
+					case *ast.SelectorExpr:
+						switch x := fn.X.(type) {
+						case *ast.Ident:
+							q := x.Name
+							if q == recv && recv != "" {
+								q = "self:" + recvType
+							}
+							f.calls = append(f.calls, call{q, fn.Sel.Name, line(fn.Sel.Pos())})
+						case *ast.SelectorExpr: // c.st.Snapshot(): a field, type unknown
+							f.calls = append(f.calls, call{x.Sel.Name, fn.Sel.Name, line(fn.Sel.Pos())})
+						}
+					}
+					return true
+				})
+			}
 			if f.pkg == "main" && d.Recv == nil && d.Name.Name == "main" {
 				f.Entry = true
 			}
@@ -52,7 +83,7 @@ func parseGo(f *File, src []byte) {
 					case *ast.InterfaceType:
 						kind = "interface"
 					}
-					f.Symbols = append(f.Symbols, Symbol{Name: s.Name.Name, Kind: kind, Line: line(s.Pos()), Exported: s.Name.IsExported()})
+					f.Symbols = append(f.Symbols, Symbol{Name: s.Name.Name, Kind: kind, Line: line(s.Pos()), End: line(s.End()), Exported: s.Name.IsExported()})
 				case *ast.ValueSpec:
 					kind := "var"
 					if d.Tok == token.CONST {

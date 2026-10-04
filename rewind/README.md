@@ -75,6 +75,7 @@ A single binary with an embedded viewer. It runs offline on localhost and loads 
 
 - **Architecture at a glance.** Folders are laid out top-down by dependency: the code that imports others sits above the code it imports, so entry points end up at the top and foundations at the bottom. Click a box to see its files and its dependencies in both directions, double-click to drill into it, and use the breadcrumbs to come back out.
 - **Every file explained.** See what a file defines, what it imports, what imports it, its third-party packages and its source, with search across files and symbols (press `/`).
+- **Who calls this function.** Click any function or method to see every place that calls it and everything it calls, with its whole body highlighted in the source view. Calls are resolved through imports, modules, same-package code, `self`/`this` and Go receiver types. A call on a variable whose type isn't known (`order.save()`) is linked only when exactly one visible method has that name, and it's labelled *likely*.
 - **Impact.** "Show impact" lights up every file that depends on the selected one, directly or transitively. That's the list of what to re-test.
 - **Cycles.** Import cycles between files and between folders are drawn in red. Imports that never run at load time are left out: TypeScript `import type`, Python `if TYPE_CHECKING:` and imports inside a function.
 - **Hotspots.** Files ranked by commits in the last year × complexity, which is where bugs cluster.
@@ -90,6 +91,7 @@ A single binary with an embedded viewer. It runs offline on localhost and loads 
 | `rewind deps src/app.py` | What a file imports, what imports it, and what it defines |
 | `rewind impact src/db.go` | Every file that depends on it, grouped by distance |
 | `rewind impact --step 7` | Everything that depends on what step 7 changed |
+| `rewind callers src/db.go Open` | Who calls a function, and what it calls |
 | `rewind cycles --fail` | List import cycles; exits 1 if there are any, for CI |
 | `rewind map --json` / `--dot` | The dependency graph as JSON, or folders as Graphviz |
 | `rewind show 7` | Now also reports how the step changed the structure |
@@ -111,7 +113,7 @@ A single binary with an embedded viewer. It runs offline on localhost and loads 
 | **Ruby** | `require` and `require_relative` with `lib/`, `spec/` and `test/` on the load path; constants for Rails/Zeitwerk autoloading |
 | **Dart** | `import`/`export`/`part` with `package:` URIs mapped through `pubspec.yaml`, relative imports |
 
-The parsers are deliberately small and dependency-free, so `rewind` stays a single static binary with no cgo. They skip strings and comments correctly, including raw strings, char literals and Rust lifetimes. Calls between functions are not traced; the map works at the level of files and imports.
+The parsers are deliberately small and dependency-free, so `rewind` stays a single static binary with no cgo. They skip strings and comments correctly, including raw strings, char literals and Rust lifetimes. The call graph doesn't do full type inference, so calls through interfaces, callbacks and dynamic dispatch can be missed or marked *likely*.
 
 **Cycles** are only reported where they can actually break something. File-level import cycles are reported in Python and JS/TS (import order) and C/C++ (include order). Folder-level cycles are reported in every language except Rust, which allows any cycle inside a crate, while Cargo forbids them between crates. In the map, the arrows that close each loop are drawn in red.
 

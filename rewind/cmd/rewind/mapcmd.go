@@ -372,3 +372,54 @@ func (c *cli) structure(fromTree, toTree string, files []store.FileChange) {
 }
 
 func codemapLang(p string) bool { return codemap.IsSource(p) }
+
+func (c *cli) callersCmd(args []string) error {
+	fs := flag.NewFlagSet("callers", flag.ContinueOnError)
+	at := fs.String("at", "", "use a step or git revision")
+	if err := parse(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 2 {
+		return errors.New("usage: rewind callers <file> <function>   (e.g. rewind callers src/db.go Open)")
+	}
+	g, err := c.graphAt(*at)
+	if err != nil {
+		return err
+	}
+	p, fi, err := c.fileIn(g, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	want := fs.Arg(1)
+	var matches []int
+	for si, s := range g.Files[fi].Symbols {
+		if s.Name == want || strings.HasSuffix(s.Name, "."+want) {
+			matches = append(matches, si)
+		}
+	}
+	if len(matches) == 0 {
+		return fmt.Errorf("%s defines no %q (run `rewind deps %s` to list its definitions)", p, want, p)
+	}
+	for _, si := range matches {
+		s := g.Files[fi].Symbols[si]
+		fmt.Fprintf(c.out, "%s %s\n", c.bold(s.Name), c.dim(fmt.Sprintf("%s · %s:%d-%d", s.Kind, p, s.Line, s.End)))
+		print := func(title string, calls []codemap.Call, callers bool) {
+			fmt.Fprintf(c.out, "\n  %s %s\n", title, c.dim(fmt.Sprintf("(%d)", len(calls))))
+			for _, call := range calls {
+				other := call.To
+				if callers {
+					other = call.From
+				}
+				likely := ""
+				if call.Likely {
+					likely = c.dim("  (likely: matched by name)")
+				}
+				fmt.Fprintf(c.out, "    %s  %s%s\n", g.SymbolLabel(other), c.dim(fmt.Sprintf("%s:%d", g.Files[call.From.File].Path, call.Line)), likely)
+			}
+		}
+		print("Called by", g.CallersOf(fi, si), true)
+		print("Calls", g.CalleesOf(fi, si), false)
+		fmt.Fprintln(c.out)
+	}
+	return nil
+}

@@ -38,6 +38,7 @@ Understand the code:
   rewind deps <file>              what a file imports, what imports it, what it defines
   rewind impact <file>...         every file that depends on these files
   rewind impact --step <step>     every file that depends on what a step changed
+  rewind callers <file> <func>    who calls a function, and what it calls
   rewind cycles [--fail]          list import cycles (--fail: exit 1 for CI)
   (map, deps and cycles take --at <step|revision> to look at a snapshot)
 
@@ -104,6 +105,8 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return c.impactCmd(rest)
 	case "cycles":
 		return c.cyclesCmd(rest)
+	case "callers":
+		return c.callersCmd(rest)
 	}
 	return fmt.Errorf("unknown command %q (run `rewind help`)", cmd)
 }

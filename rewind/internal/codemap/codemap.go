@@ -39,6 +39,7 @@ type Symbol struct {
 	Name     string `json:"n"`
 	Kind     string `json:"k"`
 	Line     int    `json:"l"`
+	End      int    `json:"z,omitempty"` // last line of a function or type body
 	Exported bool   `json:"e,omitempty"`
 }
 
@@ -63,9 +64,10 @@ type File struct {
 	Symbols    []Symbol
 	Imports    []Import
 
-	pkg       string              // Go package name
-	refs      map[string]bool     // Go: identifiers used, for same-package links
+	pkg       string              // package or namespace
+	refs      map[string]bool     // identifiers used, for same-package links
 	selectors map[string][]string // Go: X -> selectors used as X.Sel
+	calls     []call              // call sites, resolved into Graph.Calls
 }
 
 // Edge says that file From depends on file To.
@@ -83,6 +85,7 @@ type Graph struct {
 	Edges    []Edge
 	External [][]string // per file: unresolved, non-standard-library imports
 	Entries  []bool     // per file: entry point (parser or package manifest)
+	Calls    []Call     // function-level call graph
 
 	index map[string]int
 	out   [][]int // adjacency, by file index
@@ -314,11 +317,14 @@ type builder struct {
 	g     *Graph
 	dirs  map[string][]int // directory -> files in it
 	edges map[[2]int]*Edge
+
+	cur       int                   // line of the import being resolved, if any
+	importsOf map[int]map[int][]int // file -> import line -> files it resolved to
 }
 
 func build(src *treeSource, files []*File) *Graph {
 	g := &Graph{Files: files, index: map[string]int{}, External: make([][]string, len(files)), Entries: make([]bool, len(files))}
-	b := &builder{src: src, g: g, dirs: map[string][]int{}, edges: map[[2]int]*Edge{}}
+	b := &builder{src: src, g: g, dirs: map[string][]int{}, edges: map[[2]int]*Edge{}, importsOf: map[int]map[int][]int{}}
 	for i, f := range files {
 		g.index[f.Path] = i
 		g.Entries[i] = f.Entry
@@ -335,6 +341,7 @@ func build(src *treeSource, files []*File) *Graph {
 	resolvePHP(b)
 	resolveRuby(b)
 	resolveDart(b)
+	resolveCalls(b)
 
 	for _, e := range b.edges {
 		g.Edges = append(g.Edges, *e)
@@ -360,6 +367,12 @@ func build(src *treeSource, files []*File) *Graph {
 func (b *builder) link(from, to, weight int, typeOnly bool) {
 	if from == to || from < 0 || to < 0 {
 		return
+	}
+	if b.cur > 0 {
+		if b.importsOf[from] == nil {
+			b.importsOf[from] = map[int][]int{}
+		}
+		b.importsOf[from][b.cur] = append(b.importsOf[from][b.cur], to)
 	}
 	k := [2]int{from, to}
 	if e, ok := b.edges[k]; ok {
@@ -399,14 +412,22 @@ type jsonFile struct {
 	Entry      bool     `json:"e,omitempty"`
 	Symbols    []Symbol `json:"s,omitempty"`
 	External   []string `json:"x,omitempty"`
+	Callers    []int    `json:"k,omitempty"` // per symbol: how many places call it
 }
 
 // MarshalJSON writes a compact form for the map viewer: edges are
 // [from, to, weight, typeOnly] index tuples.
 func (g *Graph) MarshalJSON() ([]byte, error) {
+	callers := make([][]int, len(g.Files))
+	for _, c := range g.Calls {
+		if callers[c.To.File] == nil {
+			callers[c.To.File] = make([]int, len(g.Files[c.To.File].Symbols))
+		}
+		callers[c.To.File][c.To.Sym]++
+	}
 	files := make([]jsonFile, len(g.Files))
 	for i, f := range g.Files {
-		files[i] = jsonFile{f.Path, f.Lang, f.Lines, f.Complexity, f.Test, g.Entries[i], f.Symbols, g.External[i]}
+		files[i] = jsonFile{f.Path, f.Lang, f.Lines, f.Complexity, f.Test, g.Entries[i], f.Symbols, g.External[i], callers[i]}
 	}
 	edges := make([][4]int, len(g.Edges))
 	for i, e := range g.Edges {
