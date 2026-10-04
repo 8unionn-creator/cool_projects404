@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tomato Dial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a kitchen timer on the counter (left) beside the day's ticket rail (right); stacks on phones. */
+:root {
+  --bg: #e9eee9;
+  --surface: #f7f9f6;
+  --ink: #1d2620;
+  --muted: #5d6b62;
+  --line: #cdd6ce;
+  --tomato: #d4432a;
+  --tomato-soft: #f3c9bf;
+  --leaf: #2f6b4a;
+  --leaf-soft: #cfe3d6;
+  --dial-face: #fbfcfa;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111713; --surface: #18201b; --ink: #e6ece7; --muted: #94a39a; --line: #2b3630;
+    --tomato: #ef6a4f; --tomato-soft: #4a2219; --leaf: #6cbf8d; --leaf-soft: #1f3a2b; --dial-face: #1c2520;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111713; --surface: #18201b; --ink: #e6ece7; --muted: #94a39a; --line: #2b3630;
+  --tomato: #ef6a4f; --tomato-soft: #4a2219; --leaf: #6cbf8d; --leaf-soft: #1f3a2b; --dial-face: #1c2520;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.5 var(--font-body);
+  padding: 24px 16px 48px;
+}
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+h1 { font: 800 clamp(1.8rem, 4vw, 2.4rem)/1 var(--font-display); letter-spacing: -0.02em; margin: 0; }
+h1 span { color: var(--tomato); }
+.sub { color: var(--muted); margin: 0; }
+h2 { font: 700 0.78rem/1 var(--font-body); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 12px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 820px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; min-width: 0; }
+.side { display: grid; gap: 20px; min-width: 0; }
+
+/* Timer */
+.modes { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.mode {
+  font: 700 0.9rem var(--font-body); border: 1px solid var(--line); background: transparent; color: var(--muted);
+  padding: 7px 14px; border-radius: 999px; cursor: pointer;
+}
+.mode[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.dial-wrap { position: relative; width: min(100%, 360px); aspect-ratio: 1; margin: 16px auto 8px; max-width: 100%; }
+#dial { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; }
+#dial.dragging { cursor: grabbing; }
+.readout { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
+#time { font: 700 clamp(2.4rem, 9vw, 3.4rem)/1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+#phase { font: 700 0.75rem var(--font-body); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-top: 6px; }
+.hint { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 0 0 14px; }
+.controls { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.btn {
+  font: 700 1rem var(--font-body); border-radius: 999px; padding: 11px 22px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--tomato); border-color: var(--tomato); color: #fff; min-width: 140px; }
+.btn.primary:hover { filter: brightness(1.06); }
+:focus-visible { outline: 3px solid var(--leaf); outline-offset: 2px; }
+.now-on { margin: 18px 0 0; padding-top: 14px; border-top: 1px dashed var(--line); text-align: center; color: var(--muted); font-size: 0.95rem; }
+.now-on strong { color: var(--ink); }
+.cycle { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+.cycle i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--tomato); display: block; }
+.cycle i.on { background: var(--tomato); }
+.keys { text-align: center; color: var(--muted); font-size: 0.8rem; margin: 12px 0 0; }
+kbd { font: 500 0.75rem var(--font-mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; background: var(--bg); }
+
+/* Tasks */
+.add { display: flex; gap: 8px; }
+.add input[type="text"] { flex: 1; min-width: 0; }
+input[type="text"], input[type="number"], select {
+  font: 16px var(--font-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 12px;
+}
+input[type="number"] { width: 4.5em; font-family: var(--font-mono); }
+ul.tasks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.task {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center;
+  padding: 9px 10px; border-radius: 10px; border: 1px solid transparent; cursor: pointer;
+}
+.task:hover { background: var(--bg); }
+.task.active { border-color: var(--tomato); background: color-mix(in srgb, var(--tomato) 7%, transparent); }
+.task .text { overflow-wrap: anywhere; }
+.task.done .text { text-decoration: line-through; color: var(--muted); }
+.task input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--leaf); margin: 0; }
+.pips { font: 500 0.8rem var(--font-mono); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pips b { color: var(--tomato); font-weight: 700; }
+.icon-btn { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 4px 6px; border-radius: 6px; }
+.icon-btn:hover { color: var(--tomato); background: var(--bg); }
+.tag { font: 700 0.65rem var(--font-body); text-transform: uppercase; letter-spacing: 0.08em; color: var(--leaf); background: var(--leaf-soft); padding: 2px 6px; border-radius: 4px; margin-right: 6px; vertical-align: 1px; }
+.empty { color: var(--muted); font-size: 0.95rem; margin: 12px 0 0; }
+.task-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 0.85rem; color: var(--muted); flex-wrap: wrap; }
+.link { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
+
+/* Sounds */
+.sounds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 420px) { .sounds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sound {
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 10px; padding: 10px 6px;
+  font: 700 0.85rem var(--font-body); cursor: pointer; display: grid; gap: 2px; justify-items: center;
+}
+.sound small { font-weight: 400; color: var(--muted); font-size: 0.72rem; }
+.sound[aria-pressed="true"] { border-color: var(--leaf); background: var(--leaf-soft); }
+.row { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.row label { font-size: 0.9rem; color: var(--muted); }
+input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--leaf); }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; }
+.switch input { accent-color: var(--leaf); width: 16px; height: 16px; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.stat { display: grid; gap: 2px; }
+.stat b { font: 700 1.6rem/1.1 var(--font-mono); font-variant-numeric: tabular-nums; }
+.stat span { font-size: 0.8rem; color: var(--muted); }
+#chart { width: 100%; height: auto; display: block; }
+#chart text { fill: var(--muted); font: 500 10px var(--font-mono); }
+.chart-note { font-size: 0.8rem; color: var(--muted); margin: 6px 0 0; }
+
+/* Settings */
+details summary { cursor: pointer; font: 700 0.78rem var(--font-body); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 14px; }
+.settings label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+.settings .switch { color: var(--ink); }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  background: var(--ink); color: var(--surface); padding: 10px 18px; border-radius: 999px; font-weight: 700;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.2); max-width: calc(100% - 32px); text-align: center;
+}
+body.ringing .dial-wrap { animation: shake 0.5s ease-in-out 3; }
+@keyframes shake { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-3deg); } 75% { transform: rotate(3deg); } }
+@media (prefers-reduced-motion: reduce) { body.ringing .dial-wrap { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tomato<span>.</span>Dial</h1>
+    <p class="sub">Twist the dial, pick a task, get it done.</p>
+  </header>
+
+  <div class="grid">
+    <section class="panel" aria-label="Timer">
+      <div class="modes" role="group" aria-label="Session type">
+        <button class="mode" id="mode-focus" data-mode="focus" aria-pressed="true">Focus</button>
+        <button class="mode" id="mode-short" data-mode="short" aria-pressed="false">Short break</button>
+        <button class="mode" id="mode-long" data-mode="long" aria-pressed="false">Long break</button>
+      </div>
+      <div class="dial-wrap">
+        <svg id="dial" viewBox="0 0 300 300" role="slider" tabindex="0" aria-label="Timer dial, minutes" aria-valuemin="1" aria-valuemax="60" aria-valuenow="25"></svg>
+        <div class="readout"><div id="time">25:00</div><div id="phase">Focus</div></div>
+      </div>
+      <p class="hint">Drag the dial to set minutes, like a real kitchen timer.</p>
+      <div class="controls">
+        <button class="btn primary" id="start">Start</button>
+        <button class="btn" id="reset">Reset</button>
+        <button class="btn" id="skip">Skip</button>
+      </div>
+      <p class="now-on" id="now-on">No task selected. Pick one from the list.</p>
+      <div class="cycle" id="cycle" aria-label="Sessions until long break"></div>
+      <p class="keys"><kbd>Space</kbd> start/pause · <kbd>R</kbd> reset · <kbd>S</kbd> skip · <kbd>N</kbd> new task</p>
+    </section>
+
+    <div class="side">
+      <section class="panel" aria-labelledby="tasks-h">
+        <h2 id="tasks-h">Today's tasks</h2>
+        <form class="add" id="add-form">
+          <input type="text" id="new-task" placeholder="What are you working on?" autocomplete="off" aria-label="New task">
+          <input type="number" id="new-est" min="1" max="12" value="2" aria-label="Estimated tomatoes" title="Estimated tomatoes (25-minute sessions)">
+          <button class="btn" type="submit">Add</button>
+        </form>
+        <ul class="tasks" id="tasks"></ul>
+        <p class="empty" id="tasks-empty" hidden>Nothing here yet. Add the one thing that would make today a good day.</p>
+        <div class="task-foot">
+          <span id="task-summary"></span>
+          <button class="link" id="clear-done" type="button">Clear finished</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="sound-h">
+        <h2 id="sound-h">Background sound</h2>
+        <div class="sounds" role="group" aria-label="Background sound">
+          <button class="sound" id="snd-off" data-sound="off" aria-pressed="true">Off<small>silence</small></button>
+          <button class="sound" id="snd-brown" data-sound="brown" aria-pressed="false">Brown<small>deep rumble</small></button>
+          <button class="sound" id="snd-rain" data-sound="rain" aria-pressed="false">Rain<small>on a window</small></button>
+          <button class="sound" id="snd-fan" data-sound="fan" aria-pressed="false">Fan<small>steady air</small></button>
+        </div>
+        <div class="row">
+          <label for="volume">Volume</label>
+          <input type="range" id="volume" min="0" max="100" value="45">
+        </div>
+        <div class="row">
+          <label class="switch"><input type="checkbox" id="tick"> Ticking clock while focusing</label>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="stats-h">
+        <h2 id="stats-h">Your focus</h2>
+        <div class="stats">
+          <div class="stat"><b id="st-min">0</b><span>minutes today</span></div>
+          <div class="stat"><b id="st-ses">0</b><span>tomatoes today</span></div>
+          <div class="stat"><b id="st-streak">0</b><span>day streak</span></div>
+        </div>
+        <svg id="chart" viewBox="0 0 320 120" role="img" aria-label="Focus minutes over the last 14 days"></svg>
+        <p class="chart-note" id="chart-note">Last 14 days, focus minutes per day.</p>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Settings</summary>
+          <div class="settings">
+            <label for="set-focus">Focus (min)<input type="number" id="set-focus" min="1" max="60"></label>
+            <label for="set-short">Short break (min)<input type="number" id="set-short" min="1" max="60"></label>
+            <label for="set-long">Long break (min)<input type="number" id="set-long" min="1" max="60"></label>
+            <label for="set-every">Long break every<input type="number" id="set-every" min="2" max="8"></label>
+            <label class="switch"><input type="checkbox" id="set-auto"> Start next session automatically</label>
+            <label class="switch"><input type="checkbox" id="set-notify"> Desktop notification when time is up</label>
+          </div>
+        </details>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+  const KEY = "tomato-dial.v1";
+  const $ = (id) => document.getElementById(id);
+  const MODES = { focus: "Focus", short: "Short break", long: "Long break" };
+
+  // ---------- State ----------
+  const defaults = () => ({
+    settings: { focus: 25, short: 5, long: 15, every: 4, auto: false, notify: false, tick: false, sound: "off", volume: 45 },
+    tasks: [
+      { id: uid(), text: "Draft the outline for this week's report", est: 2, count: 0, done: false, example: true },
+      { id: uid(), text: "Clear the inbox down to zero", est: 1, count: 0, done: false, example: true },
+      { id: uid(), text: "Review notes from yesterday", est: 1, count: 1, done: true, example: true },
+    ],
+    activeId: null,
+    history: {},
+    timer: { mode: "focus", duration: 25 * 60, remaining: 25 * 60, endAt: null, streakInCycle: 0 },
+  });
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const d = JSON.parse(raw), base = defaults();
+        return { ...base, ...d, settings: { ...base.settings, ...d.settings }, timer: { ...base.timer, ...d.timer } };
+      }
+    } catch (e) {}
+    const s = defaults();
+    s.activeId = s.tasks[0].id;
+    return s;
+  }
+  const state = load();
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  // ---------- Helpers ----------
+  const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const fmt = (s) => { s = Math.max(0, Math.ceil(s)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+  const remaining = () => state.timer.endAt ? Math.max(0, (state.timer.endAt - Date.now()) / 1000) : state.timer.remaining;
+  const running = () => state.timer.endAt !== null;
+  let toastTimer;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3200);
+  }
+
+  // ---------- Dial ----------
+  const NS = "http://www.w3.org/2000/svg";
+  const C = 150, R = 118;
+  const dial = $("dial");
+  function el(tag, attrs, parent) {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    (parent || dial).appendChild(n); return n;
+  }
+  const polar = (deg, r) => { const a = (deg - 90) * Math.PI / 180; return [C + r * Math.cos(a), C + r * Math.sin(a)]; };
+  el("circle", { cx: C, cy: C, r: 146, fill: "var(--tomato)" });
+  el("circle", { cx: C, cy: C, r: 134, fill: "var(--dial-face)" });
+  const wedge = el("path", { fill: "var(--tomato-soft)" });
+  for (let m = 0; m < 60; m++) {
+    const big = m % 5 === 0;
+    const [x1, y1] = polar(m * 6, 130), [x2, y2] = polar(m * 6, big ? 116 : 123);
+    el("line", { x1, y1, x2, y2, stroke: "var(--ink)", "stroke-width": big ? 2.4 : 1, "stroke-linecap": "round", opacity: big ? 0.9 : 0.45 });
+    if (big) {
+      const [tx, ty] = polar(m * 6, 104);
+      const t = el("text", { x: tx, y: ty, "text-anchor": "middle", "dominant-baseline": "central", fill: "var(--muted)", "font-family": "JetBrains Mono, monospace", "font-size": 11, "font-weight": 700 });
+      t.textContent = m;
+    }
+  }
+  const hand = el("line", { x1: C, y1: C, x2: C, y2: C - R, stroke: "var(--tomato)", "stroke-width": 3, "stroke-linecap": "round" });
+  el("circle", { cx: C, cy: C, r: 74, fill: "var(--dial-face)" });
+  // stem + leaves on top: the tomato's crown
+  el("path", { d: "M150 2 l-10 -0 q4 10 10 12 q6 -2 10 -12 z", fill: "var(--leaf)" });
+
+  function drawDial() {
+    const rem = remaining();
+    const deg = Math.min(359.99, (rem / 3600) * 360);
+    const [x, y] = polar(deg, 134);
+    wedge.setAttribute("d", deg <= 0.01 ? "" : `M${C} ${C} L${C} ${C - 134} A134 134 0 ${deg > 180 ? 1 : 0} 1 ${x} ${y} Z`);
+    const [hx, hy] = polar(deg, R + 12);
+    hand.setAttribute("x2", hx); hand.setAttribute("y2", hy);
+    dial.setAttribute("aria-valuenow", Math.round(rem / 60));
+    dial.setAttribute("aria-valuetext", fmt(rem));
+  }
+
+  function setMinutes(min) {
+    min = Math.max(1, Math.min(60, Math.round(min)));
+    const secs = min * 60;
+    state.timer.duration = secs;
+    if (running()) state.timer.endAt = Date.now() + secs * 1000;
+    else state.timer.remaining = secs;
+    render(); save();
+  }
+  let dragging = false;
+  function angleFromEvent(e) {
+    const r = dial.getBoundingClientRect();
+    const x = e.clientX - r.left - r.width / 2, y = e.clientY - r.top - r.height / 2;
+    let deg = Math.atan2(y, x) * 180 / Math.PI + 90; if (deg < 0) deg += 360;
+    return deg;
+  }
+  dial.addEventListener("pointerdown", (e) => { dragging = true; dial.setPointerCapture(e.pointerId); dial.classList.add("dragging"); ensureAudio(); setMinutes(angleFromEvent(e) / 6 || 60); });
+  dial.addEventListener("pointermove", (e) => { if (dragging) setMinutes(angleFromEvent(e) / 6 || 60); });
+  const endDrag = () => { dragging = false; dial.classList.remove("dragging"); };
+  dial.addEventListener("pointerup", endDrag); dial.addEventListener("pointercancel", endDrag);
+  dial.addEventListener("keydown", (e) => {
+    const cur = Math.round(remaining() / 60);
+    if (e.key === "ArrowUp" || e.key === "ArrowRight") { e.preventDefault(); setMinutes(cur + 1); }
+    if (e.key === "ArrowDown" || e.key === "ArrowLeft") { e.preventDefault(); setMinutes(cur - 1); }
+  });
+
+  // ---------- Timer ----------
+  function setMode(mode, keepRunning = false) {
+    state.timer.mode = mode;
+    const secs = state.settings[mode] * 60;
+    state.timer.duration = secs;
+    state.timer.remaining = secs;
+    state.timer.endAt = keepRunning ? Date.now() + secs * 1000 : null;
+    render(); save();
+  }
+  function start() {
+    ensureAudio();
+    if (running()) { state.timer.remaining = remaining(); state.timer.endAt = null; }
+    else {
+      if (state.timer.remaining <= 0) state.timer.remaining = state.timer.duration;
+      state.timer.endAt = Date.now() + state.timer.remaining * 1000;
+      requestWakeLock();
+    }
+    render(); save();
+  }
+  function reset() { state.timer.endAt = null; state.timer.remaining = state.timer.duration; render(); save(); }
+  function nextMode() {
+    if (state.timer.mode !== "focus") return "focus";
+    const n = state.timer.streakInCycle;
+    return n > 0 && n % state.settings.every === 0 ? "long" : "short";
+  }
+  function complete(skipped) {
+    const t = state.timer;
+    if (t.mode === "focus" && !skipped) {
+      const mins = Math.round(t.duration / 60);
+      const h = state.history[dayKey()] || (state.history[dayKey()] = { min: 0, ses: 0 });
+      h.min += mins; h.ses += 1;
+      t.streakInCycle += 1;
+      const task = state.tasks.find((x) => x.id === state.activeId);
+      if (task) task.count += 1;
+      ring(); notify("Tomato done!", task ? `+1 on "${task.text}". Take a break.` : "Nice work. Take a break.");
+      toast(task ? `Tomato done: +1 on "${task.text}"` : "Tomato done. Take a break.");
+    } else if (!skipped) {
+      ring(); notify("Break's over", "Back to it."); toast("Break's over. Back to it.");
+    }
+    if (t.mode !== "focus" && t.streakInCycle >= state.settings.every) t.streakInCycle = 0;
+    const nm = nextMode();
+    setMode(nm, state.settings.auto && !skipped);
+  }
+
+  // ---------- Audio (all synthesized, no files) ----------
+  let ctx = null, master = null, noiseNode = null, noiseGain = null, lfo = null;
+  function ensureAudio() {
+    if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain(); master.gain.value = 1; master.connect(ctx.destination);
+      applySound();
+    } catch (e) { ctx = null; }
+  }
+  function noiseBuffer(kind) {
+    const len = ctx.sampleRate * 4, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    let last = 0, b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      if (kind === "brown") { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+      else { // pink (Paul Kellet)
+        b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+        b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+      }
+    }
+    return buf;
+  }
+  function stopNoise() {
+    try { noiseNode && noiseNode.stop(); lfo && lfo.stop(); } catch (e) {}
+    noiseNode = lfo = null;
+    if (noiseGain) { noiseGain.disconnect(); noiseGain = null; }
+  }
+  function applySound() {
+    if (!ctx) return;
+    stopNoise();
+    const s = state.settings.sound;
+    if (s === "off") return;
+    noiseNode = ctx.createBufferSource(); noiseNode.loop = true;
+    noiseNode.buffer = noiseBuffer(s === "brown" ? "brown" : "pink");
+    noiseGain = ctx.createGain(); noiseGain.gain.value = 0;
+    let chainEnd = noiseNode;
+    if (s === "rain") {
+      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 500;
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 7000;
+      const swell = ctx.createGain(); swell.gain.value = 0.8;
+      lfo = ctx.createOscillator(); lfo.frequency.value = 0.13;
+      const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 0.25;
+      lfo.connect(lfoAmt).connect(swell.gain); lfo.start();
+      noiseNode.connect(hp).connect(lp).connect(swell); chainEnd = swell;
+    } else if (s === "fan") {
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1100; lp.Q.value = 0.4;
+      noiseNode.connect(lp); chainEnd = lp;
+    }
+    chainEnd.connect(noiseGain).connect(master);
+    noiseNode.start();
+    noiseGain.gain.linearRampToValueAtTime(volumeLevel(), ctx.currentTime + 1.2);
+  }
+  const volumeLevel = () => Math.pow(state.settings.volume / 100, 2) * 0.9;
+  function tickSound() {
+    if (!ctx || ctx.state !== "running") return;
+    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+    o.type = "square"; o.frequency.value = 2400;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+    o.connect(g).connect(master); o.start(t); o.stop(t + 0.04);
+  }
+  function ring() {
+    document.body.classList.add("ringing"); setTimeout(() => document.body.classList.remove("ringing"), 1600);
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    for (let n = 0; n < 3; n++) {
+      [1, 2.76, 5.4].forEach((mult, i) => { // bell partials
+        const o = ctx.createOscillator(), g = ctx.createGain(), t = t0 + n * 0.55;
+        o.frequency.value = 880 * mult;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25 / (i + 1), t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+        o.connect(g).connect(master); o.start(t); o.stop(t + 1.5);
+      });
+    }
+  }
+
+  // ---------- Notifications & wake lock ----------
+  function notify(title, body) {
+    if (!state.settings.notify) return;
+    try { if (Notification.permission === "granted") new Notification(title, { body }); } catch (e) {}
+  }
+  let wakeLock = null;
+  async function requestWakeLock() { try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) { wakeLock = null; } }
+
+  // ---------- Rendering ----------
+  function render() {
+    const t = state.timer, rem = remaining();
+    for (const m of Object.keys(MODES)) $("mode-" + m).setAttribute("aria-pressed", String(t.mode === m));
+    $("time").textContent = fmt(rem);
+    $("phase").textContent = (running() ? "" : rem < t.duration && rem > 0 ? "Paused · " : "") + MODES[t.mode];
+    $("start").textContent = running() ? "Pause" : rem < t.duration && rem > 0 ? "Resume" : "Start";
+    document.title = running() ? `${fmt(rem)} · ${MODES[t.mode]}` : "Tomato Dial";
+    drawDial();
+    const cyc = $("cycle"); cyc.innerHTML = "";
+    for (let i = 0; i < state.settings.every; i++) { const d = document.createElement("i"); if (i < t.streakInCycle) d.className = "on"; cyc.appendChild(d); }
+    const task = state.tasks.find((x) => x.id === state.activeId);
+    $("now-on").innerHTML = "";
+    if (task) { $("now-on").append("Working on "); const b = document.createElement("strong"); b.textContent = task.text; $("now-on").append(b); }
+    else $("now-on").textContent = "No task selected. Pick one from the list.";
+  }
+  function renderTasks() {
+    const ul = $("tasks"); ul.innerHTML = "";
+    state.tasks.forEach((task) => {
+      const li = document.createElement("li");
+      li.className = "task" + (task.id === state.activeId ? " active" : "") + (task.done ? " done" : "");
+      li.title = "Click to focus on this task";
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = task.done; cb.setAttribute("aria-label", "Mark finished");
+      cb.addEventListener("click", (e) => e.stopPropagation());
+      cb.addEventListener("change", () => { task.done = cb.checked; if (task.done && state.activeId === task.id) state.activeId = null; renderAll(); save(); });
+      const text = document.createElement("span"); text.className = "text";
+      if (task.example) { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "Example"; text.appendChild(tag); }
+      text.append(task.text);
+      const pips = document.createElement("span"); pips.className = "pips";
+      pips.innerHTML = `<b>${task.count}</b>/${task.est} 🍅`;
+      pips.title = `${task.count} of ${task.est} estimated tomatoes`;
+      const del = document.createElement("button"); del.className = "icon-btn"; del.textContent = "×"; del.setAttribute("aria-label", "Delete task");
+      del.addEventListener("click", (e) => { e.stopPropagation(); state.tasks = state.tasks.filter((x) => x !== task); if (state.activeId === task.id) state.activeId = null; renderAll(); save(); });
+      li.append(cb, text, pips, del);
+      li.addEventListener("click", () => { if (task.done) return; state.activeId = state.activeId === task.id ? null : task.id; renderAll(); save(); });
+      ul.appendChild(li);
+    });
+    $("tasks-empty").hidden = state.tasks.length > 0;
+    const open = state.tasks.filter((t) => !t.done);
+    const left = open.reduce((a, t) => a + Math.max(0, t.est - t.count), 0);
+    $("task-summary").textContent = open.length
+      ? `${open.length} open · about ${left} tomato${left === 1 ? "" : "es"} (${Math.round(left * state.settings.focus / 60 * 10) / 10} h) left`
+      : state.tasks.length ? "All done. Go outside." : "";
+    $("clear-done").hidden = !state.tasks.some((t) => t.done);
+  }
+  function renderStats() {
+    const today = state.history[dayKey()] || { min: 0, ses: 0 };
+    $("st-min").textContent = today.min; $("st-ses").textContent = today.ses;
+    let streak = 0; const d = new Date();
+    if (!(state.history[dayKey(d)]?.ses > 0)) d.setDate(d.getDate() - 1);
+    while (state.history[dayKey(d)]?.ses > 0) { streak++; d.setDate(d.getDate() - 1); }
+    $("st-streak").textContent = streak;
+
+    const days = [];
+    for (let i = 13; i >= 0; i--) { const x = new Date(); x.setDate(x.getDate() - i); days.push({ date: x, min: state.history[dayKey(x)]?.min || 0 }); }
+    const maxMin = Math.max(...days.map((x) => x.min));
+    const top = Math.max(60, Math.ceil(maxMin / 30) * 30);
+    const svg = $("chart"); svg.innerHTML = "";
+    const L = 30, Rt = 316, T = 8, B = 100, w = (Rt - L) / 14;
+    const mk = (tag, a) => { const n = document.createElementNS(NS, tag); for (const k in a) n.setAttribute(k, a[k]); svg.appendChild(n); return n; };
+    [0, top / 2, top].forEach((v) => {
+      const y = B - (v / top) * (B - T);
+      mk("line", { x1: L, x2: Rt, y1: y, y2: y, stroke: "var(--line)", "stroke-width": 1, "stroke-dasharray": v ? "2 3" : "" });
+      const t = mk("text", { x: L - 5, y: y + 3, "text-anchor": "end" }); t.textContent = v;
+    });
+    days.forEach((dd, i) => {
+      const h = (dd.min / top) * (B - T), x = L + i * w + w * 0.18, isToday = i === 13;
+      if (dd.min > 0) mk("rect", { x, y: B - h, width: w * 0.64, height: h, rx: 2, fill: isToday ? "var(--tomato)" : "var(--leaf)", opacity: isToday ? 1 : 0.75 }).appendChild(Object.assign(document.createElementNS(NS, "title"), { textContent: `${dd.date.toDateString()}: ${dd.min} min` }));
+      const lbl = mk("text", { x: x + w * 0.32, y: B + 13, "text-anchor": "middle" });
+      lbl.textContent = "SMTWTFS"[dd.date.getDay()];
+      if (isToday) lbl.setAttribute("style", "fill: var(--tomato); font-weight: 700");
+    });
+    const total = days.reduce((a, x) => a + x.min, 0);
+    $("chart-note").textContent = total ? `Last 14 days: ${total} focus minutes (${(total / 60).toFixed(1)} h). Today in red.` : "Last 14 days, focus minutes per day. Finish your first tomato to start the chart.";
+  }
+  function renderSettings() {
+    const s = state.settings;
+    $("set-focus").value = s.focus; $("set-short").value = s.short; $("set-long").value = s.long; $("set-every").value = s.every;
+    $("set-auto").checked = s.auto; $("set-notify").checked = s.notify; $("tick").checked = s.tick; $("volume").value = s.volume;
+    document.querySelectorAll(".sound").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sound === s.sound)));
+  }
+  function renderAll() { render(); renderTasks(); renderStats(); }
+
+  // ---------- Events ----------
+  $("start").addEventListener("click", start);
+  $("reset").addEventListener("click", reset);
+  $("skip").addEventListener("click", () => complete(true));
+  document.querySelectorAll(".mode").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  $("add-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = $("new-task").value.trim(); if (!text) return;
+    const est = Math.max(1, Math.min(12, parseInt($("new-est").value, 10) || 1));
+    const task = { id: uid(), text, est, count: 0, done: false };
+    state.tasks = state.tasks.filter((t) => !t.example); // first real task clears the examples
+    state.tasks.push(task);
+    if (!state.tasks.some((t) => t.id === state.activeId)) state.activeId = task.id;
+    $("new-task").value = ""; renderAll(); save();
+  });
+  $("clear-done").addEventListener("click", () => { state.tasks = state.tasks.filter((t) => !t.done); renderAll(); save(); });
+  document.querySelectorAll(".sound").forEach((b) => b.addEventListener("click", () => {
+    state.settings.sound = b.dataset.sound; ensureAudio(); applySound(); renderSettings(); save();
+  }));
+  $("volume").addEventListener("input", (e) => {
+    state.settings.volume = +e.target.value;
+    if (noiseGain && ctx) noiseGain.gain.setTargetAtTime(volumeLevel(), ctx.currentTime, 0.05);
+    save();
+  });
+  $("tick").addEventListener("change", (e) => { state.settings.tick = e.target.checked; ensureAudio(); save(); });
+  [["set-focus", "focus", 1, 60], ["set-short", "short", 1, 60], ["set-long", "long", 1, 60], ["set-every", "every", 2, 8]].forEach(([id, key, lo, hi]) => {
+    $(id).addEventListener("change", (e) => {
+      const v = Math.max(lo, Math.min(hi, parseInt(e.target.value, 10) || state.settings[key]));
+      state.settings[key] = v; e.target.value = v;
+      if (key === state.timer.mode && !running()) setMode(key);
+      renderAll(); save();
+    });
+  });
+  $("set-auto").addEventListener("change", (e) => { state.settings.auto = e.target.checked; save(); });
+  $("set-notify").addEventListener("change", async (e) => {
+    state.settings.notify = e.target.checked;
+    if (e.target.checked) {
+      try {
+        const p = await Notification.requestPermission();
+        if (p !== "granted") { state.settings.notify = false; e.target.checked = false; toast("Notifications are blocked here. The bell will still ring."); }
+      } catch (err) { state.settings.notify = false; e.target.checked = false; toast("Notifications aren't available here. The bell will still ring."); }
+    }
+    save();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === "Space" && !e.target.matches("button")) { e.preventDefault(); start(); }
+    else if (e.key === "r" || e.key === "R") reset();
+    else if (e.key === "s" || e.key === "S") complete(true);
+    else if (e.key === "n" || e.key === "N") { e.preventDefault(); $("new-task").focus(); }
+  });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && running() && !wakeLock) requestWakeLock(); });
+
+  // ---------- Loop ----------
+  let lastSec = -1;
+  function loop() {
+    if (running()) {
+      const rem = remaining();
+      if (rem <= 0) complete(false);
+      else {
+        const sec = Math.ceil(rem);
+        if (sec !== lastSec) {
+          lastSec = sec; render();
+          if (state.settings.tick && state.timer.mode === "focus") tickSound();
+        }
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+  // keep counting when the tab is hidden (rAF pauses there)
+  setInterval(() => { if (document.hidden && running() && remaining() <= 0) complete(false); else if (document.hidden && running()) render(); }, 1000);
+
+  renderSettings(); renderAll(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
