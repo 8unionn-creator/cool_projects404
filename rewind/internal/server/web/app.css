@@ -18,6 +18,15 @@
   --lang-py: #c79b1d;
   --lang-ts: #4a76d8;
   --lang-js: #b9a320;
+  --lang-java: #c0612b;
+  --lang-kt: #8a5cd6;
+  --lang-cs: #2f8f4e;
+  --lang-c: #6b7a90;
+  --lang-cpp: #d1407a;
+  --lang-rs: #b5532a;
+  --lang-php: #6c6fbf;
+  --lang-rb: #c4302b;
+  --lang-dart: #1f9bc8;
   --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
   --font-code: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
 }
@@ -26,6 +35,8 @@
     --bg: #0e1322; --surface: #151c2f; --raised: #1c2540; --line: #28324f; --ink: #dfe5f5; --muted: #8b95b2;
     --select: #8b97ff; --agent: #f2a33a; --agent-soft: #4a3415; --impact: #5c4320; --cycle: #ff6b66;
     --entry: #3cc6a8; --edge: #4c5677; --lang-go: #4fc3e0; --lang-py: #e7c95e; --lang-ts: #7ea2f5; --lang-js: #ddd06b;
+    --lang-java: #ee8a52; --lang-kt: #b08cf0; --lang-cs: #5cc27c; --lang-c: #9aa8bd; --lang-cpp: #f06d9f;
+    --lang-rs: #e58357; --lang-php: #9a9df0; --lang-rb: #f0645f; --lang-dart: #4cc3ef;
     color-scheme: dark;
   }
 }

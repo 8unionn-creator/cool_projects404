@@ -16,17 +16,18 @@ type Cycle struct {
 }
 
 // Cycles finds dependency cycles that are worth fixing:
-//   - file-level import cycles in Python and JS/TS (a classic source of
-//     initialisation-order bugs). Type-only imports are ignored because
-//     they are erased at runtime. Go is skipped here: files of one package
-//     referencing each other is normal.
-//   - directory-level cycles in any language (layering violations).
+//   - file-level import cycles where load order matters: Python and JS/TS
+//     (initialisation-order bugs) and C/C++ (include order). Type-only and
+//     lazy imports are ignored because they never run at load time. In Go,
+//     Rust, Java, Kotlin, C#, PHP, Ruby and Dart, files and classes of one
+//     package referring to each other is normal, so only folders count.
+//   - directory-level cycles in any language but Rust (layering violations).
 func (g *Graph) Cycles() []Cycle {
 	var out []Cycle
 	n := len(g.Files)
 	adj := make([][]int, n)
 	for _, e := range g.Edges {
-		if e.TypeOnly || g.Files[e.From].Lang == Go || g.Files[e.To].Lang == Go {
+		if e.TypeOnly || !OrderSensitive(g.Files[e.From].Lang) || !OrderSensitive(g.Files[e.To].Lang) {
 			continue
 		}
 		adj[e.From] = append(adj[e.From], e.To)
@@ -44,7 +45,9 @@ func (g *Graph) Cycles() []Cycle {
 	dadj := make([][]int, len(dirs))
 	seen := map[[2]int]bool{}
 	for _, e := range g.Edges {
-		if e.TypeOnly {
+		// Rust allows any cycle inside a crate and Cargo forbids them
+		// between crates, so Rust module cycles are never a problem.
+		if e.TypeOnly || g.Files[e.From].Lang == Rust || g.Files[e.To].Lang == Rust {
 			continue
 		}
 		a, b := dirIdx[e.From], dirIdx[e.To]
@@ -62,6 +65,16 @@ func (g *Graph) Cycles() []Cycle {
 		out = append(out, Cycle{Level: "dir", Members: m})
 	}
 	return out
+}
+
+// OrderSensitive reports whether import cycles between files of a language
+// can break a program at load time.
+func OrderSensitive(l Lang) bool {
+	switch l {
+	case Python, JavaScript, TypeScript, C, Cpp:
+		return true
+	}
+	return false
 }
 
 func (g *Graph) dirIndex() ([]string, []int) {

@@ -8,7 +8,10 @@ const fmtN = (n) => (n >= 10000 ? (n / 1000).toFixed(0) + "k" : n >= 1000 ? (n /
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const dirOf = (p) => { const i = p.lastIndexOf("/"); return i < 0 ? "." : p.slice(0, i); };
 const baseOf = (p) => p.slice(p.lastIndexOf("/") + 1);
-const LANGS = { go: "Go", py: "Python", ts: "TypeScript", js: "JavaScript" };
+const LANGS = {
+  go: "Go", py: "Python", ts: "TypeScript", js: "JavaScript", java: "Java", kt: "Kotlin", cs: "C#",
+  c: "C", cpp: "C++", rs: "Rust", php: "PHP", rb: "Ruby", dart: "Dart",
+};
 
 const S = {
   meta: null,
@@ -168,20 +171,21 @@ function labelOf(key) {
   return base + "/";
 }
 
+// autoDepth picks how many folder levels to group by: the shallowest
+// level that gives a readable number of boxes. Single-folder wrappers like
+// src/Monolog/ are looked through rather than shown as one big box.
 function autoDepth() {
   const files = S.data.graph.files.filter(visibleFile);
   const save = S.focus; S.focus = "";
-  let best = 1;
-  let prev = -1;
+  const counts = [];
   for (let d = 1; d <= 8; d++) {
     S.depth = d;
-    const count = new Set(files.map((f) => groupKey(f.p))).size;
-    if (count > 60) break;
-    best = d;
-    if (count >= 10 || count === prev) break;
-    prev = count;
+    counts[d] = new Set(files.map((f) => groupKey(f.p))).size;
   }
   S.focus = save;
+  for (let d = 1; d <= 8; d++) if (counts[d] >= 8 && counts[d] <= 60) return d;
+  let best = 1;
+  for (let d = 1; d <= 8; d++) if (counts[d] <= 60 && counts[d] > counts[best]) best = d;
   return best;
 }
 
@@ -212,9 +216,13 @@ function buildModel() {
     if (t && !S.showTypes) continue;
     if (ka.startsWith("o:") && kb.startsWith("o:")) continue;
     const k = ka + "\u0000" + kb;
+    // Files of one package referring to each other is normal in these
+    // languages, so such edges never count as cycles.
+    const soft = (ka.startsWith("f:") && kb.startsWith("f:") && !ORDER_SENSITIVE.has(g.files[a].g) && !ORDER_SENSITIVE.has(g.files[b].g)) ||
+      (g.files[a].g === "rs" && g.files[b].g === "rs"); // Rust: any cycle inside a crate is legal
     const e = edges.get(k);
-    if (e) { e.w += w; e.t = e.t && !!t; }
-    else edges.set(k, { from: ka, to: kb, w, t: !!t });
+    if (e) { e.w += w; e.t = e.t && !!t; e.soft = e.soft && soft; }
+    else edges.set(k, { from: ka, to: kb, w, t: !!t, soft });
   }
   // Outside groups are context: keep only those wired to the focus.
   if (S.focus) {
@@ -264,13 +272,15 @@ function sccs(keys, edges, skip) {
   return out;
 }
 
+const ORDER_SENSITIVE = new Set(["py", "js", "ts", "c", "cpp"]);
+
 function markCycles(model) {
-  const comps = sccs([...model.nodes.keys()], model.edges, (e) => e.t);
+  const comps = sccs([...model.nodes.keys()], model.edges, (e) => e.t || e.soft);
   model.comp = new Map();
   comps.forEach((c, i) => c.forEach((k) => model.comp.set(k, i)));
   model.compSize = comps.map((c) => c.length);
   for (const e of model.edges) {
-    e.cycle = !e.t && model.comp.get(e.from) === model.comp.get(e.to) && model.compSize[model.comp.get(e.from)] > 1;
+    e.cycle = !e.t && !e.soft && model.comp.get(e.from) === model.comp.get(e.to) && model.compSize[model.comp.get(e.from)] > 1;
   }
   for (const n of model.nodes.values()) n.cycle = model.compSize[model.comp.get(n.key)] > 1;
 }
@@ -282,34 +292,60 @@ function markCycles(model) {
 // their members share a layer.
 function layout(model) {
   const keys = [...model.nodes.keys()];
-  const nComp = model.compSize.length;
-  const preds = Array.from({ length: nComp }, () => new Set());
-  const succs = Array.from({ length: nComp }, () => new Set());
   const degree = new Map(keys.map((k) => [k, 0]));
-  for (const e of model.edges) {
-    degree.set(e.from, degree.get(e.from) + 1); degree.set(e.to, degree.get(e.to) + 1);
-    // Type-only edges were left out of the cycle detection, so they must
-    // not shape the layers either, or they would reintroduce loops.
-    if (e.t) continue;
-    const a = model.comp.get(e.from), b = model.comp.get(e.to);
-    if (a !== b) { succs[a].add(b); preds[b].add(a); }
-  }
-  const rank = new Array(nComp).fill(0);
-  const indeg = preds.map((p) => p.size);
-  const queue = [];
-  indeg.forEach((d, i) => { if (d === 0) queue.push(i); });
-  while (queue.length) {
-    const c = queue.shift();
-    for (const s of succs[c]) {
-      rank[s] = Math.max(rank[s], rank[c] + 1);
-      if (--indeg[s] === 0) queue.push(s);
+  for (const e of model.edges) { degree.set(e.from, degree.get(e.from) + 1); degree.set(e.to, degree.get(e.to) + 1); }
+
+  // Cycle removal: a depth-first search from the least-imported nodes finds
+  // the few "back" edges that close loops. They are left out of layering
+  // (and drawn going up), so even code with cycles reads top-down. Type-only
+  // and same-package edges never shape the layers.
+  const hard = model.edges.filter((e) => !e.t && !e.soft);
+  const out = new Map(keys.map((k) => [k, []]));
+  const indeg = new Map(keys.map((k) => [k, 0]));
+  for (const e of hard) { out.get(e.from).push(e); indeg.set(e.to, indeg.get(e.to) + 1); }
+  const back = new Set();
+  const state = new Map();
+  const roots = [...keys].sort((a, b) => indeg.get(a) - indeg.get(b) || a.localeCompare(b));
+  for (const r of roots) {
+    if (state.has(r)) continue;
+    const stack = [[r, 0]];
+    state.set(r, 1);
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      const edges = out.get(top[0]);
+      if (top[1] < edges.length) {
+        const e = edges[top[1]++];
+        const st = state.get(e.to);
+        if (st === 1) back.add(e);
+        else if (!st) { state.set(e.to, 1); stack.push([e.to, 0]); }
+        continue;
+      }
+      state.set(top[0], 2);
+      stack.pop();
     }
   }
+  model.back = back;
+  const rankOf = new Map(keys.map((k) => [k, 0]));
+  const remaining = new Map(keys.map((k) => [k, 0]));
+  const dag = hard.filter((e) => !back.has(e));
+  for (const e of dag) remaining.set(e.to, remaining.get(e.to) + 1);
+  const queue = keys.filter((k) => remaining.get(k) === 0);
+  const succ = new Map(keys.map((k) => [k, []]));
+  for (const e of dag) succ.get(e.from).push(e.to);
+  while (queue.length) {
+    const k = queue.shift();
+    for (const t of succ.get(k)) {
+      rankOf.set(t, Math.max(rankOf.get(t), rankOf.get(k) + 1));
+      remaining.set(t, remaining.get(t) - 1);
+      if (remaining.get(t) === 0) queue.push(t);
+    }
+  }
+  const rank = { get: (k) => rankOf.get(k) };
   const connected = keys.filter((k) => degree.get(k) > 0);
   const isolated = keys.filter((k) => degree.get(k) === 0).sort();
   const layers = [];
   for (const k of connected) {
-    const r = rank[model.comp.get(k)];
+    const r = rank.get(k);
     (layers[r] ||= []).push(k);
   }
   for (let r = 0; r < layers.length; r++) layers[r] ||= [];
@@ -432,13 +468,14 @@ function render() {
     const hot = nodeChanged.has(e.to) && (nodeImpacted.has(e.from) || nodeChanged.has(e.from));
     let cls = "edge";
     if (e.t) cls += " type";
-    if (e.cycle) cls += " cycle";
+    const closing = e.cycle && S.model.back?.has(e); // the arrow that closes a loop
+    if (closing) cls += " cycle";
     if (hot) cls += " hot";
     if (isNew) cls += " new";
     if (sel) cls += e.from === sel || e.to === sel ? " focus" : " dim";
-    const marker = e.cycle ? "arrow-cycle" : hot || isNew ? "arrow-hot" : "arrow";
+    const marker = closing ? "arrow-cycle" : hot || isNew ? "arrow-hot" : "arrow";
     const path = el("path", { d: edgePath(a, b), class: cls, "marker-end": `url(#${marker})` }, edgeLayer);
-    el("title", {}, path).textContent = `${labelOf(e.from)} → ${labelOf(e.to)} · ${plural(e.w, "reference")}${e.t ? " (types only)" : ""}${e.cycle ? " · part of a cycle" : ""}`;
+    el("title", {}, path).textContent = `${labelOf(e.from)} → ${labelOf(e.to)} · ${plural(e.w, "reference")}${e.t ? " (not a load-time dependency: type import, lazy import or module declaration)" : ""}${closing ? " · closes a cycle" : e.cycle ? " · inside a cycle" : ""}`;
   }
 
   const nodeLayer = el("g", {}, vp);
@@ -819,7 +856,7 @@ function overview() {
 
   const entries = files.filter((f) => f.e).slice(0, 8);
   html += `<h3>Start here <small>entry points</small></h3>`;
-  html += entries.length ? `<ul class="list">${entries.map((f) => fileRow(f.p, `${fmtN(f.n)} lines`)).join("")}</ul>` : `<p class="empty">No entry points found (no main, __main__, or package.json bin).</p>`;
+  html += entries.length ? `<ul class="list">${entries.map((f) => fileRow(f.p, `${fmtN(f.n)} lines`)).join("")}</ul>` : `<p class="empty">No entry points found (no main function, script or package binary).</p>`;
 
   const cycles = S.data.cycles;
   html += `<h3>Cycles <small>${cycles.length ? plural(cycles.length, "cycle") : "none"}</small></h3>`;

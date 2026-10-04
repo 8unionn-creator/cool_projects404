@@ -12,6 +12,7 @@
 package codemap
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -45,7 +46,7 @@ type Symbol struct {
 type Import struct {
 	Spec     string   // module path, package name or relative file path
 	Line     int      // 1-based
-	TypeOnly bool     // not evaluated at load time: TS `import type`, Python TYPE_CHECKING or function-local imports
+	TypeOnly bool     // not a load-time dependency: TS `import type`, Python TYPE_CHECKING or function-local imports, Rust `mod`, Dart `part`
 	Names    []string // Python: names in `from x import a, b`
 	Alias    string   // Go: explicit package alias
 }
@@ -126,11 +127,16 @@ const maxFileSize = 1 << 20 // larger files are almost always generated or bundl
 func skipDir(name string) bool {
 	switch name {
 	case "node_modules", "vendor", "third_party", "dist", "build", "out", "target",
-		"testdata", "__pycache__", ".venv", "venv", "site-packages", ".next", ".git", "coverage":
+		"testdata", "__pycache__", ".venv", "venv", "site-packages", ".next", ".git", "coverage",
+		"obj", ".gradle", ".idea", "Pods", "DerivedData", ".dart_tool", ".pub-cache", "cmake-build-debug",
+		"cmake-build-release", ".cargo", "bower_components", "jspm_packages":
 		return true
 	}
 	return false
 }
+
+// IsSource reports whether the map understands a file, by its name.
+func IsSource(p string) bool { return langOf(p) != "" }
 
 func langOf(p string) Lang {
 	if strings.HasSuffix(p, ".min.js") || strings.HasSuffix(p, ".d.ts") {
@@ -145,6 +151,24 @@ func langOf(p string) Lang {
 		return JavaScript
 	case ".ts", ".tsx", ".mts", ".cts":
 		return TypeScript
+	case ".java":
+		return Java
+	case ".kt", ".kts":
+		return Kotlin
+	case ".cs":
+		return CSharp
+	case ".c", ".h":
+		return C
+	case ".cc", ".cpp", ".cxx", ".c++", ".hh", ".hpp", ".hxx", ".h++", ".ipp", ".tpp":
+		return Cpp
+	case ".rs":
+		return Rust
+	case ".php":
+		return PHP
+	case ".rb", ".rake":
+		return Ruby
+	case ".dart":
+		return Dart
 	}
 	return ""
 }
@@ -255,6 +279,7 @@ func resolveTree(root, treeish string) (string, error) {
 }
 
 func parse(p string, src []byte) *File {
+	src = bytes.TrimPrefix(src, []byte("\xef\xbb\xbf")) // UTF-8 byte order mark, common on Windows
 	f := &File{Path: p, Lang: langOf(p), Lines: countLines(src)}
 	switch f.Lang {
 	case Go:
@@ -263,6 +288,10 @@ func parse(p string, src []byte) *File {
 		parsePython(f, src)
 	case JavaScript, TypeScript:
 		parseJS(f, src)
+	case Java, Kotlin, CSharp, C, Cpp, Rust, PHP, Dart:
+		parseCLike(f, src)
+	case Ruby:
+		parseRuby(f, src)
 	}
 	return f
 }
@@ -299,6 +328,13 @@ func build(src *treeSource, files []*File) *Graph {
 	resolveGo(b)
 	resolvePython(b)
 	resolveJS(b)
+	resolveJVM(b)
+	resolveCSharp(b)
+	resolveC(b)
+	resolveRust(b)
+	resolvePHP(b)
+	resolveRuby(b)
+	resolveDart(b)
 
 	for _, e := range b.edges {
 		g.Edges = append(g.Edges, *e)

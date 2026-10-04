@@ -321,7 +321,7 @@ func (c *cli) fileIn(g *codemap.Graph, arg string) (string, int, error) {
 			return p, i, nil
 		}
 	}
-	return "", -1, fmt.Errorf("%s is not a source file the map understands (Go, Python, JavaScript or TypeScript)", arg)
+	return "", -1, fmt.Errorf("%s is not a source file the map understands (see Language support in the README)", arg)
 }
 
 // structure prints how a step changed the shape of the code, for `show`.
@@ -371,10 +371,4 @@ func (c *cli) structure(fromTree, toTree string, files []store.FileChange) {
 	}
 }
 
-func codemapLang(p string) bool {
-	switch path.Ext(p) {
-	case ".go", ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts":
-		return true
-	}
-	return false
-}
+func codemapLang(p string) bool { return codemap.IsSource(p) }

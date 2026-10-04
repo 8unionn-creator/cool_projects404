@@ -13,7 +13,7 @@ Things I build to sharpen my skills and make my own work easier.
 
 When an AI agent breaks something at step 14 of 30, `rewind restore 13` gets you back, without losing steps 1–12 or touching your branch. Each step is stored as a real Git commit under `refs/rewind/`, tagged with the prompt that caused it. Install the Claude Code hooks with `rewind init claude`.
 
-`rewind map` opens an interactive map of the codebase (Go, Python, TypeScript/JavaScript) and replays the session on it: which code each step touched, what depends on it, and which step added a dependency or an import cycle. [Read more →](rewind/README.md)
+`rewind map` opens an interactive map of the codebase (12 languages: Go, Python, TypeScript/JavaScript, Java, Kotlin, C#, C/C++, Rust, PHP, Ruby, Dart) and replays the session on it: which code each step touched, what depends on it, and which step added a dependency or an import cycle. [Read more →](rewind/README.md)
 
 ![Rewind map](rewind/docs/map-step.png)
 

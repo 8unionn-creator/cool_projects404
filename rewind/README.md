@@ -98,13 +98,39 @@ A single binary with an embedded viewer. It runs offline on localhost and loads 
 
 ### Language support
 
-| | Parser | Resolves |
-|---|---|---|
-| **Go** | the standard library's `go/parser` | packages across nested `go.mod` modules; links to the exact file that defines each `pkg.Name` used, and files within a package by the names they share |
-| **Python** | tokenizer that skips strings and comments | absolute and relative imports, `src/` layouts, packages in subfolders, sibling scripts |
-| **TypeScript / JavaScript** | tokenizer that handles regexes, template literals and JSX | relative paths and extensions (`.js` → `.ts`), `index` files, `tsconfig` `paths`/`baseUrl`, monorepo packages by name (including `exports`, and `dist/` mapped back to `src/`), `#subpath` imports, `require()` and `import()` |
+| Language | Resolves |
+|---|---|
+| **Go** | packages across nested `go.mod` modules (parsed with the standard library's `go/parser`); links to the exact file that defines each `pkg.Name` used, and files within a package by the names they share |
+| **Python** | absolute and relative imports, `src/` layouts, packages in subfolders, sibling scripts; `if TYPE_CHECKING:` and function-local imports count as lazy |
+| **TypeScript / JavaScript** | relative paths and extensions (`.js` → `.ts`), `index` files, `tsconfig` `paths`/`baseUrl`, monorepo packages by name (including `exports`, and `dist/` mapped back to `src/`), `#subpath` imports, `require()` and `import()` |
+| **Java / Kotlin** | `package` and `import` (including `*` and `static`), same-package classes by name, mixed Java and Kotlin, Kotlin top-level functions and properties |
+| **C#** | `namespace` (block or file-scoped), `using` (including aliases, `static` and project-wide `global using`), types referenced from visible namespaces |
+| **C / C++** | `#include "…"` relative to the file, then by path suffix like an include path would; `<…>` headers from the repo; out-of-class definitions like `Engine::run` |
+| **Rust** | `mod` declarations, `use` trees (`crate::`, `self::`, `super::`, `{a, b::c}`), workspace crates by name, external crates |
+| **PHP** | `namespace` and `use` (including group `use A\{B, C}`), Composer PSR-4 autoloading, trait `use`, `require`/`include` |
+| **Ruby** | `require` and `require_relative` with `lib/`, `spec/` and `test/` on the load path; constants for Rails/Zeitwerk autoloading |
+| **Dart** | `import`/`export`/`part` with `package:` URIs mapped through `pubspec.yaml`, relative imports |
 
-The parsers are deliberately small and dependency-free, so `rewind` stays a single static binary with no cgo. Calls between functions are not traced; the map works at the level of files and imports. Tested on Flask (83 files, mapped in 74 ms), Vite (1,549 files, 234 ms) and Hugo (936 files, 298 ms).
+The parsers are deliberately small and dependency-free, so `rewind` stays a single static binary with no cgo. They skip strings and comments correctly, including raw strings, char literals and Rust lifetimes. Calls between functions are not traced; the map works at the level of files and imports.
+
+**Cycles** are only reported where they can actually break something. File-level import cycles are reported in Python and JS/TS (import order) and C/C++ (include order). Folder-level cycles are reported in every language except Rust, which allows any cycle inside a crate, while Cargo forbids them between crates. In the map, the arrows that close each loop are drawn in red.
+
+Tested on real projects, each mapped in under 160 ms:
+
+| Language | Project | Files | Time |
+|---|---|---|---|
+| Python | Flask | 83 | 74 ms |
+| TypeScript | Vite | 1,549 | 234 ms |
+| Go | Hugo | 936 | 298 ms |
+| Java | Spring PetClinic | 50 | 44 ms |
+| Kotlin | Okio | 357 | 139 ms |
+| C# | CleanArchitecture | 152 | 43 ms |
+| C | jq | 55 | 101 ms |
+| C++ | fmt | 79 | 153 ms |
+| Rust | ripgrep | 111 | 101 ms |
+| PHP | Monolog | 228 | 82 ms |
+| Ruby | Sinatra | 147 | 70 ms |
+| Dart | dart-lang/http | 367 | 104 ms |
 
 ## How it works
 
