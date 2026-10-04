@@ -220,3 +220,44 @@ func TestInstallOtherAgents(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallMCP(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".gemini"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".gemini", "settings.json"), []byte(`{"theme":"dark","mcpServers":{"other":{"command":"x"}}}`), 0o644)
+	os.MkdirAll(filepath.Join(dir, ".codex"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".codex", "config.toml"), []byte("model = \"o4\""), 0o644)
+	for _, agent := range Agents {
+		added, err := InstallMCP(agent, dir, "rewind")
+		if err != nil || !added {
+			t.Fatalf("%s: added=%v err=%v", agent, added, err)
+		}
+		if added, _ := InstallMCP(agent, dir, "rewind"); added {
+			t.Fatalf("%s: installing twice must not add a second server", agent)
+		}
+	}
+	var gem struct {
+		Theme      string
+		MCPServers map[string]struct {
+			Command string
+			Args    []string
+		} `json:"mcpServers"`
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, ".gemini", "settings.json"))
+	json.Unmarshal(b, &gem)
+	if gem.Theme != "dark" || gem.MCPServers["other"].Command != "x" || gem.MCPServers["rewind"].Args[0] != "mcp" {
+		t.Fatalf("existing settings must be kept: %s", b)
+	}
+	b, _ = os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	if string(b) != "model = \"o4\"\n\n[mcp_servers.rewind]\ncommand = \"rewind\"\nargs = [\"mcp\"]\n" {
+		t.Fatalf("codex config:\n%s", b)
+	}
+	b, _ = os.ReadFile(filepath.Join(dir, ".cursor", "mcp.json"))
+	if !strings.Contains(string(b), "${workspaceFolder}") {
+		t.Fatalf("cursor should pass the workspace folder: %s", b)
+	}
+	b, _ = os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+	if !strings.Contains(string(b), `"enabledMcpjsonServers": [`) {
+		t.Fatalf("claude should pre-approve the server: %s", b)
+	}
+}

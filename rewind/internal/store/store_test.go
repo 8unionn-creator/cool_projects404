@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -271,5 +272,55 @@ func TestConcurrentSnapshots(t *testing.T) {
 	last := git(t, st.Repo.Root, "ls-tree", "--name-only", steps[len(steps)-1].Tree)
 	if strings.Count(last, "f") < 8 {
 		t.Fatalf("final step should contain all 8 files:\n%s", last)
+	}
+}
+
+func TestUndoOneStepKeepsLaterWork(t *testing.T) {
+	st := newRepo(t)
+	write(t, st.Repo.Root, "a.txt", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n")
+	mustSnap(t, st, "s", Meta{})
+	write(t, st.Repo.Root, "a.txt", "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\n")
+	write(t, st.Repo.Root, "b.txt", "new file\n")
+	bad := mustSnap(t, st, "s", Meta{Kind: KindTool, Summary: "bad step"})
+	write(t, st.Repo.Root, "a.txt", "ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n")
+	mustSnap(t, st, "s", Meta{Kind: KindTool, Summary: "good later step"})
+	steps, _ := st.Steps("s")
+
+	if _, err := st.Undo("s", steps[0], bad, true); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, st.Repo.Root, "a.txt") != "ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n" {
+		t.Fatal("a dry run must not change files")
+	}
+	files, err := st.Undo("s", steps[0], bad, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("files = %+v", files)
+	}
+	if got := read(t, st.Repo.Root, "a.txt"); got != "one\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n" {
+		t.Fatalf("undo should revert line 1 and keep the later edit, got %q", got)
+	}
+	if exists(st.Repo.Root, "b.txt") {
+		t.Fatal("undo should delete the file the step added")
+	}
+	after, _ := st.Steps("s")
+	if len(after) != 4 || after[3].Kind != KindRestore { // "before" is skipped: nothing changed since the last step
+		t.Fatalf("an undo should record before and after, got %d steps", len(after))
+	}
+
+	// A later edit of the same lines conflicts: nothing may change.
+	write(t, st.Repo.Root, "c.txt", "x\n")
+	s1 := mustSnap(t, st, "s", Meta{Kind: KindTool})
+	write(t, st.Repo.Root, "c.txt", "y\n")
+	s2 := mustSnap(t, st, "s", Meta{Kind: KindTool})
+	write(t, st.Repo.Root, "c.txt", "z\n")
+	_, err = st.Undo("s", s1, s2, false)
+	if !errors.Is(err, ErrUndoConflict) || !strings.Contains(err.Error(), "c.txt") {
+		t.Fatalf("want a conflict naming c.txt, got %v", err)
+	}
+	if read(t, st.Repo.Root, "c.txt") != "z\n" {
+		t.Fatal("a failed undo must not touch files")
 	}
 }

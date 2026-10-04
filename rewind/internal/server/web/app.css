@@ -215,6 +215,17 @@ pre.code span.l.hl { background: color-mix(in srgb, var(--select) 18%, transpare
   content: ""; position: absolute; top: -6px; left: 50%; transform: translateX(-50%); width: 6px; height: 6px; border-radius: 50%;
   background: var(--cycle);
 }
+.tick.culprit { background: var(--cycle); border-color: transparent; }
+.tick.culprit::after {
+  content: "!"; position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+  font: 700 11px/1 system-ui, sans-serif; color: var(--cycle);
+}
+.verdict {
+  margin: 10px 0 4px; padding: 10px 12px; border-radius: 8px; border-left: 3px solid var(--cycle);
+  background: color-mix(in srgb, var(--cycle) 8%, var(--surface));
+}
+.verdict code { font-size: 12px; }
+.verdict .sub { margin-top: 6px; }
 @media (prefers-reduced-motion: no-preference) {
   .node rect.box, .edge { transition: fill 0.25s, stroke 0.25s, opacity 0.25s; }
 }
@@ -284,3 +295,4 @@ button.danger-outline { border-color: color-mix(in srgb, var(--cycle) 60%, var(-
   background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
 }
 .toast.err { background: var(--cycle); color: #fff; }
+button.link { background: none; border: 0; padding: 0; color: var(--select); cursor: pointer; text-decoration: underline; font: inherit; }

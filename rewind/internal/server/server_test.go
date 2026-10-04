@@ -266,3 +266,17 @@ func TestExplainEndpoint(t *testing.T) {
 		t.Fatalf("without credentials the reply should explain how to set them up:\n%s", rec.Body.String())
 	}
 }
+
+func TestSessionCarriesBisectResult(t *testing.T) {
+	st, h := setup(t)
+	os.WriteFile(filepath.Join(st.Repo.GitDir, "rewind", "bisect.json"), []byte(`{"session":"demo","culprit":1,"lastGood":0,"command":"make test"}`), 0o644)
+	var sess struct {
+		Bisect *struct {
+			Culprit int
+			Command string
+		}
+	}
+	if get(t, h, "/api/session?name=demo", &sess) != 200 || sess.Bisect == nil || sess.Bisect.Culprit != 1 || sess.Bisect.Command != "make test" {
+		t.Fatalf("session should carry the last bisect result: %+v", sess.Bisect)
+	}
+}

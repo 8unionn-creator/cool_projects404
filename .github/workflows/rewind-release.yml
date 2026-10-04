@@ -1,0 +1,41 @@
+name: rewind release
+
+# Push a tag such as rewind-v0.5.0 to publish binaries for every platform.
+# `rewind update` installs the newest of these releases.
+on:
+  push:
+    tags: ["rewind-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rewind
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: rewind/go.mod
+          cache-dependency-path: rewind/go.mod
+      - run: go test ./...
+      - name: build
+        run: |
+          version="${GITHUB_REF_NAME#rewind-v}"
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            out="dist/rewind-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.version=$version" -o "$out" ./cmd/rewind
+          done
+          (cd editors/vscode && npx --yes @vscode/vsce@3 package --out ../../dist/)
+          (cd dist && sha256sum * > checksums.txt)
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Rewind ${GITHUB_REF_NAME#rewind-v}" --notes \
+            "Download the binary for your platform, or run \`rewind update\` if you already have Rewind. The .vsix is the VS Code extension."

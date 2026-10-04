@@ -17,13 +17,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/8unionn-creator/cool_projects404/rewind/internal/codemap"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/gitx"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/hook"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/store"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/watch"
 )
 
-var version = "0.4.0"
+var version = "0.5.0"
 
 const usage = `rewind: undo history and a code map for AI coding agents
 
@@ -38,6 +39,13 @@ Usage:
   rewind diff [--stat] <a> [<b>]  diff step a against b (default: the step before a)
   rewind diff -w <step>           diff a step against the current files
   rewind restore [-n] <step>      put the files back as they were at a step
+  rewind undo [-n] <step>         undo just one step, keeping every change after it
+
+Find what broke:
+  rewind bisect -- <test command> find the agent step that broke a test (e.g. -- npm test)
+
+Let agents use Rewind:
+  rewind mcp                      run the MCP server (rewind init adds it for each agent)
 
 Understand the code:
   rewind map                      open the interactive code map in your browser
@@ -46,6 +54,8 @@ Understand the code:
   rewind impact <file>...         every file that depends on these files
   rewind impact --step <step>     every file that depends on what a step changed
   rewind callers <file> <func>    who calls a function, and what it calls
+  rewind find <name>              where a function, class or type is defined
+  rewind overview                 a summary of the repository's shape
   rewind cycles [--fail]          list import cycles (--fail: exit 1 for CI)
   rewind explain <file|folder>    ask Claude to explain code (needs ANTHROPIC_API_KEY)
   rewind explain step <n> | tour  explain what an agent step did, or tour the repository
@@ -80,6 +90,10 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return nil
 	case "hook":
 		return cmdHook(rest, stdin, out)
+	case "mcp":
+		return cmdMCP(rest, stdin, out)
+	case "update":
+		return cmdUpdate(rest, out)
 	}
 
 	st, err := store.Open(".")
@@ -120,6 +134,14 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return c.callersCmd(rest)
 	case "explain":
 		return c.explainCmd(rest)
+	case "bisect":
+		return c.bisectCmd(rest)
+	case "undo":
+		return c.undo(rest)
+	case "find":
+		return c.findCmd(rest)
+	case "overview":
+		return c.overviewCmd(rest)
 	}
 	return fmt.Errorf("unknown command %q (run `rewind help`)", cmd)
 }
@@ -128,6 +150,12 @@ type cli struct {
 	st    *store.Store
 	out   io.Writer
 	color bool
+	an    *codemap.Analyzer // shared, so repeated queries reuse parsed files
+
+	// Set by the MCP server, which serves one repository from anywhere.
+	ctx      context.Context // cancels long commands (bisect)
+	progress func(string)    // reports progress of long commands
+	base     string          // relative paths are relative to this, not the process directory
 }
 
 // ---------------------------------------------------------------- commands
@@ -137,6 +165,7 @@ func (c *cli) init(args []string) error {
 	shared := fs.Bool("shared", false, "Claude Code: write .claude/settings.json (committed) instead of settings.local.json")
 	command := fs.String("command", "", "hook command to register (default: rewind hook <agent>)")
 	absolute := fs.Bool("absolute", false, "register this rewind binary by its full path, for agents that do not see your PATH")
+	noMCP := fs.Bool("no-mcp", false, "do not add the Rewind MCP server (the tools agents use to query the map, rewind and bisect)")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -157,15 +186,18 @@ func (c *cli) init(args []string) error {
 		if agent == "claude" && *shared {
 			rel = ".claude/settings.json"
 		}
+		bin := "rewind"
+		if *absolute {
+			if exe, err := os.Executable(); err == nil {
+				bin = filepath.ToSlash(exe)
+			}
+		}
 		cmd := *command
 		if cmd == "" {
-			bin := "rewind"
-			if *absolute {
-				if exe, err := os.Executable(); err == nil {
-					bin = strconv.Quote(filepath.ToSlash(exe))
-				}
-			}
 			cmd = bin + " hook " + agent
+			if *absolute {
+				cmd = strconv.Quote(bin) + " hook " + agent
+			}
 		}
 		added, err := hook.InstallAgent(agent, filepath.Join(c.st.Repo.Root, filepath.FromSlash(rel)), cmd)
 		if err != nil {
@@ -179,8 +211,24 @@ func (c *cli) init(args []string) error {
 		if inst.Note != "" && added > 0 {
 			fmt.Fprintf(c.out, "        %s\n", c.dim(inst.Note))
 		}
+		if *noMCP {
+			continue
+		}
+		mcpAdded, err := hook.InstallMCP(agent, c.st.Repo.Root, bin)
+		if err != nil {
+			return err
+		}
+		if mcpAdded {
+			fmt.Fprintf(c.out, "%-7s added the rewind MCP server to %s\n", "", hook.MCPFiles[agent])
+			if note := hook.MCPNotes[agent]; note != "" {
+				fmt.Fprintf(c.out, "        %s\n", c.dim(note))
+			}
+		}
 	}
 	fmt.Fprintln(c.out, "Sessions in this repo are now recorded. Run `rewind log` during or after one, or `rewind map` to replay it.")
+	if !*noMCP {
+		fmt.Fprintln(c.out, c.dim("Agents can now ask Rewind about the code, checkpoint, undo and bisect through its MCP tools."))
+	}
 	return nil
 }
 
@@ -370,6 +418,9 @@ func (c *cli) show(args []string) error {
 // relToRoot turns a path given on the command line into a path relative to
 // the repository root.
 func (c *cli) relToRoot(p string) (string, error) {
+	if c.base != "" && !filepath.IsAbs(p) {
+		p = filepath.Join(c.base, p)
+	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err

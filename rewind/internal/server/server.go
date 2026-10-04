@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -218,7 +219,21 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 			out[i].Changes = append(out[i].Changes, change{f.Path, f.Added, f.Deleted})
 		}
 	}
-	reply(w, map[string]any{"name": name, "steps": out})
+	res := map[string]any{"name": name, "steps": out}
+	// The last `rewind bisect` result, so the timeline can mark the culprit.
+	if b, err := os.ReadFile(filepath.Join(s.st.Repo.GitDir, "rewind", "bisect.json")); err == nil {
+		var bi struct {
+			Session    string `json:"session"`
+			Culprit    int    `json:"culprit"`
+			LastGood   int    `json:"lastGood"`
+			Candidates []int  `json:"candidates"`
+			Command    string `json:"command"`
+		}
+		if json.Unmarshal(b, &bi) == nil && bi.Session == name {
+			res["bisect"] = bi
+		}
+	}
+	reply(w, res)
 }
 
 func (s *Server) diff(w http.ResponseWriter, r *http.Request) {

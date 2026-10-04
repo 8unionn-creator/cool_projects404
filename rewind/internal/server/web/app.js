@@ -711,6 +711,11 @@ async function panelAction(act, data) {
         S.restorePlan = { session: S.session.name, step: st.step, write: plan.write, delete: plan.delete };
         return renderPanel();
       }
+      case "goto-step": {
+        const i = steps.findIndex((x) => x.step === +data.step);
+        if (i >= 0) { stopPlay(); await selectStep(i); }
+        return;
+      }
       case "restore-cancel":
         S.restorePlan = null;
         return renderPanel();
@@ -1120,6 +1125,14 @@ async function loadCode(path, line, end) {
 function stepSection() {
   const st = S.session.steps[S.stepIdx];
   let html = `<h2>Step ${st.step} <span class="pill agent">${esc(st.kind)}</span></h2><div class="sub">${esc(st.summary)} · ${new Date(st.time * 1000).toLocaleTimeString()}</div>`;
+  const bi = S.session.bisect;
+  if (bi && bi.culprit === st.step) {
+    const which = bi.candidates?.length ? `is the first step known to break` : `broke`;
+    html += `<div class="verdict" role="note"><b>Bisect:</b> this step ${which} <code>${esc(bi.command)}</code>.`;
+    if (bi.candidates?.length) html += ` Steps ${esc(bi.candidates.join(", "))} could not be tested, so any of them may be the cause.`;
+    html += ` <button class="link" data-act="goto-step" data-step="${bi.lastGood}">Go to step ${bi.lastGood}, the last good one</button>`;
+    html += `<div class="sub">Undo only this step, keeping later work: <code>rewind undo ${st.step}</code></div></div>`;
+  }
   html += `<div class="actions">`;
   if (S.stepIdx > 0) html += `<button data-act="step-diff">View changes</button>`;
   html += `<button data-act="now-diff" title="Everything that changed between this step and your files now">Compare with now</button>`;
@@ -1179,7 +1192,9 @@ function renderTimeline() {
     if (st.prompt) lastPrompt = st.prompt;
     const d = diffCache.get(st.tree);
     const warn = d && d.newCycles.length ? " warn" : "";
-    return `<div class="tick ${esc(st.kind)}${newPrompt && i > 0 ? " prompt-start" : ""}${warn}" style="height:${h}px" role="option" data-i="${i}" aria-selected="${i === S.stepIdx}" title="Step ${st.step}: ${esc(st.summary)}"></div>`;
+    const culprit = S.session.bisect?.culprit === st.step;
+    const title = `Step ${st.step}: ${st.summary}${culprit ? " (bisect: this step broke the test)" : ""}`;
+    return `<div class="tick ${esc(st.kind)}${newPrompt && i > 0 ? " prompt-start" : ""}${warn}${culprit ? " culprit" : ""}" style="height:${h}px" role="option" data-i="${i}" aria-selected="${i === S.stepIdx}" title="${esc(title)}"></div>`;
   }).join("");
   track.querySelectorAll(".tick").forEach((t) => t.addEventListener("click", () => { stopPlay(); selectStep(+t.dataset.i); }));
 }

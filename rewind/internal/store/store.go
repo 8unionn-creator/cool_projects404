@@ -365,11 +365,15 @@ type RestorePlan struct {
 
 // PlanRestore compares the current work tree with target.
 func (s *Store) PlanRestore(target Step) (RestorePlan, string, error) {
+	return s.plan(target.Tree)
+}
+
+func (s *Store) plan(tree string) (RestorePlan, string, error) {
 	cur, err := s.WorkTree()
 	if err != nil {
 		return RestorePlan{}, "", err
 	}
-	out, err := s.Repo.Git("diff-tree", "-r", "-z", "--no-renames", "--name-status", cur, target.Tree)
+	out, err := s.Repo.Git("diff-tree", "-r", "-z", "--no-renames", "--name-status", cur, tree)
 	if err != nil {
 		return RestorePlan{}, "", err
 	}
@@ -394,7 +398,18 @@ func (s *Store) Restore(session string, target Step) (RestorePlan, error) {
 	if _, _, err := s.Snapshot(session, Meta{Kind: KindManual, Summary: "before restoring step " + strconv.Itoa(target.Step)}); err != nil {
 		return RestorePlan{}, err
 	}
-	plan, _, err := s.PlanRestore(target)
+	plan, err := s.Checkout(target.Tree)
+	if err != nil {
+		return plan, err
+	}
+	_, _, err = s.Snapshot(session, Meta{Kind: KindRestore, Summary: "restored step " + strconv.Itoa(target.Step)})
+	return plan, err
+}
+
+// Checkout makes the work tree match tree without recording anything. The
+// caller is responsible for having saved the current state first.
+func (s *Store) Checkout(tree string) (RestorePlan, error) {
+	plan, _, err := s.plan(tree)
 	if err != nil {
 		return plan, err
 	}
@@ -413,7 +428,7 @@ func (s *Store) Restore(session string, target Step) (RestorePlan, error) {
 		os.Remove(idx) // read-tree wants to create the file itself
 		defer os.Remove(idx)
 		env := []string{"GIT_INDEX_FILE=" + idx}
-		if _, err := s.Repo.Run(gitx.Cmd{Args: []string{"read-tree", target.Tree}, Env: env}); err != nil {
+		if _, err := s.Repo.Run(gitx.Cmd{Args: []string{"read-tree", tree}, Env: env}); err != nil {
 			return plan, err
 		}
 		list := strings.Join(plan.Write, "\x00") + "\x00"
@@ -421,8 +436,97 @@ func (s *Store) Restore(session string, target Step) (RestorePlan, error) {
 			return plan, err
 		}
 	}
-	_, _, err = s.Snapshot(session, Meta{Kind: KindRestore, Summary: "restored step " + strconv.Itoa(target.Step)})
-	return plan, err
+	return plan, nil
+}
+
+// Export writes the files of tree into dir, which must be empty or missing.
+func (s *Store) Export(tree, dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(s.dataDir(), 0o755); err != nil {
+		return err
+	}
+	idx, err := s.tempIndex()
+	if err != nil {
+		return err
+	}
+	os.Remove(idx)
+	defer os.Remove(idx)
+	env := []string{"GIT_INDEX_FILE=" + idx}
+	if _, err := s.Repo.Run(gitx.Cmd{Args: []string{"read-tree", tree}, Env: env}); err != nil {
+		return err
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	_, err = s.Repo.Run(gitx.Cmd{Args: []string{"--work-tree=" + abs, "checkout-index", "-a", "-f"}, Env: env})
+	return err
+}
+
+// ErrUndoConflict means later edits overlap the step being undone.
+var ErrUndoConflict = errors.New("later changes overlap this step")
+
+// Undo reverses the changes of one step (prev -> step) in the current work
+// tree, keeping every change made after it. The state before and after is
+// recorded on session. With dry set, it only checks that the undo applies.
+// On a conflict nothing is changed and the error lists the files.
+func (s *Store) Undo(session string, prev, step Step, dry bool) ([]FileChange, error) {
+	files, err := s.Changes(prev.Tree, step.Tree)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	patch, err := s.Repo.Git("diff", "--binary", "--no-color", "--no-ext-diff", "--no-renames", "--full-index", prev.Tree, step.Tree)
+	if err != nil {
+		return nil, err
+	}
+	apply := func(check bool) error {
+		args := []string{"apply", "-R", "--whitespace=nowarn"}
+		if check {
+			args = append(args, "--check")
+		}
+		_, err := s.Repo.Run(gitx.Cmd{Args: args, Stdin: strings.NewReader(patch)})
+		return err
+	}
+	if err := apply(true); err != nil {
+		return files, fmt.Errorf("%w: %v\nRestore the step before it instead, or undo the later steps first", ErrUndoConflict, conflictFiles(err))
+	}
+	if dry {
+		return files, nil
+	}
+	if _, _, err := s.Snapshot(session, Meta{Kind: KindManual, Summary: "before undoing step " + strconv.Itoa(step.Step)}); err != nil {
+		return files, err
+	}
+	if err := apply(false); err != nil {
+		return files, err
+	}
+	_, _, err = s.Snapshot(session, Meta{Kind: KindRestore, Summary: "undid step " + strconv.Itoa(step.Step) + ": " + OneLine(step.Summary, 60)})
+	return files, err
+}
+
+// conflictFiles picks the file names out of git apply's errors, which
+// look like "error: path/to/file: patch does not apply".
+func conflictFiles(err error) string {
+	var files []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(err.Error(), "\n") {
+		_, rest, ok := strings.Cut(line, "error: ")
+		if !ok || strings.HasPrefix(rest, "patch failed") {
+			continue
+		}
+		if f, _, ok := strings.Cut(rest, ": "); ok && !seen[f] {
+			seen[f] = true
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return "the files no longer match"
+	}
+	return "conflicts in " + strings.Join(files, ", ")
 }
 
 func (s *Store) pruneEmptyDirs(dir string) {

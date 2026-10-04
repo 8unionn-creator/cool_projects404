@@ -39,7 +39,12 @@ func (c *cli) snapshot(at string) (tree, label string, err error) {
 	return "", "", fmt.Errorf("%q is not a step or a git revision", at)
 }
 
-func (c *cli) analyzer() *codemap.Analyzer { return codemap.NewAnalyzer(c.st.Repo.Root) }
+func (c *cli) analyzer() *codemap.Analyzer {
+	if c.an == nil {
+		c.an = codemap.NewAnalyzer(c.st.Repo.Root)
+	}
+	return c.an
+}
 
 func (c *cli) mapCmd(args []string) error {
 	fs := flag.NewFlagSet("map", flag.ContinueOnError)
