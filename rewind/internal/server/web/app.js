@@ -39,6 +39,27 @@ async function api(path) {
   return body;
 }
 
+async function apiPost(path, body) {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Rewind-Token": S.meta.token },
+    body: JSON.stringify(body),
+  });
+  const data = r.headers.get("content-type")?.includes("json") ? await r.json() : { error: await r.text() };
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+let toastTimer = null;
+function toast(msg, kind) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "toast" + (kind ? " " + kind : "");
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), 4500);
+}
+
 // ---------------------------------------------------------------- loading
 
 async function init() {
@@ -626,7 +647,154 @@ function renderPanel() {
     S.manualImpact = S.manualImpact === x.dataset.impact ? null : x.dataset.impact;
     render(); renderPanel();
   }));
+  p.querySelectorAll("[data-act]").forEach((x) => x.addEventListener("click", () => panelAction(x.dataset.act, x.dataset)));
   if (S.selected?.kind === "file" && S.data.graph.byPath.has(S.selected.id)) loadCode(S.selected.id, S.selected.line);
+}
+
+async function panelAction(act, data) {
+  const steps = S.session?.steps;
+  const st = steps?.[S.stepIdx];
+  try {
+    switch (act) {
+      case "step-diff":
+        return openDiff(steps[S.stepIdx - 1].tree, st.tree, `Step ${st.step}: ${st.summary}`);
+      case "file-diff":
+        return openDiff(steps[S.stepIdx - 1].tree, st.tree, `Step ${st.step}: ${data.path}`, data.path);
+      case "now-diff":
+        return openDiff(st.tree, "worktree", `Step ${st.step} → your files now`);
+      case "restore-plan": {
+        const plan = await apiPost("/api/restore", { session: S.session.name, step: st.step, dry: true });
+        S.restorePlan = { session: S.session.name, step: st.step, write: plan.write, delete: plan.delete };
+        return renderPanel();
+      }
+      case "restore-cancel":
+        S.restorePlan = null;
+        return renderPanel();
+      case "restore-do": {
+        const step = S.restorePlan.step;
+        const res = await apiPost("/api/restore", { session: S.session.name, step, dry: false });
+        S.restorePlan = null;
+        S.session = await api(`/api/session?name=${encodeURIComponent(S.session.name)}`);
+        renderTimeline();
+        await selectStep(S.session.steps.length - 1);
+        toast(`Restored step ${step}: ${plural(res.write.length + res.delete.length, "file")} changed. The previous state is saved as a step.`, "ok");
+        return;
+      }
+    }
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+
+// ---------------------------------------------------------------- diff viewer
+
+const DIFF = { mode: "unified", patch: null, title: "", files: [] };
+try { DIFF.mode = localStorage.getItem("rewind.diffMode") || "unified"; } catch (e) { /* storage may be blocked */ }
+
+async function openDiff(from, to, title, path) {
+  const d = $("drawer");
+  d.hidden = false;
+  $("drawer-title").textContent = title;
+  $("drawer-body").innerHTML = `<p class="empty" style="padding:16px">Loading changes…</p>`;
+  try {
+    const q = `/api/patch?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${path ? `&path=${encodeURIComponent(path)}` : ""}`;
+    const res = await api(q);
+    DIFF.files = parsePatch(res.patch);
+    DIFF.truncated = res.truncated;
+    DIFF.title = title;
+    renderDiff();
+  } catch (e) {
+    $("drawer-body").innerHTML = `<p class="empty" style="padding:16px">Could not load the changes: ${esc(e.message)}</p>`;
+  }
+}
+
+function closeDiff() { $("drawer").hidden = true; }
+
+// parsePatch turns `git diff` output into files → hunks → lines.
+function parsePatch(text) {
+  const files = [];
+  let f = null, h = null, oldNo = 0, newNo = 0;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      const m = line.match(/^diff --git a\/(.*) b\/(.*)$/);
+      f = { path: m ? m[2] : line.slice(11), status: "modified", hunks: [], added: 0, deleted: 0, binary: false };
+      files.push(f); h = null;
+      continue;
+    }
+    if (!f) continue;
+    if (!h) {
+      if (line.startsWith("new file")) f.status = "added";
+      else if (line.startsWith("deleted file")) f.status = "deleted";
+      else if (line.startsWith("Binary files")) f.binary = true;
+    }
+    const hm = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
+    if (hm) {
+      oldNo = +hm[1]; newNo = +hm[2];
+      h = { header: line, ctx: hm[3].trim(), lines: [] };
+      f.hunks.push(h);
+      continue;
+    }
+    if (!h) continue;
+    const c = line[0];
+    if (c === "+") { h.lines.push({ t: "+", n: null, m: newNo++, s: line.slice(1) }); f.added++; }
+    else if (c === "-") { h.lines.push({ t: "-", n: oldNo++, m: null, s: line.slice(1) }); f.deleted++; }
+    else if (c === " ") h.lines.push({ t: " ", n: oldNo++, m: newNo++, s: line.slice(1) });
+  }
+  return files;
+}
+
+function renderDiff() {
+  for (const b of document.querySelectorAll("[data-diffmode]")) b.setAttribute("aria-pressed", String(b.dataset.diffmode === DIFF.mode));
+  const files = DIFF.files;
+  if (!files.length) { $("drawer-body").innerHTML = `<p class="empty" style="padding:16px">No changes.</p>`; return; }
+  const add = files.reduce((a, f) => a + f.added, 0), del = files.reduce((a, f) => a + f.deleted, 0);
+  let html = `<div class="diff-summary">${plural(files.length, "file")} · <span class="plus">+${add}</span> <span class="minus">−${del}</span>${DIFF.truncated ? ` · <b>truncated</b> (very large diff)` : ""}</div>`;
+  files.forEach((f, i) => {
+    const open = files.length <= 25 || i < 10;
+    html += `<details class="dfile"${open ? " open" : ""}><summary><span class="pill${f.status === "added" ? " agent" : f.status === "deleted" ? " warn" : ""}">${f.status}</span><span class="name">${esc(f.path)}</span><span class="meta change"><span class="plus">+${f.added}</span> <span class="minus">−${f.deleted}</span></span></summary>`;
+    if (f.binary) html += `<p class="empty" style="padding:8px 12px">Binary file.</p>`;
+    else if (DIFF.mode === "split") html += splitTable(f);
+    else html += unifiedTable(f);
+    html += `</details>`;
+  });
+  $("drawer-body").innerHTML = html;
+}
+
+const MAX_DIFF_ROWS = 3000;
+
+function unifiedTable(f) {
+  let rows = 0, html = `<table class="dtable unified"><colgroup><col class="c-ln"><col class="c-ln"><col></colgroup><tbody>`;
+  for (const h of f.hunks) {
+    html += `<tr class="hunk"><td colspan="3">${esc(h.header)}</td></tr>`;
+    for (const l of h.lines) {
+      if (++rows > MAX_DIFF_ROWS) break;
+      const cls = l.t === "+" ? "add" : l.t === "-" ? "del" : "";
+      html += `<tr class="${cls}"><td class="ln">${l.n ?? ""}</td><td class="ln">${l.m ?? ""}</td><td class="code"><span class="sign">${l.t === " " ? " " : l.t}</span>${esc(l.s) || " "}</td></tr>`;
+    }
+  }
+  if (rows > MAX_DIFF_ROWS) html += `<tr class="hunk"><td colspan="3">Showing the first ${MAX_DIFF_ROWS} lines.</td></tr>`;
+  return html + `</tbody></table>`;
+}
+
+// splitTable pairs each run of deletions with the additions that follow it.
+function splitTable(f) {
+  let rows = 0, html = `<table class="dtable split"><colgroup><col class="c-ln"><col><col class="c-ln"><col></colgroup><tbody>`;
+  const cell = (l, side) => l
+    ? `<td class="ln">${side === "old" ? l.n : l.m}</td><td class="code ${l.t === "-" ? "del" : l.t === "+" ? "add" : ""}">${esc(l.s) || " "}</td>`
+    : `<td class="ln"></td><td class="code empty-side"></td>`;
+  for (const h of f.hunks) {
+    html += `<tr class="hunk"><td colspan="4">${esc(h.header)}</td></tr>`;
+    const L = h.lines;
+    for (let i = 0; i < L.length && rows < MAX_DIFF_ROWS;) {
+      if (L[i].t === " ") { html += `<tr>${cell(L[i], "old")}${cell(L[i], "new")}</tr>`; i++; rows++; continue; }
+      const dels = [], adds = [];
+      while (i < L.length && L[i].t === "-") dels.push(L[i++]);
+      while (i < L.length && L[i].t === "+") adds.push(L[i++]);
+      for (let k = 0; k < Math.max(dels.length, adds.length); k++, rows++) html += `<tr>${cell(dels[k], "old")}${cell(adds[k], "new")}</tr>`;
+    }
+  }
+  if (rows >= MAX_DIFF_ROWS) html += `<tr class="hunk"><td colspan="4">Showing the first ${MAX_DIFF_ROWS} lines.</td></tr>`;
+  return html + `</tbody></table>`;
 }
 
 function fileRow(path, meta, line) {
@@ -717,7 +885,11 @@ function filePanel(path) {
     <div class="tile"><b>${f.c}</b><span>complexity</span></div>
     <div class="tile"><b>${imp.size}</b><span>depend on it</span></div></div>`;
   html += `<div class="actions"><button data-impact="${esc(path)}">${S.manualImpact === path ? "Hide impact" : "Show impact on map"}</button>`;
-  html += `<button data-drill="${esc(dirOf(path))}">Open its folder</button></div>`;
+  html += `<button data-drill="${esc(dirOf(path))}">Open its folder</button>`;
+  if (S.session && S.stepIdx > 0 && S.session.steps[S.stepIdx].changes.some((c) => c.path === path)) {
+    html += `<button data-act="file-diff" data-path="${esc(path)}">Changes in this step</button>`;
+  }
+  html += `</div>`;
   const syms = f.s || [];
   html += `<h3>Defines <small>${plural(syms.length, "symbol")}</small></h3>`;
   html += syms.length ? `<ul class="list">${syms.slice(0, 120).map((s) => `<li data-file="${esc(path)}" data-line="${s.l}"><span class="pill">${esc(s.k)}</span><span class="name">${esc(s.n)}</span><span class="meta">:${s.l}</span></li>`).join("")}</ul>` : `<p class="empty">No top-level definitions.</p>`;
@@ -754,6 +926,24 @@ async function loadCode(path, line) {
 function stepSection() {
   const st = S.session.steps[S.stepIdx];
   let html = `<h2>Step ${st.step} <span class="pill agent">${esc(st.kind)}</span></h2><div class="sub">${esc(st.summary)} · ${new Date(st.time * 1000).toLocaleTimeString()}</div>`;
+  html += `<div class="actions">`;
+  if (S.stepIdx > 0) html += `<button data-act="step-diff">View changes</button>`;
+  html += `<button data-act="now-diff" title="Everything that changed between this step and your files now">Compare with now</button>`;
+  html += `<button data-act="restore-plan" class="danger-outline">Restore this step…</button></div>`;
+  const rp = S.restorePlan;
+  if (rp && rp.step === st.step && rp.session === S.session.name) {
+    const n = rp.write.length + rp.delete.length;
+    html += `<div class="confirm" role="alertdialog" aria-label="Confirm restore">`;
+    if (n === 0) {
+      html += `<p>Your files already match step ${st.step}.</p><div class="actions"><button data-act="restore-cancel">OK</button></div>`;
+    } else {
+      html += `<p><b>Restore step ${st.step}?</b> This rewrites ${plural(rp.write.length, "file")} and deletes ${plural(rp.delete.length, "file")} in your working folder. Your current files are saved as a new step first, so you can undo this.</p>`;
+      html += `<ul class="list">${rp.write.slice(0, 40).map((f) => `<li class="static"><span class="pill agent">write</span><span class="name">${esc(f)}</span></li>`).join("")}${rp.delete.slice(0, 40).map((f) => `<li class="static"><span class="pill warn">delete</span><span class="name">${esc(f)}</span></li>`).join("")}</ul>`;
+      if (n > 80) html += `<p class="empty">…and ${n - 80} more.</p>`;
+      html += `<div class="actions"><button data-act="restore-do" class="danger">Restore ${plural(n, "file")}</button><button data-act="restore-cancel">Cancel</button></div>`;
+    }
+    html += `</div>`;
+  }
   if (st.prompt) html += `<h3>Prompt</h3><div class="prompt">${esc(st.prompt)}</div>`;
   if (S.stepIdx > 0) {
     html += `<h3>Changed <small>${plural(st.changes.length, "file")}</small></h3>`;
@@ -806,6 +996,7 @@ async function selectStep(i) {
   const st = steps[i];
   S.manualImpact = null;
   S.diff = null;
+  S.restorePlan = null;
   $("tl-title").innerHTML = `<b>${esc(S.session.name)}</b> · step ${st.step}/${steps[steps.length - 1].step} · ${esc(st.summary)}`;
   $("tl-track").querySelectorAll(".tick").forEach((t) => t.setAttribute("aria-selected", String(+t.dataset.i === i)));
   $("tl-track").querySelector(`[data-i="${i}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -898,10 +1089,17 @@ function setupControls() {
   $("depth-plus").addEventListener("click", () => { if (!S.focus && S.depth < 10) { S.depth++; rebuild(true); } });
   $("fit").addEventListener("click", fit);
   $("tl-play").addEventListener("click", togglePlay);
+  $("drawer-close").addEventListener("click", closeDiff);
+  document.querySelectorAll("[data-diffmode]").forEach((b) => b.addEventListener("click", () => {
+    DIFF.mode = b.dataset.diffmode;
+    try { localStorage.setItem("rewind.diffMode", DIFF.mode); } catch (e) { /* ignore */ }
+    renderDiff();
+  }));
   document.addEventListener("keydown", (e) => {
     if (e.target.matches("input, select, textarea")) return;
     if (e.key === "/") { e.preventDefault(); $("search").focus(); }
     else if (e.key === "f" || e.key === "F") fit();
+    else if ((e.key === "Escape" || e.key === "Backspace") && !$("drawer").hidden) closeDiff();
     else if (e.key === "Escape" || e.key === "Backspace") {
       if (S.selected || S.manualImpact) { S.selected = null; S.manualImpact = null; render(); renderPanel(); }
       else if (S.focus) drill(S.focus.includes("/") ? S.focus.slice(0, S.focus.lastIndexOf("/")) : ".");

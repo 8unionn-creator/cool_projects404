@@ -51,6 +51,17 @@
     </svg>
     <div class="legend" id="legend"></div>
     <div class="loading" id="loading">Mapping the code…</div>
+    <section class="drawer" id="drawer" hidden aria-label="Code changes">
+      <div class="drawer-head">
+        <div class="drawer-title" id="drawer-title"></div>
+        <div class="seg" role="group" aria-label="Diff layout">
+          <button data-diffmode="unified" aria-pressed="true">Unified</button>
+          <button data-diffmode="split" aria-pressed="false">Side by side</button>
+        </div>
+        <button id="drawer-close" aria-label="Close the changes view">Close</button>
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+    </section>
   </section>
   <aside class="panel" id="panel" aria-live="polite"></aside>
 </main>
@@ -63,6 +74,7 @@
   </div>
   <div class="tl-track" id="tl-track" role="listbox" aria-label="Session steps"></div>
 </footer>
+<div class="toast" id="toast" role="status" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>

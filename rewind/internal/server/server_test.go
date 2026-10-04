@@ -151,7 +151,71 @@ func TestOnlyLoopbackHosts(t *testing.T) {
 	req.Host = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("POST should be refused, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden && rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST without the token should be refused, got %d", rec.Code)
+	}
+}
+
+func post(h http.Handler, url, token, origin, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", url, strings.NewReader(body))
+	req.Host = "127.0.0.1:7777"
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-Rewind-Token", token)
+	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestPatchAndRestore(t *testing.T) {
+	st, h := setup(t)
+	var meta struct{ Token string }
+	get(t, h, "/api/meta", &meta)
+	if len(meta.Token) != 32 {
+		t.Fatalf("token = %q", meta.Token)
+	}
+	var sess struct{ Steps []struct{ Tree string } }
+	get(t, h, "/api/session?name=demo", &sess)
+
+	var p struct{ Patch string }
+	get(t, h, "/api/patch?from="+sess.Steps[0].Tree+"&to="+sess.Steps[1].Tree, &p)
+	if !strings.Contains(p.Patch, "+++ b/app/new.py") || !strings.Contains(p.Patch, "+from app import main") {
+		t.Fatalf("patch:\n%s", p.Patch)
+	}
+
+	// Writes need the token, and must not come from another origin.
+	body := `{"session":"demo","step":0,"dry":true}`
+	if rec := post(h, "/api/restore", "", "", body); rec.Code != 403 {
+		t.Fatalf("restore without token: %d", rec.Code)
+	}
+	if rec := post(h, "/api/restore", meta.Token, "http://evil.example", body); rec.Code != 403 {
+		t.Fatalf("restore from another origin: %d", rec.Code)
+	}
+
+	newFile := filepath.Join(st.Repo.Root, "app", "new.py")
+	rec := post(h, "/api/restore", meta.Token, "http://127.0.0.1:7777", body)
+	var plan struct{ Write, Delete []string }
+	json.Unmarshal(rec.Body.Bytes(), &plan)
+	if rec.Code != 200 || len(plan.Delete) != 1 || plan.Delete[0] != "app/new.py" {
+		t.Fatalf("dry run (%d): %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(newFile); err != nil {
+		t.Fatal("a dry run must not touch files")
+	}
+
+	rec = post(h, "/api/restore", meta.Token, "", `{"session":"demo","step":0}`)
+	if rec.Code != 200 {
+		t.Fatalf("restore: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(newFile); !os.IsNotExist(err) {
+		t.Fatal("restoring step 0 should delete the file added in step 1")
+	}
+	steps, _ := st.Steps("demo")
+	if len(steps) != 3 || steps[2].Kind != store.KindRestore {
+		t.Fatalf("a restore should be recorded as a step, got %d steps", len(steps))
 	}
 }

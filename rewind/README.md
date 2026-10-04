@@ -78,6 +78,7 @@ A single binary with an embedded viewer. It runs offline on localhost and loads 
 - **Impact.** "Show impact" lights up every file that depends on the selected one, directly or transitively. That's the list of what to re-test.
 - **Cycles.** Import cycles between files and between folders are drawn in red. Imports that never run at load time are left out: TypeScript `import type`, Python `if TYPE_CHECKING:` and imports inside a function.
 - **Hotspots.** Files ranked by commits in the last year × complexity, which is where bugs cluster.
+- **Diff and restore in the browser.** "View changes" shows a step's code changes, unified or side by side. "Compare with now" diffs a step against your current files. "Restore this step…" lists every file that will be rewritten or deleted and waits for you to confirm. Your current state is saved as a step first, so a restore can always be undone.
 - **Session replay.** Pick a session and scrub its timeline (or press ▶). Each step shows its prompt, the files it changed, the folders that depend on them, and **structural changes**: new dependencies between folders, new third-party packages, new import cycles. While an agent is working, new steps appear on their own.
 
 ![Drilled into src/flask: the agent's new ratelimit.py and app.py now import each other](docs/map-drill.png)
@@ -124,7 +125,7 @@ Step metadata (kind, tool, prompt) is stored as one JSON line at the end of each
 
 The code map reads snapshots straight from Git's object database (`git ls-tree` plus one long-running `git cat-file --batch`), so any step can be analysed without checking it out. Parsed files are cached by blob ID. Consecutive steps share almost all of their blobs, so comparing step 6 with step 7 only re-parses the files that changed.
 
-The viewer's server only binds to loopback addresses and refuses requests whose `Host` isn't local, which blocks DNS-rebinding attacks from other websites. It only serves files that are part of the map.
+The viewer's server only binds to loopback addresses and refuses requests whose `Host` isn't local, which blocks DNS-rebinding attacks from other websites. It only serves files that are part of the map. The one action that changes files, restore, also needs a random token that is created each time the server starts. The token can only be read by the viewer page itself, and requests from any other `Origin` are rejected.
 
 ## Roadmap
 

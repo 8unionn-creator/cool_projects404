@@ -2,7 +2,10 @@
 package server
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"net"
@@ -28,11 +31,20 @@ type Server struct {
 
 	churnOnce sync.Once
 	churn     map[string]int
+
+	// token guards the endpoints that change files. Only the viewer can
+	// read it (from /api/meta, which other origins cannot read), and a
+	// custom header cannot be sent cross-origin without a CORS preflight.
+	token string
 }
 
 // New returns a server for the repository behind st.
 func New(st *store.Store) *Server {
-	return &Server{st: st, an: codemap.NewAnalyzer(st.Repo.Root)}
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return &Server{st: st, an: codemap.NewAnalyzer(st.Repo.Root), token: hex.EncodeToString(b)}
 }
 
 // Handler returns the HTTP handler. Only requests addressed to a loopback
@@ -46,12 +58,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/session", s.session)
 	mux.HandleFunc("/api/diff", s.diff)
 	mux.HandleFunc("/api/file", s.file)
+	mux.HandleFunc("/api/patch", s.patch)
+	mux.HandleFunc("/api/restore", s.restore)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !loopbackHost(r.Host) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		switch {
+		case r.Method == http.MethodGet || r.Method == http.MethodHead:
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/"):
+			// Writes must come from the viewer itself.
+			if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
+				http.Error(w, "forbidden origin", http.StatusForbidden)
+				return
+			}
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Rewind-Token")), []byte(s.token)) != 1 {
+				http.Error(w, "missing or wrong token", http.StatusForbidden)
+				return
+			}
+		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -92,7 +118,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	for _, x := range sessions {
 		list = append(list, sess{x.Name, x.Steps, x.Updated.Unix(), x.Current})
 	}
-	reply(w, map[string]any{"root": filepath.Base(s.an.Root), "sessions": list, "hasHead": headErr == nil})
+	reply(w, map[string]any{"root": filepath.Base(s.an.Root), "sessions": list, "hasHead": headErr == nil, "token": s.token})
 }
 
 var hexID = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -243,6 +269,81 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte(out))
+}
+
+// patch returns a unified diff between two snapshots (tree ids, HEAD or
+// worktree), for the diff viewer.
+func (s *Server) patch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	from, err1 := s.tree(q.Get("from"))
+	to, err2 := s.tree(q.Get("to"))
+	if err1 != nil || err2 != nil {
+		fail(w, errBadRequest("from and to must be worktree, HEAD or tree ids"), 400)
+		return
+	}
+	args := []string{"diff", "--no-color", "--no-ext-diff", "--no-renames", "-U3", from, to}
+	if p := q.Get("path"); p != "" {
+		args = append(args, "--", p)
+	}
+	out, err := s.st.Repo.Run(gitx.Cmd{Args: args})
+	if err != nil {
+		fail(w, err, 400)
+		return
+	}
+	const limit = 4 << 20
+	truncated := len(out) > limit
+	if truncated {
+		out = out[:limit]
+	}
+	reply(w, map[string]any{"patch": out, "truncated": truncated})
+}
+
+// restore puts the work tree back to a step. With "dry": true it only
+// reports what would change.
+func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fail(w, errBadRequest("use POST"), 405)
+		return
+	}
+	var req struct {
+		Session string `json:"session"`
+		Step    int    `json:"step"`
+		Dry     bool   `json:"dry"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		fail(w, errBadRequest("invalid JSON body"), 400)
+		return
+	}
+	if !store.ValidName(req.Session) {
+		fail(w, errBadRequest("invalid session name"), 400)
+		return
+	}
+	steps, err := s.st.Steps(req.Session)
+	if err != nil {
+		fail(w, err, 404)
+		return
+	}
+	var target *store.Step
+	for i := range steps {
+		if steps[i].Step == req.Step {
+			target = &steps[i]
+		}
+	}
+	if target == nil {
+		fail(w, errBadRequest("no such step"), 404)
+		return
+	}
+	var plan store.RestorePlan
+	if req.Dry {
+		plan, _, err = s.st.PlanRestore(*target)
+	} else {
+		plan, err = s.st.Restore(req.Session, *target)
+	}
+	if err != nil {
+		fail(w, err, 500)
+		return
+	}
+	reply(w, map[string]any{"write": nonNil(plan.Write), "delete": nonNil(plan.Delete), "dry": req.Dry})
 }
 
 // ---------------------------------------------------------------- helpers

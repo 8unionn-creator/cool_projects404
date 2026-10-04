@@ -203,3 +203,50 @@ pre.code span.l.hl { background: color-mix(in srgb, var(--select) 18%, transpare
 @media (prefers-reduced-motion: no-preference) {
   .node rect.box, .edge { transition: fill 0.25s, stroke 0.25s, opacity 0.25s; }
 }
+
+/* ---------------------------------------------------------------- diff drawer */
+.drawer {
+  position: absolute; inset: 0; z-index: 15; background: var(--surface); display: grid; grid-template-rows: auto 1fr;
+  border-right: 1px solid var(--line);
+}
+.drawer-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.drawer-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg { display: flex; }
+.seg button { border-radius: 0; }
+.seg button:first-child { border-radius: 6px 0 0 6px; }
+.seg button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--select); border-color: var(--select); color: #fff; }
+.drawer-body { overflow: auto; padding: 0 0 40px; }
+.diff-summary { padding: 10px 14px; color: var(--muted); font: 12px var(--font-code); }
+.plus { color: var(--entry); }
+.minus { color: var(--cycle); }
+details.dfile { border-top: 1px solid var(--line); }
+details.dfile > summary {
+  display: flex; gap: 8px; align-items: baseline; padding: 8px 14px; cursor: pointer; position: sticky; top: 0;
+  background: var(--raised); z-index: 1;
+}
+details.dfile > summary .name { font: 12px var(--font-code); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+table.dtable { border-collapse: collapse; width: 100%; font: 12px/1.5 var(--font-code); table-layout: fixed; }
+table.dtable td { padding: 0 8px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+table.dtable col.c-ln { width: 4.2em; }
+table.dtable.split col.c-ln { width: 3.6em; }
+table.dtable td.ln { text-align: right; color: var(--muted); opacity: 0.7; user-select: none; padding-right: 6px; }
+table.dtable tr.hunk td { background: color-mix(in srgb, var(--select) 10%, transparent); color: var(--muted); padding: 3px 12px; }
+table.dtable tr.add td.code, table.dtable td.code.add { background: color-mix(in srgb, var(--entry) 16%, transparent); }
+table.dtable tr.del td.code, table.dtable td.code.del { background: color-mix(in srgb, var(--cycle) 14%, transparent); }
+table.dtable td.empty-side { background: color-mix(in srgb, var(--line) 35%, transparent); }
+table.dtable .sign { display: inline-block; width: 1.2em; color: var(--muted); user-select: none; }
+
+/* ---------------------------------------------------------------- restore & toast */
+.confirm {
+  margin-top: 12px; padding: 12px; border-radius: 8px; border: 1px solid var(--cycle);
+  background: color-mix(in srgb, var(--cycle) 7%, var(--surface));
+}
+.confirm p { margin: 0 0 8px; }
+button.danger { background: var(--cycle); border-color: var(--cycle); color: #fff; }
+button.danger-outline { border-color: color-mix(in srgb, var(--cycle) 60%, var(--line)); color: var(--cycle); }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; max-width: min(640px, calc(100% - 32px));
+  background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
+}
+.toast.err { background: var(--cycle); color: #fff; }
