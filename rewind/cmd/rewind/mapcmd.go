@@ -1,19 +1,24 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/signal"
 	"path"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/codemap"
+	"github.com/8unionn-creator/cool_projects404/rewind/internal/explain"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/server"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/store"
 )
@@ -422,4 +427,95 @@ func (c *cli) callersCmd(args []string) error {
 		fmt.Fprintln(c.out)
 	}
 	return nil
+}
+
+func (c *cli) explainCmd(args []string) error {
+	fs := flag.NewFlagSet("explain", flag.ContinueOnError)
+	at := fs.String("at", "", "explain a step or git revision instead of the current files")
+	if err := parse(fs, args); err != nil {
+		return err
+	}
+	usage := errors.New("usage: rewind explain <file|folder>  |  rewind explain step <n>  |  rewind explain tour")
+	if fs.NArg() == 0 {
+		return usage
+	}
+	if !explain.Configured() {
+		return errors.New(explain.SetupHelp)
+	}
+	an := c.analyzer()
+	tree, _, err := c.snapshot(*at)
+	if err != nil {
+		return err
+	}
+	g, err := an.Analyze(tree)
+	if err != nil {
+		return err
+	}
+	read := func(p string) string {
+		out, _ := c.st.Repo.Git("cat-file", "blob", g.Tree+":"+p)
+		return out
+	}
+	req := explain.Request{Overview: explain.Overview(g)}
+	switch target := fs.Arg(0); {
+	case target == "tour":
+		req.Kind = explain.Tour
+		req.Material = explain.TourMaterial(g, func(p string) string { return explain.Head(read(p), 40) })
+	case target == "step":
+		if fs.NArg() != 2 {
+			return usage
+		}
+		steps, i, err := c.resolve(fs.Arg(1))
+		if err != nil {
+			return err
+		}
+		if i == 0 {
+			return errors.New("step 0 is the baseline; pick a later step")
+		}
+		prev, cur := steps[i-1], steps[i]
+		patch, err := c.st.Repo.Git("diff", "--no-color", "--no-ext-diff", "-U3", prev.Tree, cur.Tree)
+		if err != nil {
+			return err
+		}
+		a, err1 := an.Analyze(prev.Tree)
+		b, err2 := an.Analyze(cur.Tree)
+		var d codemap.Diff
+		impacted := 0
+		if err1 == nil && err2 == nil {
+			d = codemap.Compare(a, b)
+			files, _ := c.st.Changes(prev.Tree, cur.Tree)
+			var changed []string
+			for _, f := range files {
+				changed = append(changed, f.Path)
+			}
+			impacted = len(b.Impact(changed))
+			req.Overview = explain.Overview(b)
+		}
+		req.Kind = explain.Step
+		req.Material = explain.StepMaterial(cur.Step, cur.Summary, cur.Prompt, patch, d, impacted)
+	default:
+		if p, i, err := c.fileIn(g, target); err == nil {
+			req.Kind = explain.File
+			req.Material = explain.FileMaterial(g, i, read(p))
+			break
+		}
+		dir := strings.TrimSuffix(filepath.ToSlash(target), "/")
+		if rel, err := c.relToRoot(target); err == nil {
+			dir = rel
+		}
+		m, ok := explain.FolderMaterial(g, dir)
+		if !ok {
+			return fmt.Errorf("%s is not a source file or a folder with source files", target)
+		}
+		req.Kind, req.Material = explain.Folder, m
+	}
+	ex := explain.New(c.st.Repo.GitDir)
+	fmt.Fprintln(c.out, c.dim(fmt.Sprintf("Asking %s (effort %s)...", ex.Model, ex.Effort)))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	_, cached, err := ex.Explain(ctx, req, func(t string) { fmt.Fprint(c.out, t) })
+	fmt.Fprintln(c.out)
+	if cached {
+		fmt.Fprintln(c.out, c.dim("(from your local cache; the code has not changed since)"))
+	}
+	return err
 }

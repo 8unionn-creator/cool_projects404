@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/8unionn-creator/cool_projects404/rewind/internal/explain"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/store"
+	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
 func setup(t *testing.T) (*store.Store, http.Handler) {
@@ -217,5 +220,49 @@ func TestPatchAndRestore(t *testing.T) {
 	steps, _ := st.Steps("demo")
 	if len(steps) != 3 || steps[2].Kind != store.KindRestore {
 		t.Fatalf("a restore should be recorded as a step, got %d steps", len(steps))
+	}
+}
+
+func TestExplainEndpoint(t *testing.T) {
+	st, _ := setup(t)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, ev := range []string{
+			`{"type":"message_start","message":{"id":"m","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"It adds "}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"app/new.py."}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":3}}`,
+			`{"type":"message_stop"}`,
+		} {
+			var m map[string]any
+			json.Unmarshal([]byte(ev), &m)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", m["type"], ev)
+		}
+	}))
+	defer api.Close()
+	srv := New(st)
+	srv.Explainer = explain.New(st.Repo.GitDir, option.WithBaseURL(api.URL), option.WithAPIKey("k"), option.WithMaxRetries(0))
+	srv.AIReady = func() bool { return true }
+	h := srv.Handler()
+	var meta struct{ Token string }
+	get(t, h, "/api/meta", &meta)
+
+	body := `{"kind":"step","session":"demo","step":1}`
+	if rec := post(h, "/api/explain", "", "", body); rec.Code != 403 {
+		t.Fatalf("explain without the token must be refused (it spends money), got %d", rec.Code)
+	}
+	rec := post(h, "/api/explain", meta.Token, "", body)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"t":"It adds "`) || !strings.Contains(rec.Body.String(), `"done":true`) {
+		t.Fatalf("explain stream (%d):\n%s", rec.Code, rec.Body.String())
+	}
+	if rec := post(h, "/api/explain", meta.Token, "", `{"kind":"file","path":"nope.py"}`); rec.Code != 400 {
+		t.Fatalf("unknown file: %d", rec.Code)
+	}
+	srv.AIReady = func() bool { return false }
+	rec = post(h, "/api/explain", meta.Token, "", `{"kind":"tour"}`)
+	if !strings.Contains(rec.Body.String(), "ANTHROPIC_API_KEY") {
+		t.Fatalf("without credentials the reply should explain how to set them up:\n%s", rec.Body.String())
 	}
 }

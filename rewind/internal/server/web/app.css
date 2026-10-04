@@ -219,6 +219,25 @@ pre.code span.l.hl { background: color-mix(in srgb, var(--select) 18%, transpare
   .node rect.box, .edge { transition: fill 0.25s, stroke 0.25s, opacity 0.25s; }
 }
 
+/* ---------------------------------------------------------------- explanations */
+.explain-wrap { margin-top: 12px; }
+button.ai { border-color: color-mix(in srgb, var(--select) 55%, var(--line)); color: var(--select); }
+button.ai:disabled { opacity: 0.6; cursor: progress; }
+.explain {
+  margin-top: 8px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.55;
+  background: color-mix(in srgb, var(--select) 6%, var(--surface)); border: 1px solid color-mix(in srgb, var(--select) 25%, var(--line));
+  overflow-wrap: anywhere;
+}
+.explain p { margin: 0 0 8px; }
+.explain h4 { margin: 10px 0 4px; font-size: 13px; }
+.explain ul, .explain ol { margin: 0 0 8px; padding-left: 20px; }
+.explain li { margin: 2px 0; }
+.explain code { font: 12px var(--font-code); background: var(--raised); padding: 0 4px; border-radius: 4px; }
+.explain code.link { color: var(--select); cursor: pointer; text-decoration: underline dotted; }
+.explain pre.md { max-height: 240px; }
+.explain-error { color: var(--cycle); margin: 0; }
+.explain-foot { margin-top: 6px; color: var(--muted); font-size: 11px; }
+
 /* ---------------------------------------------------------------- diff drawer */
 .drawer {
   position: absolute; inset: 0; z-index: 15; background: var(--surface); display: grid; grid-template-rows: auto 1fr;

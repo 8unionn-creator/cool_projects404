@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/codemap"
+	"github.com/8unionn-creator/cool_projects404/rewind/internal/explain"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/gitx"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/store"
 )
@@ -37,6 +39,11 @@ type Server struct {
 	// read it (from /api/meta, which other origins cannot read), and a
 	// custom header cannot be sent cross-origin without a CORS preflight.
 	token string
+
+	// Explainer answers "explain this" requests; AIReady says whether
+	// credentials are set up. Both are replaceable in tests.
+	Explainer *explain.Explainer
+	AIReady   func() bool
 }
 
 // New returns a server for the repository behind st.
@@ -45,7 +52,7 @@ func New(st *store.Store) *Server {
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
-	return &Server{st: st, an: codemap.NewAnalyzer(st.Repo.Root), token: hex.EncodeToString(b)}
+	return &Server{st: st, an: codemap.NewAnalyzer(st.Repo.Root), token: hex.EncodeToString(b), Explainer: explain.New(st.Repo.GitDir), AIReady: explain.Configured}
 }
 
 // Handler returns the HTTP handler. Only requests addressed to a loopback
@@ -62,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/patch", s.patch)
 	mux.HandleFunc("/api/symbol", s.symbol)
 	mux.HandleFunc("/api/restore", s.restore)
+	mux.HandleFunc("/api/explain", s.explain)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !loopbackHost(r.Host) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
@@ -120,7 +128,10 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	for _, x := range sessions {
 		list = append(list, sess{x.Name, x.Steps, x.Updated.Unix(), x.Current})
 	}
-	reply(w, map[string]any{"root": filepath.Base(s.an.Root), "sessions": list, "hasHead": headErr == nil, "token": s.token})
+	reply(w, map[string]any{
+		"root": filepath.Base(s.an.Root), "sessions": list, "hasHead": headErr == nil, "token": s.token,
+		"ai": map[string]any{"enabled": s.AIReady(), "model": s.Explainer.Model, "help": explain.SetupHelp},
+	})
 }
 
 var hexID = regexp.MustCompile(`^[0-9a-f]{40,64}$`)
@@ -396,6 +407,124 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, map[string]any{"write": nonNil(plan.Write), "delete": nonNil(plan.Delete), "dry": req.Dry})
+}
+
+// explain streams an explanation as server-sent events. It is a POST that
+// needs the token, because each call can spend money on the user's account.
+func (s *Server) explain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fail(w, errBadRequest("use POST"), 405)
+		return
+	}
+	var q struct {
+		Kind    string `json:"kind"`
+		At      string `json:"at"`
+		Path    string `json:"path"`
+		Session string `json:"session"`
+		Step    int    `json:"step"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&q); err != nil {
+		fail(w, errBadRequest("invalid JSON body"), 400)
+		return
+	}
+	req, err := s.explainRequest(q.Kind, q.At, q.Path, q.Session, q.Step)
+	if err != nil {
+		fail(w, err, 400)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	flusher, _ := w.(http.Flusher)
+	send := func(v any) {
+		b, _ := json.Marshal(v)
+		fmt.Fprintf(w, "data: %s\n\n", b)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	if !s.AIReady() {
+		send(map[string]any{"error": explain.SetupHelp})
+		return
+	}
+	_, cached, err := s.Explainer.Explain(r.Context(), req, func(t string) { send(map[string]string{"t": t}) })
+	if err != nil {
+		send(map[string]any{"error": err.Error()})
+		return
+	}
+	send(map[string]any{"done": true, "cached": cached})
+}
+
+// explainRequest gathers the material for one explanation.
+func (s *Server) explainRequest(kind, at, p, session string, stepNum int) (explain.Request, error) {
+	tree, err := s.tree(at)
+	if err != nil {
+		return explain.Request{}, err
+	}
+	g, err := s.an.Analyze(tree)
+	if err != nil {
+		return explain.Request{}, err
+	}
+	read := func(path string) string {
+		out, _ := s.st.Repo.Run(gitx.Cmd{Args: []string{"cat-file", "blob", g.Tree + ":" + path}})
+		return out
+	}
+	req := explain.Request{Kind: explain.Kind(kind), Overview: explain.Overview(g)}
+	switch req.Kind {
+	case explain.File:
+		i := g.Index(p)
+		if i < 0 {
+			return req, errBadRequest("unknown file")
+		}
+		req.Material = explain.FileMaterial(g, i, read(p))
+	case explain.Folder:
+		m, ok := explain.FolderMaterial(g, p)
+		if !ok {
+			return req, errBadRequest("no source files in that folder")
+		}
+		req.Material = m
+	case explain.Tour:
+		req.Material = explain.TourMaterial(g, func(path string) string { return explain.Head(read(path), 40) })
+	case explain.Step:
+		if !store.ValidName(session) {
+			return req, errBadRequest("invalid session name")
+		}
+		steps, err := s.st.Steps(session)
+		if err != nil {
+			return req, err
+		}
+		k := -1
+		for i := range steps {
+			if steps[i].Step == stepNum {
+				k = i
+			}
+		}
+		if k <= 0 {
+			return req, errBadRequest("pick a step after the baseline")
+		}
+		prev, cur := steps[k-1], steps[k]
+		patch, err := s.st.Repo.Git("diff", "--no-color", "--no-ext-diff", "-U3", prev.Tree, cur.Tree)
+		if err != nil {
+			return req, err
+		}
+		a, errA := s.an.Analyze(prev.Tree)
+		b, errB := s.an.Analyze(cur.Tree)
+		var d codemap.Diff
+		impacted := 0
+		if errA == nil && errB == nil {
+			d = codemap.Compare(a, b)
+			files, _ := s.st.Changes(prev.Tree, cur.Tree)
+			var changed []string
+			for _, f := range files {
+				changed = append(changed, f.Path)
+			}
+			impacted = len(b.Impact(changed))
+			req.Overview = explain.Overview(b)
+		}
+		req.Material = explain.StepMaterial(cur.Step, cur.Summary, cur.Prompt, patch, d, impacted)
+	default:
+		return req, errBadRequest("kind must be file, folder, step or tour")
+	}
+	return req, nil
 }
 
 // ---------------------------------------------------------------- helpers

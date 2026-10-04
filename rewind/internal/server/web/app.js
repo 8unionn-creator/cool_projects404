@@ -687,6 +687,8 @@ function renderPanel() {
     render(); renderPanel();
   }));
   p.querySelectorAll("[data-act]").forEach((x) => x.addEventListener("click", () => panelAction(x.dataset.act, x.dataset)));
+  p.querySelectorAll("[data-explain]").forEach((x) => x.addEventListener("click", () => runExplain(JSON.parse(x.dataset.explain))));
+  wireExplainLinks(p);
   if (S.selected?.kind === "file" && S.data.graph.byPath.has(S.selected.id)) {
     loadCode(S.selected.id, S.selected.line, S.selected.end);
     if (S.selected.sym !== undefined) loadSymbol(S.selected.id, S.selected.sym);
@@ -726,6 +728,123 @@ async function panelAction(act, data) {
   } catch (e) {
     toast(e.message, "err");
   }
+}
+
+// ---------------------------------------------------------------- explanations
+
+// Explanations survive panel re-renders: keyed by what was asked about.
+const EXPLAIN = new Map();
+const explainKey = (q) => [q.kind, S.tree, q.path || "", q.session || "", q.step ?? ""].join("|");
+
+function explainArea(q, label) {
+  const key = explainKey(q);
+  const st = EXPLAIN.get(key);
+  const ai = S.meta.ai || {};
+  let html = `<div class="explain-wrap"><button class="ai" data-explain="${esc(JSON.stringify(q))}"${st && !st.done && !st.error ? " disabled" : ""}
+    title="${ai.enabled ? `Ask ${esc(ai.model)} (sends this code to the Claude API)` : "Set up the Claude API to enable explanations"}">✦ ${esc(label)}</button>`;
+  if (st) {
+    html += `<div class="explain" data-key="${esc(key)}">${st.error ? `<p class="explain-error">${esc(st.error)}</p>` : renderMarkdown(st.text) || `<p class="empty">Thinking…</p>`}`;
+    if (st.done) html += `<div class="explain-foot">${st.cached ? "From your local cache · " : ""}${esc(ai.model || "Claude")} · may be wrong; check the code</div>`;
+    html += `</div>`;
+  }
+  return html + `</div>`;
+}
+
+async function runExplain(q) {
+  const key = explainKey(q);
+  const ai = S.meta.ai || {};
+  if (!ai.enabled) {
+    EXPLAIN.set(key, { text: "", error: ai.help || "Explanations need the Claude API.", done: false });
+    renderPanel();
+    return;
+  }
+  const st = { text: "", done: false, error: null, cached: false };
+  EXPLAIN.set(key, st);
+  renderPanel();
+  let pending = false;
+  const paint = () => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      const box = document.querySelector(`.explain[data-key="${CSS.escape(key)}"]`);
+      if (box && !st.done) { box.innerHTML = renderMarkdown(st.text) || `<p class="empty">Thinking…</p>`; wireExplainLinks(box); }
+    });
+  };
+  try {
+    const r = await fetch("/api/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Rewind-Token": S.meta.token },
+      body: JSON.stringify({ ...q, at: S.tree }),
+    });
+    if (!r.ok || !r.body) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i).replace(/^data: /, "");
+        buf = buf.slice(i + 2);
+        const ev = JSON.parse(line);
+        if (ev.t) { st.text += ev.t; paint(); }
+        if (ev.error) st.error = ev.error;
+        if (ev.done) { st.done = true; st.cached = ev.cached; }
+      }
+    }
+  } catch (e) {
+    st.error = "Could not get an explanation: " + e.message;
+  }
+  st.done = st.done || !st.error;
+  renderPanel();
+}
+
+// A small, safe Markdown renderer for explanations: headings, lists,
+// code blocks, inline code and bold. Inline code that names a file in the
+// map becomes a link to it.
+function renderMarkdown(src) {
+  if (!src) return "";
+  const g = S.data.graph;
+  const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, (m, code) => {
+      const raw = code.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      const path = raw.replace(/:\d+$/, "");
+      return g.byPath.has(path) ? `<code class="link" data-xfile="${esc(path)}">${code}</code>` : `<code>${code}</code>`;
+    })
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  const out = [];
+  let list = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const parts = src.split("```");
+  parts.forEach((part, pi) => {
+    if (pi % 2 === 1) { // fenced code
+      closeList();
+      out.push(`<pre class="code md"><code>${esc(part.replace(/^[^\n]*\n/, ""))}</code></pre>`);
+      return;
+    }
+    for (const line of part.split("\n")) {
+      let m;
+      if ((m = line.match(/^(#{1,4})\s+(.*)$/))) { closeList(); out.push(`<h4>${inline(m[2])}</h4>`); }
+      else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) { if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; } out.push(`<li>${inline(m[1])}</li>`); }
+      else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== "ol") { closeList(); out.push("<ol>"); list = "ol"; } out.push(`<li>${inline(m[1])}</li>`); }
+      else if (line.trim() === "") closeList();
+      else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+    }
+  });
+  closeList();
+  return out.join("");
+}
+
+function wireExplainLinks(root) {
+  root.querySelectorAll(".explain code.link").forEach((x) => x.addEventListener("click", () => {
+    const p = x.dataset.xfile;
+    const dir = dirOf(p);
+    if (S.focus && dir !== S.focus && !dir.startsWith(S.focus + "/")) { S.focus = ""; rebuild(false); }
+    selectFile(p);
+  }));
 }
 
 // ---------------------------------------------------------------- diff viewer
@@ -856,6 +975,7 @@ function overview() {
   html += `<div class="tiles"><div class="tile"><b>${fmtN(files.length)}</b><span>files</span></div>
     <div class="tile"><b>${fmtN(lines)}</b><span>lines</span></div>
     <div class="tile"><b>${fmtN(g.edges.length)}</b><span>dependencies</span></div></div>`;
+  html += explainArea({ kind: "tour" }, "Take a guided tour");
   html += `<div class="langbar">${langs.map(([l, n]) => `<span style="width:${(100 * n / Math.max(lines, 1)).toFixed(2)}%;background:var(--lang-${l})" title="${LANGS[l]}"></span>`).join("")}</div>`;
   html += `<div class="langkeys">${langs.map(([l, n]) => `<span><i style="background:var(--lang-${l})"></i>${LANGS[l]} ${Math.round(100 * n / Math.max(lines, 1))}%</span>`).join("")}</div>`;
 
@@ -904,6 +1024,7 @@ function groupPanel(key) {
     <div class="tile"><b>${fmtN(n.lines)}</b><span>lines</span></div>
     <div class="tile"><b>${ins.length}/${outs.length}</b><span>used by / uses</span></div></div>`;
   if (dir !== "." && n.kind !== "file") html += `<div class="actions"><button data-drill="${esc(dir)}">Open folder</button></div>`;
+  if (n.kind !== "file") html += explainArea({ kind: "folder", path: dir }, "Explain this folder");
   html += `<h3>Files</h3><ul class="list">${files.slice(0, 80).map((i) => fileRow(g.files[i].p, `${fmtN(g.files[i].n)} · used by ${g.in[i].length}`)).join("")}</ul>`;
   if (files.length > 80) html += `<p class="empty">…and ${files.length - 80} more.</p>`;
   const groupRow = (k, w) => `<li data-group="${esc(k)}"><span class="name">${esc(labelOf(k))}</span><span class="meta">${plural(w, "ref")}</span></li>`;
@@ -932,6 +1053,7 @@ function filePanel(path) {
     html += `<button data-act="file-diff" data-path="${esc(path)}">Changes in this step</button>`;
   }
   html += `</div>`;
+  html += explainArea({ kind: "file", path }, "Explain this file");
   const syms = f.s || [];
   html += `<h3>Defines <small>${plural(syms.length, "symbol")}</small></h3>`;
   html += syms.length ? `<ul class="list">${syms.slice(0, 160).map((s, si) => {
@@ -1016,6 +1138,7 @@ function stepSection() {
     }
     html += `</div>`;
   }
+  if (S.stepIdx > 0) html += explainArea({ kind: "step", session: S.session.name, step: st.step }, "Explain this step");
   if (st.prompt) html += `<h3>Prompt</h3><div class="prompt">${esc(st.prompt)}</div>`;
   if (S.stepIdx > 0) {
     html += `<h3>Changed <small>${plural(st.changes.length, "file")}</small></h3>`;

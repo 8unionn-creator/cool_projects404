@@ -86,6 +86,7 @@ A single binary with an embedded viewer. It runs offline on localhost and loads 
 - **Architecture at a glance.** Folders are laid out top-down by dependency: the code that imports others sits above the code it imports, so entry points end up at the top and foundations at the bottom. Click a box to see its files and its dependencies in both directions, double-click to drill into it, and use the breadcrumbs to come back out.
 - **Every file explained.** See what a file defines, what it imports, what imports it, its third-party packages and its source, with search across files and symbols (press `/`).
 - **Who calls this function.** Click any function or method to see every place that calls it and everything it calls, with its whole body highlighted in the source view. Calls are resolved through imports, modules, same-package code, `self`/`this` and Go receiver types. A call on a variable whose type isn't known (`order.save()`) is linked only when exactly one visible method has that name, and it's labelled *likely*.
+- **Explanations (optional).** "Explain this file / folder / step" and "Take a guided tour" ask Claude for a short, plain-English answer about the code you're looking at. For a step, that means what the agent actually did, whether it matches the prompt, and what to double-check. File names in the answer link back to the map. Code is only sent to Anthropic when you click, and only if you've set up credentials (see below).
 - **Impact.** "Show impact" lights up every file that depends on the selected one, directly or transitively. That's the list of what to re-test.
 - **Cycles.** Import cycles between files and between folders are drawn in red. Imports that never run at load time are left out: TypeScript `import type`, Python `if TYPE_CHECKING:` and imports inside a function.
 - **Hotspots.** Files ranked by commits in the last year × complexity, which is where bugs cluster.
@@ -103,10 +104,20 @@ A single binary with an embedded viewer. It runs offline on localhost and loads 
 | `rewind impact --step 7` | Everything that depends on what step 7 changed |
 | `rewind callers src/db.go Open` | Who calls a function, and what it calls |
 | `rewind cycles --fail` | List import cycles; exits 1 if there are any, for CI |
+| `rewind explain src/db.go` | Ask Claude to explain a file or folder |
+| `rewind explain step 7` / `tour` | Explain what an agent step did, or take a guided tour of the repository |
 | `rewind map --json` / `--dot` | The dependency graph as JSON, or folders as Graphviz |
 | `rewind show 7` | Now also reports how the step changed the structure |
 
 `map`, `deps` and `cycles` take `--at <step|revision>`, for example `--at HEAD`, `--at 7` or `--at main~10`.
+
+### Explanations with Claude
+
+Explanations are off until you provide credentials. Set `ANTHROPIC_API_KEY` (create a key at [console.anthropic.com](https://console.anthropic.com)) or run `ant auth login`, then start `rewind map` or `rewind explain`.
+
+- **Model:** Claude Opus 5.5 at low effort by default, since short explanations don't need deep reasoning. Override with `REWIND_MODEL` (for example `claude-sonnet-5-5`) and `REWIND_EFFORT` (`low` to `max`).
+- **Cost control:** answers are cached in `.git/rewind/explain`, keyed by a hash of everything sent, so asking again about unchanged code is free. A summary of the repository goes first in every request and is marked for prompt caching, so follow-up questions about the same snapshot cost less. Very large files and diffs are truncated, and the request says so.
+- **Privacy:** only the material for the question you asked is sent: the file, the folder listing, the step's diff and prompt, or the starts of the key files for a tour, plus the repository summary. The viewer only accepts explain requests that carry its per-run token, so other websites can't trigger requests on your account.
 
 ### Language support
 
@@ -171,7 +182,7 @@ The viewer's server only binds to loopback addresses and refuses requests whose 
 - [x] **Stage 2:** code map for Go, Python and TypeScript/JavaScript: architecture view, drill-down, search, impact, cycles, hotspots
 - [x] **Stage 3:** session replay on the map, with structural diffs per step and live updates
 - [x] **Stage 4:** diff and restore in the map, 8 more languages, the call graph, hooks for Codex, Gemini CLI and Cursor, `rewind watch`, and a VS Code extension
-- [ ] **Stage 5:** AI explanations of files, folders and steps, and a guided tour of a codebase
+- [x] **Stage 5:** explanations of files, folders and steps with Claude, and a guided tour of a codebase
 
 ## Development
 

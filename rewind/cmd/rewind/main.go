@@ -23,7 +23,7 @@ import (
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/watch"
 )
 
-var version = "0.2.0"
+var version = "0.4.0"
 
 const usage = `rewind: undo history and a code map for AI coding agents
 
@@ -47,6 +47,8 @@ Understand the code:
   rewind impact --step <step>     every file that depends on what a step changed
   rewind callers <file> <func>    who calls a function, and what it calls
   rewind cycles [--fail]          list import cycles (--fail: exit 1 for CI)
+  rewind explain <file|folder>    ask Claude to explain code (needs ANTHROPIC_API_KEY)
+  rewind explain step <n> | tour  explain what an agent step did, or tour the repository
   (map, deps and cycles take --at <step|revision> to look at a snapshot)
 
   rewind hook <agent>             (used by the agents themselves; reads a hook event on stdin)
@@ -116,6 +118,8 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return c.cyclesCmd(rest)
 	case "callers":
 		return c.callersCmd(rest)
+	case "explain":
+		return c.explainCmd(rest)
 	}
 	return fmt.Errorf("unknown command %q (run `rewind help`)", cmd)
 }
