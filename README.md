@@ -1,5 +1,18 @@
 # cool_projects404
 
+Things I build to sharpen my skills and make my own work easier.
+
+| Project | What it is | Stack |
+|---|---|---|
+| [⏪ Rewind](rewind/) | Undo history for AI coding agents: every agent step saved as a Git snapshot you can inspect, diff and restore | Go, Git internals |
+| [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
+
+## ⏪ Rewind — [`rewind/`](rewind/)
+
+![rewind CI](https://github.com/8unionn-creator/cool_projects404/actions/workflows/rewind.yml/badge.svg)
+
+When an AI agent breaks something at step 14 of 30, `rewind restore 13` gets you back, without losing steps 1–12 or touching your branch. Each step is stored as a real Git commit under `refs/rewind/`, tagged with the prompt that caused it. Install the Claude Code hooks with `rewind init claude`. [Read more →](rewind/README.md)
+
 ## 🍅 Tomato Dial — [`tomato-dial/`](tomato-dial/index.html)
 
 A focus timer that works like a real kitchen timer. Drag the dial to set the minutes, pick a task, and press Start.
