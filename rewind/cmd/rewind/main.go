@@ -3,18 +3,24 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/gitx"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/hook"
 	"github.com/8unionn-creator/cool_projects404/rewind/internal/store"
+	"github.com/8unionn-creator/cool_projects404/rewind/internal/watch"
 )
 
 var version = "0.2.0"
@@ -22,7 +28,8 @@ var version = "0.2.0"
 const usage = `rewind: undo history and a code map for AI coding agents
 
 Usage:
-  rewind init claude [--shared]   install Claude Code hooks for this repo
+  rewind init <agent>             record an agent's sessions: claude, codex, gemini, cursor or all
+  rewind watch                    record steps for any tool by watching files (Aider, Copilot, ...)
   rewind start [name]             begin a new session (takes a baseline)
   rewind snap [-m message]        record a step by hand
   rewind log [-s session]         list the steps of a session
@@ -42,7 +49,7 @@ Understand the code:
   rewind cycles [--fail]          list import cycles (--fail: exit 1 for CI)
   (map, deps and cycles take --at <step|revision> to look at a snapshot)
 
-  rewind hook claude              (used by Claude Code; reads a hook event on stdin)
+  rewind hook <agent>             (used by the agents themselves; reads a hook event on stdin)
 
 Steps are numbers within the current session ("7"), "last", or
 "<session>:<n>" for another session. Snapshots live under refs/rewind/ as
@@ -97,6 +104,8 @@ func run(args []string, stdin io.Reader, out io.Writer) error {
 		return c.diff(rest)
 	case "restore":
 		return c.restore(rest)
+	case "watch":
+		return c.watch(rest)
 	case "map":
 		return c.mapCmd(rest)
 	case "deps":
@@ -121,31 +130,74 @@ type cli struct {
 
 func (c *cli) init(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	shared := fs.Bool("shared", false, "write .claude/settings.json (committed) instead of settings.local.json")
-	command := fs.String("command", "rewind hook claude", "hook command to register")
+	shared := fs.Bool("shared", false, "Claude Code: write .claude/settings.json (committed) instead of settings.local.json")
+	command := fs.String("command", "", "hook command to register (default: rewind hook <agent>)")
+	absolute := fs.Bool("absolute", false, "register this rewind binary by its full path, for agents that do not see your PATH")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 || fs.Arg(0) != "claude" {
-		return errors.New("usage: rewind init claude [--shared]")
+	usage := "usage: rewind init <" + strings.Join(hook.Agents, "|") + "|all> [--absolute]"
+	if fs.NArg() != 1 {
+		return errors.New(usage)
 	}
-	name := "settings.local.json"
-	if *shared {
-		name = "settings.json"
+	agents := []string{fs.Arg(0)}
+	if fs.Arg(0) == "all" {
+		agents = hook.Agents
 	}
-	path := filepath.Join(c.st.Repo.Root, ".claude", name)
-	added, err := hook.InstallClaude(path, *command)
-	if err != nil {
+	for _, agent := range agents {
+		inst, ok := hook.Installs[agent]
+		if !ok {
+			return errors.New(usage)
+		}
+		rel := inst.Path
+		if agent == "claude" && *shared {
+			rel = ".claude/settings.json"
+		}
+		cmd := *command
+		if cmd == "" {
+			bin := "rewind"
+			if *absolute {
+				if exe, err := os.Executable(); err == nil {
+					bin = strconv.Quote(filepath.ToSlash(exe))
+				}
+			}
+			cmd = bin + " hook " + agent
+		}
+		added, err := hook.InstallAgent(agent, filepath.Join(c.st.Repo.Root, filepath.FromSlash(rel)), cmd)
+		if err != nil {
+			return err
+		}
+		if added == 0 {
+			fmt.Fprintf(c.out, "%-7s hooks already in %s\n", agent, rel)
+		} else {
+			fmt.Fprintf(c.out, "%-7s added %d hooks to %s\n", agent, added, rel)
+		}
+		if inst.Note != "" && added > 0 {
+			fmt.Fprintf(c.out, "        %s\n", c.dim(inst.Note))
+		}
+	}
+	fmt.Fprintln(c.out, "Sessions in this repo are now recorded. Run `rewind log` during or after one, or `rewind map` to replay it.")
+	return nil
+}
+
+func (c *cli) watch(args []string) error {
+	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
+	session := fs.String("s", "", "session to record into (default: a new one)")
+	quiet := fs.Duration("quiet", 2*time.Second, "how long files must stay unchanged before a step is recorded")
+	if err := parse(fs, args); err != nil {
 		return err
 	}
-	rel, _ := filepath.Rel(c.st.Repo.Root, path)
-	if added == 0 {
-		fmt.Fprintf(c.out, "Rewind hooks are already in %s.\n", rel)
-	} else {
-		fmt.Fprintf(c.out, "Added %d Rewind hooks to %s.\n", added, rel)
+	name := *session
+	if name == "" {
+		name = "watch-" + c.st.NewSessionName()
 	}
-	fmt.Fprintln(c.out, "Every Claude Code session in this repo is now recorded. Run `rewind log` during or after a session.")
-	return nil
+	if err := c.st.SetCurrent(name); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.out, "Watching %s for changes, recording into session %s. Press Ctrl+C to stop.\n", c.bold(filepath.Base(c.st.Repo.Root)), c.bold(name))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return watch.Run(c.st, watch.Options{Session: name, Quiet: *quiet, Out: c.out, Stop: ctx.Done()})
 }
 
 func (c *cli) start(args []string) error {
@@ -200,6 +252,7 @@ func (c *cli) snap(args []string) error {
 func (c *cli) log(args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	session := fs.String("s", "", "session to show (default: current)")
+	asJSON := fs.Bool("json", false, "print steps as JSON (for editor integrations)")
 	if err := parse(fs, args); err != nil {
 		return err
 	}
@@ -210,6 +263,20 @@ func (c *cli) log(args []string) error {
 	steps, err := c.st.Steps(name)
 	if err != nil {
 		return err
+	}
+	if *asJSON {
+		type js struct {
+			Step    int    `json:"step"`
+			Kind    string `json:"kind"`
+			Summary string `json:"summary"`
+			Prompt  string `json:"prompt,omitempty"`
+			Time    int64  `json:"time"`
+		}
+		out := make([]js, len(steps))
+		for i, s := range steps {
+			out[i] = js{s.Step, s.Kind, s.Summary, s.Prompt, s.Time.Unix()}
+		}
+		return json.NewEncoder(c.out).Encode(map[string]any{"session": name, "steps": out})
 	}
 	fmt.Fprintf(c.out, "%s  %s\n\n", c.bold("Session "+name), c.dim(fmt.Sprintf("%d steps · started %s", len(steps), steps[0].Time.Format("Jan 2 15:04"))))
 	lastPrompt := ""
@@ -394,13 +461,20 @@ func (c *cli) restore(args []string) error {
 }
 
 func cmdHook(args []string, stdin io.Reader, out io.Writer) error {
-	if len(args) != 1 || args[0] != "claude" {
-		return errors.New("usage: rewind hook claude")
+	if len(args) != 1 {
+		return errors.New("usage: rewind hook <" + strings.Join(hook.Agents, "|") + ">")
 	}
 	// A recording failure must never interrupt the agent, so errors are
-	// logged to .git/rewind/hook.log and the hook always exits 0.
-	if _, err := hook.HandleClaude(stdin, "."); err != nil && !errors.Is(err, gitx.ErrNotRepo) {
+	// logged to .git/rewind/hook.log and the hook always succeeds.
+	ev, err := hook.Parse(args[0], stdin)
+	if err == nil {
+		_, err = hook.Record(ev, ".")
+	}
+	if err != nil && !errors.Is(err, gitx.ErrNotRepo) {
 		hook.LogError(".", err)
+	}
+	if reply := hook.Reply(args[0], ev); reply != "" {
+		fmt.Fprintln(out, reply)
 	}
 	return nil
 }

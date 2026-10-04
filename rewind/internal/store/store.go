@@ -35,6 +35,7 @@ const (
 	KindPrompt  = "prompt"  // when the user sends a prompt (captures manual edits)
 	KindManual  = "manual"  // `rewind snap`
 	KindRestore = "restore" // after `rewind restore`
+	KindWatch   = "watch"   // `rewind watch` saw files settle after a change
 )
 
 // Meta is stored as JSON on the last line of each step's commit message.

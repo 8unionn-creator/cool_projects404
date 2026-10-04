@@ -1,0 +1,32 @@
+{
+  "name": "rewind",
+  "displayName": "Rewind",
+  "description": "Undo history and a code map for AI coding agents: replay what the agent changed, see who calls what, and restore any step.",
+  "version": "0.3.0",
+  "publisher": "cool-projects404",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/8unionn-creator/cool_projects404" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Visualization", "SCM Providers", "Other"],
+  "keywords": ["ai", "agent", "claude", "undo", "code map", "call graph"],
+  "main": "./extension.js",
+  "activationEvents": ["workspaceContains:.git"],
+  "contributes": {
+    "commands": [
+      { "command": "rewind.openMap", "title": "Open Code Map", "category": "Rewind", "icon": "$(type-hierarchy)" },
+      { "command": "rewind.steps", "title": "Show Session Steps…", "category": "Rewind" },
+      { "command": "rewind.record", "title": "Record Agent Sessions…", "category": "Rewind" },
+      { "command": "rewind.watch", "title": "Start or Stop Watching Files", "category": "Rewind" }
+    ],
+    "configuration": {
+      "title": "Rewind",
+      "properties": {
+        "rewind.path": {
+          "type": "string",
+          "default": "rewind",
+          "description": "Path to the rewind executable, if it is not on your PATH."
+        }
+      }
+    }
+  }
+}

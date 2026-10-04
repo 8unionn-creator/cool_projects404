@@ -33,22 +33,31 @@ Agents edit dozens of files in one session. When step 14 of 30 goes wrong, `git`
 go install github.com/8unionn-creator/cool_projects404/rewind/cmd/rewind@latest
 ```
 
-## Use it with Claude Code
+## Record your agent
 
 ```sh
 cd your-repo
-rewind init claude     # adds hooks to .claude/settings.local.json
+rewind init claude     # or codex, gemini, cursor, or all
 ```
 
-From then on, every Claude Code session in that repo is recorded automatically:
+| Agent | Hook file | What gets recorded |
+|---|---|---|
+| **Claude Code** | `.claude/settings.local.json` | session start, each prompt, each Edit/Write/Bash |
+| **OpenAI Codex CLI** | `.codex/hooks.json` | session start, each prompt, each tool call (`apply_patch` file names are read from the patch). Approve the new hooks once with `/hooks`. |
+| **Gemini CLI** | `.gemini/settings.json` | `SessionStart`, `BeforeAgent` (the prompt), `AfterTool` |
+| **Cursor** | `.cursor/hooks.json` | `beforeSubmitPrompt`, `afterFileEdit`, `afterShellExecution`, `stop`. Restart Cursor once afterwards. |
+| **Anything else** (Aider, Copilot, Windsurf, edits by hand) | none | `rewind watch` snapshots whenever files change and then settle for 2 seconds |
 
-| Claude Code event | Rewind records |
-|---|---|
-| `SessionStart` | a baseline of the repo |
-| `UserPromptSubmit` | the prompt, plus any edits you made by hand since the last step |
-| `PostToolUse` (Edit, Write, Bash…) | what the tool changed, labelled with the prompt that caused it |
+Tool calls that don't change any file, such as reads, searches or `ls`, add no step. If an agent can't see `rewind` on its PATH (common for apps launched from a dock or Start menu), run `rewind init <agent> --absolute` to register the binary by its full path.
 
-Tool calls that don't change any file, such as reads, searches or `ls`, add no step.
+## VS Code extension
+
+[`editors/vscode`](editors/vscode/) opens the code map in an editor tab. It also lets you browse a session's steps (view a diff or restore any step), set up recording for any agent, and start `rewind watch`, all from the command palette. The status bar shows the current session and step.
+
+```sh
+cd editors/vscode && npx @vscode/vsce package   # builds rewind-0.3.0.vsix
+code --install-extension rewind-0.3.0.vsix
+```
 
 ## Commands
 
@@ -61,6 +70,7 @@ Tool calls that don't change any file, such as reads, searches or `ls`, add no s
 | `rewind restore -n 5` | Preview a restore without touching anything |
 | `rewind restore 5` | Put the files back as they were at step 5 |
 | `rewind sessions` | All recorded sessions |
+| `rewind watch` | Record steps for any tool by watching files |
 | `rewind start` / `rewind snap -m "…"` | Record by hand, without an agent |
 
 Steps are numbers in the current session (`7`), `last`, or `session:number` for another session.
@@ -160,7 +170,8 @@ The viewer's server only binds to loopback addresses and refuses requests whose 
 - [x] **Stage 1:** snapshots, log, show, diff, restore, Claude Code hooks
 - [x] **Stage 2:** code map for Go, Python and TypeScript/JavaScript: architecture view, drill-down, search, impact, cycles, hotspots
 - [x] **Stage 3:** session replay on the map, with structural diffs per step and live updates
-- [ ] **Stage 4:** a guided tour of a codebase, hooks for more agents (Cursor, Aider, Codex), Rust and Java
+- [x] **Stage 4:** diff and restore in the map, 8 more languages, the call graph, hooks for Codex, Gemini CLI and Cursor, `rewind watch`, and a VS Code extension
+- [ ] **Stage 5:** AI explanations of files, folders and steps, and a guided tour of a codebase
 
 ## Development
 

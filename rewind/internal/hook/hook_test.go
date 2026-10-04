@@ -134,3 +134,89 @@ func TestRelPathThroughSymlink(t *testing.T) {
 		t.Fatalf("paths outside the repo should stay absolute, got %q", got)
 	}
 }
+
+func TestOtherAgents(t *testing.T) {
+	dir := repo(t)
+	file := filepath.Join(dir, "app.py")
+	record := func(agent, payload string) Result {
+		t.Helper()
+		ev, err := Parse(agent, strings.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := Record(ev, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	q := func(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+	// Gemini CLI
+	record("gemini", `{"session_id":"g-123456789","hook_event_name":"SessionStart","cwd":`+q(dir)+`,"source":"startup"}`)
+	record("gemini", `{"session_id":"g-123456789","hook_event_name":"BeforeAgent","cwd":`+q(dir)+`,"prompt":"add app.py"}`)
+	os.WriteFile(file, []byte("print(1)\n"), 0o644)
+	r := record("gemini", `{"session_id":"g-123456789","hook_event_name":"AfterTool","cwd":`+q(dir)+`,"tool_name":"write_file","tool_input":{"file_path":`+q(file)+`}}`)
+	if r.Session != "gemini-g1234567" || r.Step == nil || r.Step.Summary != "write_file app.py" || r.Step.Prompt != "add app.py" {
+		t.Fatalf("gemini: %+v %+v", r, r.Step)
+	}
+
+	// Cursor: conversation_id and workspace_roots instead of session_id and cwd
+	record("cursor", `{"conversation_id":"c-abc","hook_event_name":"beforeSubmitPrompt","workspace_roots":[`+q(dir)+`],"prompt":"edit it"}`)
+	os.WriteFile(file, []byte("print(2)\n"), 0o644)
+	r = record("cursor", `{"conversation_id":"c-abc","hook_event_name":"afterFileEdit","workspace_roots":[`+q(dir)+`],"file_path":`+q(file)+`,"edits":[]}`)
+	if r.Session != "cursor-cabc" || r.Step == nil || r.Step.Summary != "Edit app.py" {
+		t.Fatalf("cursor: %+v", r)
+	}
+
+	// Codex: Claude-style payload; apply_patch names files inside the patch
+	os.WriteFile(file, []byte("print(3)\n"), 0o644)
+	r = record("codex", `{"session_id":"0199-aaaa","hook_event_name":"PostToolUse","cwd":`+q(dir)+`,"tool_name":"apply_patch","tool_input":{"input":"*** Begin Patch\n*** Update File: app.py\n@@\n-print(2)\n+print(3)\n*** End Patch"}}`)
+	if r.Step == nil || r.Step.Summary != "apply_patch app.py" {
+		t.Fatalf("codex: %+v", r)
+	}
+
+	if got := Reply("gemini", Event{}); got != "{}" {
+		t.Errorf("gemini needs JSON on stdout, got %q", got)
+	}
+	if got := Reply("cursor", Event{Kind: "prompt"}); got != `{"continue":true}` {
+		t.Errorf("cursor prompt reply = %q", got)
+	}
+	if _, err := Parse("vim", strings.NewReader("{}")); err == nil {
+		t.Error("unknown agents should be rejected")
+	}
+}
+
+func TestInstallOtherAgents(t *testing.T) {
+	dir := t.TempDir()
+	for _, agent := range []string{"codex", "gemini", "cursor"} {
+		p := filepath.Join(dir, Installs[agent].Path)
+		n, err := InstallAgent(agent, p, "rewind hook "+agent)
+		if err != nil || n == 0 {
+			t.Fatalf("%s: added=%d err=%v", agent, n, err)
+		}
+		if n2, _ := InstallAgent(agent, p, "rewind hook "+agent); n2 != 0 {
+			t.Fatalf("%s: second install added %d", agent, n2)
+		}
+		b, _ := os.ReadFile(p)
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		hooks := m["hooks"].(map[string]any)
+		switch agent {
+		case "cursor":
+			if m["version"].(float64) != 1 || hooks["afterFileEdit"] == nil || hooks["beforeSubmitPrompt"] == nil {
+				t.Fatalf("cursor config: %s", b)
+			}
+		case "gemini":
+			if hooks["AfterTool"] == nil || hooks["BeforeAgent"] == nil {
+				t.Fatalf("gemini config: %s", b)
+			}
+		case "codex":
+			if hooks["PostToolUse"] == nil || hooks["UserPromptSubmit"] == nil {
+				t.Fatalf("codex config: %s", b)
+			}
+		}
+	}
+}
