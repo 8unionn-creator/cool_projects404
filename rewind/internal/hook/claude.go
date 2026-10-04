@@ -101,10 +101,7 @@ func describeTool(ev ClaudeEvent, root string) string {
 		target = str("notebook_path")
 	}
 	if target != "" {
-		if rel, err := filepath.Rel(root, target); err == nil && !strings.HasPrefix(rel, "..") {
-			target = filepath.ToSlash(rel)
-		}
-		return ev.ToolName + " " + target
+		return ev.ToolName + " " + relPath(root, target)
 	}
 	if cmd := str("command"); cmd != "" {
 		return ev.ToolName + ": " + store.OneLine(cmd, 60)
@@ -113,6 +110,27 @@ func describeTool(ev ClaudeEvent, root string) string {
 		return "tool call"
 	}
 	return ev.ToolName
+}
+
+// relPath makes target relative to root. Paths may arrive through a symlink
+// (macOS's /var is /private/var), so both sides are resolved before giving up.
+func relPath(root, target string) string {
+	inside := func(r, t string) (string, bool) {
+		rel, err := filepath.Rel(r, t)
+		return filepath.ToSlash(rel), err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	}
+	if rel, ok := inside(root, target); ok {
+		return rel
+	}
+	realRoot, err1 := filepath.EvalSymlinks(root)
+	// The file may have been deleted, so resolve its directory instead.
+	realDir, err2 := filepath.EvalSymlinks(filepath.Dir(target))
+	if err1 == nil && err2 == nil {
+		if rel, ok := inside(realRoot, filepath.Join(realDir, filepath.Base(target))); ok {
+			return rel
+		}
+	}
+	return target
 }
 
 func promptPath(st *store.Store, session string) string {

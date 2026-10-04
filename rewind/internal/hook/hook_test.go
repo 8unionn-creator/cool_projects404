@@ -116,3 +116,21 @@ func TestSessionName(t *testing.T) {
 		t.Fatal("session names must be valid ref names")
 	}
 }
+
+func TestRelPathThroughSymlink(t *testing.T) {
+	target := t.TempDir()
+	os.MkdirAll(filepath.Join(target, "src"), 0o755)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symlinks not supported:", err)
+	}
+	if got := relPath(target, filepath.Join(link, "src", "a.go")); got != "src/a.go" {
+		t.Fatalf("got %q", got)
+	}
+	if got := relPath(target, filepath.Join(target, "src", "gone.go")); got != "src/gone.go" {
+		t.Fatalf("got %q", got)
+	}
+	if got := relPath(target, "/elsewhere/x.go"); got != "/elsewhere/x.go" {
+		t.Fatalf("paths outside the repo should stay absolute, got %q", got)
+	}
+}
