@@ -26,6 +26,7 @@ Each shot takes about 9 minutes on an RTX 4090, so the whole story takes about 4
 
 - `story.txt` has one prompt per line, one line per 5-second shot.
 - Shot 1 is generated from its text alone. Each later shot also gets the **last frame of the shot before it** as a starting image, so the fox and the scene stay consistent across cuts.
+- A line of `---` starts a **new scene**: the next shot starts fresh from its text alone. Use it at chapter or location changes, or every 8–10 shots, so long stories don't drift.
 - At the end, `ffmpeg` joins the shots into `output/story.mp4`.
 
 ## Make your own story
@@ -34,5 +35,13 @@ Edit `story.txt` and run `./make_story.sh` again. Tips:
 - Describe the main character the same way in every line ("the same red fox with a white-tipped tail").
 - One action per shot. 5 seconds is short.
 - Add the camera move and light ("slow push-in", "blue dusk light").
+- Split long stories into scenes with `---`:
+
+```
+The red fox wakes up in a snowy forest at dusk.
+The red fox trots toward a warm glow.
+---
+Morning. The red fox sleeps curled up by a cabin door, the lantern beside it.
+```
 
 `DRY_RUN=1 ./make_story.sh` checks the pipeline with test-pattern clips, without a GPU.

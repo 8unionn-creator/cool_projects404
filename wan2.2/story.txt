@@ -1,5 +1,6 @@
 # "The Lantern Fox": one shot per line, 5 seconds each.
 # Shot 1 is made from text. Every later shot starts from the last frame of the one before, so the fox and the forest stay the same.
+# A line of --- starts a new scene: the next shot starts fresh from its text, which stops long stories drifting.
 # Lines starting with # are ignored.
 Cinematic, a small red fox with a white-tipped tail wakes up in a snowy pine forest at dusk, blue twilight, soft falling snow. The fox lifts its head and notices a faint warm glow between the trees. Slow push-in, shallow depth of field.
 The same red fox trots through deep snow toward the glow, leaving small paw prints behind. Snowflakes drift past the camera. Tracking shot from the side, blue dusk light, warm orange glow ahead.
