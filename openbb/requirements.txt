@@ -1,0 +1,3 @@
+openbb==5.0.0
+openbb-equity==2.0.0
+openbb-yfinance==2.0.0
