@@ -7,6 +7,7 @@ Things I build to sharpen my skills and make my own work easier.
 | [⏪ Rewind](rewind/) | Undo history and a code map for AI coding agents: every agent step saved as a Git snapshot you can restore, `rewind bisect` to find the step that broke the tests, an interactive map that replays what the agent changed, and an MCP server so agents can use it themselves | Go, Git internals, static analysis, MCP |
 | [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
 | [📈 OpenBB](openbb/) | Install and quickstart for the OpenBB investment research platform | Python |
+| [🎬 Wan2.2 story](wan2.2/) | Turns a short written story into an AI video, shot by shot, with the open-source Wan2.2 model | Python, PyTorch, ffmpeg |
 
 ## ⏪ Rewind — [`rewind/`](rewind/)
 

@@ -1,0 +1,8 @@
+# "The Lantern Fox": one shot per line, 5 seconds each.
+# Shot 1 is made from text. Every later shot starts from the last frame of the one before, so the fox and the forest stay the same.
+# Lines starting with # are ignored.
+Cinematic, a small red fox with a white-tipped tail wakes up in a snowy pine forest at dusk, blue twilight, soft falling snow. The fox lifts its head and notices a faint warm glow between the trees. Slow push-in, shallow depth of field.
+The same red fox trots through deep snow toward the glow, leaving small paw prints behind. Snowflakes drift past the camera. Tracking shot from the side, blue dusk light, warm orange glow ahead.
+The red fox finds an old brass lantern half-buried in the snow, its candle still burning. The fox sniffs it carefully, the flame lighting its face in warm orange. Close-up, cozy and magical mood.
+The red fox gently picks up the lantern's handle in its mouth and walks deeper into the dark forest, the lantern swinging and casting moving golden light on the snowy trees. Wide shot, night falling.
+The red fox arrives at a tiny snow-covered cabin and sets the lantern down by the door. The cabin windows light up warm yellow one by one. The camera slowly pulls back to reveal the starry night sky. Peaceful ending.
