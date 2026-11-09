@@ -45,12 +45,13 @@ A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable
 - **Finds BPM and key by itself** when you add a beat (½ and ×2 buttons fix a tempo read at half or double speed)
 - **Your tag on everything:** producer name, beat title, BPM, key, handle and tagline. Cover art prints on the record label and the CD, and can blur into the background. BPM and key in file names like `night_drive_140bpm_F#min.mp3` are used before detection
 - **Looks:** 6 vinyl colors, 5 rooms, any accent color, 3 title styles, 33⅓ or 45 RPM
-- **Recording mode:** hides the controls, counts down, plays from your start time, and fades out at 15, 30 or 60 seconds. A guide shows where TikTok's buttons and caption will cover the video
+- **Record video:** makes a 1080 × 1920 MP4 with the beat's sound (15, 30 or 60 seconds, or the whole beat, from any start time). It fades out at the end and the tonearm lifts. Save it straight to your phone and upload it to TikTok, Reels or YouTube Shorts
+- **Full-screen mode** for screen recorders instead: hides the controls, counts down and plays. A guide shows where TikTok's buttons and caption will cover the video
 - Comes with a built-in demo beat made in the browser, so it works before you add anything
 
-**How to use it:** open `spin-room/index.html` in a browser. Add beats, style it, start your phone's screen recorder, then tap **Record**. Double-tap or press `Esc` to leave recording mode. Beats stay on your device and are never uploaded.
+**How to use it:** open `spin-room/index.html` in a browser. Add beats, style it, pick a start time and length, then tap **Record** and keep the screen open while it records. Tap **Save video** when it's done. Beats stay on your device and are never uploaded.
 
 **Install it as an app:** with GitHub Pages turned on for this repo (Settings → Pages → Deploy from a branch → the default branch, `/ (root)`), it lives at `https://8unionn-creator.github.io/cool_projects404/spin-room/`. Open that in Safari and choose Share → Add to Home Screen (on Android, Chrome → Install app). It then opens full screen with no browser bars, which keeps them out of your recordings, and works offline.
 
-**Where the video goes:** your phone's screen recorder saves it to Photos (iPhone) or the Gallery (Android). In TikTok tap **+** → **Upload**, pick the recording and trim off the countdown.
+**Where the video goes:** **Save video** opens the share menu on iPhone (choose Save Video to put it in Photos) and downloads it elsewhere. Then in TikTok tap **+** → **Upload**.
 

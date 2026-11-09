@@ -122,23 +122,23 @@ button { cursor: pointer; }
 }
 .platter {
   position: absolute; left: 2.5%; top: 8.5%; width: 83%; aspect-ratio: 1; border-radius: 50%;
-  background: radial-gradient(circle, #1f1f23 0 93%, #9a9da3 94%, #5c5f65 96.5%, #c4c7cc 98%, #6b6e74 100%);
+  background: radial-gradient(circle closest-side, #1f1f23 0 93%, #9a9da3 94%, #5c5f65 96.5%, #c4c7cc 98%, #6b6e74 100%);
   box-shadow: 0 calc(1.4 * var(--u)) calc(3 * var(--u)) rgba(0, 0, 0, .55);
   will-change: transform;
 }
 .platter::before { /* strobe dots on the platter rim */
   content: ""; position: absolute; inset: 0; border-radius: 50%;
   background: repeating-conic-gradient(rgba(235, 238, 242, .95) 0 1.1deg, transparent 1.1deg 3.6deg);
-  -webkit-mask: radial-gradient(circle, transparent 0 95.6%, #000 96% 98.6%, transparent 99%);
-  mask: radial-gradient(circle, transparent 0 95.6%, #000 96% 98.6%, transparent 99%);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 0 95.6%, #000 96% 98.6%, transparent 99%);
+  mask: radial-gradient(circle closest-side, transparent 0 95.6%, #000 96% 98.6%, transparent 99%);
 }
 .record {
   --vinyl: #0c0c0e; --groove: rgba(255, 255, 255, .055); --edge: #2a2a2e; --gap: rgba(0, 0, 0, .55);
   position: absolute; inset: 1.8%; border-radius: 50%;
   background:
-    radial-gradient(circle, transparent 0 56%, var(--gap) 56.4% 57.4%, transparent 57.8% 76%, var(--gap) 76.4% 77.4%, transparent 77.8%),
-    repeating-radial-gradient(circle, transparent 0 .55%, var(--groove) .7% .85%, transparent 1%),
-    radial-gradient(circle, var(--vinyl) 0 97%, var(--edge) 98.5%, var(--vinyl) 100%);
+    radial-gradient(circle closest-side, transparent 0 56%, var(--gap) 56.4% 57.4%, transparent 57.8% 76%, var(--gap) 76.4% 77.4%, transparent 77.8%),
+    repeating-radial-gradient(circle closest-side, transparent 0 .55%, var(--groove) .7% .85%, transparent 1%),
+    radial-gradient(circle closest-side, var(--vinyl) 0 97%, var(--edge) 98.5%, var(--vinyl) 100%);
 }
 .stage[data-vinyl="red"] .record { --vinyl: rgba(170, 18, 38, .9); --groove: rgba(255, 220, 220, .07); --edge: rgba(220, 60, 70, .9); --gap: rgba(60, 0, 8, .4); }
 .stage[data-vinyl="smoke"] .record { --vinyl: rgba(52, 50, 58, .72); --groove: rgba(255, 255, 255, .07); --edge: rgba(150, 150, 160, .6); --gap: rgba(0, 0, 0, .3); }
@@ -150,8 +150,8 @@ button { cursor: pointer; }
 .sheen { /* light reflection: stays still while the record turns */
   position: absolute; left: 4%; top: 10%; width: 80%; aspect-ratio: 1; border-radius: 50%; pointer-events: none;
   background: conic-gradient(from 300deg, transparent 0 4%, rgba(255, 255, 255, .16) 9%, transparent 15% 50%, rgba(255, 255, 255, .11) 58%, transparent 65%);
-  -webkit-mask: radial-gradient(circle, transparent 0 34%, #000 36% 97%, transparent 98%);
-  mask: radial-gradient(circle, transparent 0 34%, #000 36% 97%, transparent 98%);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 0 34%, #000 36% 97%, transparent 98%);
+  mask: radial-gradient(circle closest-side, transparent 0 34%, #000 36% 97%, transparent 98%);
 }
 .spindle { position: absolute; left: 43.2%; top: 49.2%; width: 1.6%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, #8a8d93 60%, #3d3f43); }
 .tt-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
@@ -164,15 +164,15 @@ button { cursor: pointer; }
 /* CD + discman */
 .disc {
   position: absolute; border-radius: 50%; aspect-ratio: 1;
-  background: radial-gradient(circle, transparent 0 7%, rgba(225, 230, 236, .34) 7.6% 21%, #a8aeb6 21.5% 22.6%, #dfe3e8 23.2% 97.6%, #969ca4 98.2% 100%);
+  background: radial-gradient(circle closest-side, transparent 0 7%, rgba(225, 230, 236, .34) 7.6% 21%, #a8aeb6 21.5% 22.6%, #dfe3e8 23.2% 97.6%, #969ca4 98.2% 100%);
   box-shadow: 0 calc(1.6 * var(--u)) calc(4 * var(--u)) rgba(0, 0, 0, .5);
 }
 .cd-loose .disc { inset: 0; }
 .disc .cd-spin { position: absolute; inset: 0; border-radius: 50%; will-change: transform; }
 .cd-print {
   position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
-  -webkit-mask: radial-gradient(circle, transparent 0 23.4%, #000 23.8% 97.2%, transparent 97.6%);
-  mask: radial-gradient(circle, transparent 0 23.4%, #000 23.8% 97.2%, transparent 97.6%);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 0 23.4%, #000 23.8% 97.2%, transparent 97.6%);
+  mask: radial-gradient(circle closest-side, transparent 0 23.4%, #000 23.8% 97.2%, transparent 97.6%);
 }
 .cd-rainbow { /* fixed refraction, like light on a real disc */
   position: absolute; inset: 0; border-radius: 50%; pointer-events: none; mix-blend-mode: screen;
@@ -180,8 +180,8 @@ button { cursor: pointer; }
     conic-gradient(from 210deg, transparent 0, rgba(255, 70, 140, .38) 4%, rgba(255, 210, 90, .38) 8%, rgba(90, 255, 190, .38) 12%, rgba(90, 160, 255, .38) 16%, transparent 21% 50%,
       rgba(255, 70, 140, .32) 54%, rgba(255, 210, 90, .32) 58%, rgba(90, 255, 190, .32) 62%, rgba(90, 160, 255, .32) 66%, transparent 71%),
     linear-gradient(125deg, transparent 38%, rgba(255, 255, 255, .45) 47%, transparent 56%);
-  -webkit-mask: radial-gradient(circle, transparent 0 22.4%, #000 23% 97.6%, transparent 98%);
-  mask: radial-gradient(circle, transparent 0 22.4%, #000 23% 97.6%, transparent 98%);
+  -webkit-mask: radial-gradient(circle closest-side, transparent 0 22.4%, #000 23% 97.6%, transparent 98%);
+  mask: radial-gradient(circle closest-side, transparent 0 22.4%, #000 23% 97.6%, transparent 98%);
 }
 .discman .body {
   position: absolute; inset: 0; border-radius: 50%;
@@ -322,6 +322,29 @@ label.f input:focus { border-color: var(--accent); outline: none; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); translate: -50% 0; z-index: 80; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 10px; background: #2b2930; color: var(--ui-ink); border: 1px solid var(--ui-line); font-size: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
 
 .fab { display: none; }
+.alt { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--ui-line); }
+.alt h3 { margin: 0; font: 500 11px/1 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--ui-dim); }
+.alt .btn { align-self: flex-start; }
+.btn.big.save::before { display: none; }
+.exp-bar {
+  display: none; position: fixed; z-index: 85; left: 50%; translate: -50% 0; top: calc(14px + env(safe-area-inset-top, 0px));
+  align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 99px; white-space: nowrap; font-size: 14px; font-weight: 600;
+  background: rgba(20, 19, 24, .92); border: 1px solid var(--ui-line); box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+}
+body.exporting .exp-bar { display: flex; }
+.exp-bar .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #e5333f; animation: blink 1s ease-in-out infinite; }
+#expTime { font: 500 13px var(--font-mono); color: var(--ui-dim); font-variant-numeric: tabular-nums; }
+.exp-bar button { border: 0; border-radius: 99px; padding: 7px 14px; background: var(--ui-raise); font-weight: 600; font-size: 13px; }
+body.exporting .panel, body.exporting .fab { display: none !important; }
+body.exporting .app { grid-template-columns: minmax(0, 1fr); }
+body.exporting .stage-wrap { padding-top: calc(70px + env(safe-area-inset-top, 0px)); }
+.modal { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .65); }
+[hidden] { display: none !important; }
+.modal-card { width: min(440px, 100%); max-height: calc(100dvh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--ui-panel); border: 1px solid var(--ui-line); }
+.modal-card h3 { margin: 0; font: 800 18px/1.2 var(--font-display); }
+.modal-card video { width: 100%; max-height: 52dvh; border-radius: 10px; background: #000; }
+.modal-btns { display: flex; gap: 8px; }
+.modal-btns .big { flex: 1; }
 
 @media (max-width: 860px) {
   .app { grid-template-columns: minmax(0, 1fr); }
@@ -343,6 +366,10 @@ label.f input:focus { border-color: var(--accent); outline: none; }
   .fab button { border: 0; border-radius: 99px; padding: 10px 16px; background: var(--ui-raise); font-weight: 600; font-size: 14px; }
   .fab .play { background: var(--accent); color: #141217; min-width: 72px; }
   body.sheet .fab { display: none; }
+}
+body.exporting .stage {
+  height: min(calc(100dvh - 90px - env(safe-area-inset-top, 0px)), calc((100vw - 32px) * 16 / 9));
+  width: auto; aspect-ratio: 9 / 16; max-width: none; border-radius: 14px;
 }
 @media (prefers-reduced-motion: reduce) {
   .stage.playing .chip .dot { animation: none; }
@@ -557,19 +584,24 @@ label.f input:focus { border-color: var(--accent); outline: none; }
     </section>
 
     <section class="grp">
-      <h3>Record for TikTok</h3>
+      <h3>Make your video</h3>
       <div class="fields">
         <label class="f">Start at (m:ss)<input id="fStart" data-k="startAt" placeholder="0:00" maxlength="6" inputmode="numeric" autocomplete="off"></label>
-        <label class="f">Clip length
-          <select id="fClip" data-k="clip"><option value="0">Whole beat</option><option value="15">15 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option></select>
-        </label>
-        <label class="f wide">Countdown
-          <select id="fCount" data-k="countdown"><option value="3">3 seconds</option><option value="5">5 seconds</option><option value="0">None</option></select>
+        <label class="f">Length
+          <select id="fClip" data-k="clip"><option value="15">15 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option><option value="0">Whole beat</option></select>
         </label>
       </div>
-      <button class="btn big" id="recBtn">Start recording mode</button>
-      <p class="hint">Start your phone's screen recorder first, then tap the button. The controls hide, the countdown runs, and the beat plays from your start time. When the clip ends, the beat fades out and the arm lifts. Double-tap the screen or press <kbd>Esc</kbd> to come back. Trim the countdown off in TikTok.</p>
-      <p class="hint">Shortcuts: <kbd>Space</kbd> play / pause · <kbd>R</kbd> recording mode · <kbd>←</kbd> <kbd>→</kbd> skip 5 s</p>
+      <button class="btn big" id="exportBtn">Record video</button>
+      <p class="hint">Makes a 1080 × 1920 video with your beat's sound, ready for TikTok, Instagram Reels or YouTube Shorts. It records in real time, so a 30-second video takes 30 seconds. Keep this screen open until it's done.</p>
+      <div class="alt">
+        <h3>Or use your screen recorder</h3>
+        <label class="f">Countdown
+          <select id="fCount" data-k="countdown"><option value="3">3 seconds</option><option value="5">5 seconds</option><option value="0">None</option></select>
+        </label>
+        <button class="btn" id="recBtn">Full-screen mode</button>
+        <p class="hint">Hides the controls and plays from your start time so you can capture it with your phone's screen recorder. Double-tap the screen or press <kbd>Esc</kbd> to come back.</p>
+      </div>
+      <p class="hint">Shortcuts: <kbd>Space</kbd> play / pause · <kbd>R</kbd> record video · <kbd>F</kbd> full-screen mode · <kbd>←</kbd> <kbd>→</kbd> skip 5 s</p>
     </section>
   </aside>
 </div>
@@ -578,6 +610,16 @@ label.f input:focus { border-color: var(--accent); outline: none; }
   <button id="fabEdit">Edit</button>
   <button class="play" id="fabPlay">Play</button>
   <button id="fabRec">Record</button>
+</div>
+<div class="exp-bar" id="expBar" role="status"><span class="rec-dot"></span><span>Recording video</span><span id="expTime">0:00 / 0:30</span><button id="expCancel">Cancel</button></div>
+<div class="modal" id="vidModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="vidTitle">
+    <h3 id="vidTitle">Your video is ready</h3>
+    <p class="hint" id="vidInfo"></p>
+    <video id="vidPrev" controls playsinline></video>
+    <div class="modal-btns"><button class="btn big save" id="vidSave">Save video</button><button class="btn" id="vidClose">Close</button></div>
+    <p class="hint" id="vidHint"></p>
+  </div>
 </div>
 <div class="toast" id="toast" hidden></div>
 
@@ -592,7 +634,7 @@ label.f input:focus { border-color: var(--accent); outline: none; }
 
   /* ---------- settings ---------- */
   const KEY = 'spinroom.v1';
-  const DEFAULTS = { producer: 'YOUR NAME', handle: '@yourname', tagline: 'Beats in bio', mode: 'vinyl', rpm: '33', room: 'oxblood', vinyl: 'black', accent: '', font: 'wide', coverBg: true, viz: true, safe: false, startAt: '0:00', clip: '0', countdown: '3', cover: null };
+  const DEFAULTS = { producer: 'YOUR NAME', handle: '@yourname', tagline: 'Beats in bio', mode: 'vinyl', rpm: '33', room: 'oxblood', vinyl: 'black', accent: '', font: 'wide', coverBg: true, viz: true, safe: false, startAt: '0:00', clip: '30', countdown: '3', cover: null };
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
   const state = Object.assign({}, DEFAULTS, saved);
@@ -678,7 +720,7 @@ label.f input:focus { border-color: var(--accent); outline: none; }
     s.onended = () => {
       if (src !== s) return;
       src = null; playing = false; pos = 0;
-      if (!recMode && cur < tracks.length - 1) select(cur + 1, true); else refresh();
+      if (!recMode && !xp && cur < tracks.length - 1) select(cur + 1, true); else refresh();
     };
     wake(true);
     refresh();
@@ -1057,6 +1099,7 @@ label.f input:focus { border-color: var(--accent); outline: none; }
     pulse += (bass - pulse) * (1 - Math.exp(-dt * (bass > pulse ? 18 : 5)));
     stage.style.setProperty('--pulse', pulse.toFixed(3));
     drawViz(dt);
+    exportTick(now);
 
     // clip length during recording mode
     const clip = +state.clip;
@@ -1067,6 +1110,431 @@ label.f input:focus { border-color: var(--accent); outline: none; }
     }
     requestAnimationFrame(frame);
   }
+
+  /* ---------- video export ----------
+     Redraws the stage onto a 1080×1920 canvas every frame, using the on-screen layout for positions,
+     and records it together with the beat's audio. */
+  const XW = 1080, XH = 1920, TAU = Math.PI * 2, RAD = Math.PI / 180;
+  let xp = null;
+  let downloadsNS = null;
+  try { if (window.claude && window.claude.use) window.claude.use('downloads').then(ns => { downloadsNS = ns; }, () => {}); } catch (e) {}
+
+  const hexRgb = h => { h = String(h || '').trim().replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); const n = parseInt(h, 16); return isNaN(n) ? [0, 0, 0] : [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+  const rgba = (h, a) => { const [r, g, b] = hexRgb(h); return `rgba(${r},${g},${b},${a})`; };
+  const mix = (h1, h2, t) => { const a = hexRgb(h1), b = hexRgb(h2); return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',')})`; };
+  const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; };
+  const loadImg = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+  function rr(g, x, y, w, h, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else { g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); } }
+  const circ = (g, x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, TAU); };
+  const ring = (g, r0, r1) => { g.beginPath(); g.arc(0, 0, r1, 0, TAU); g.arc(0, 0, r0, 0, TAU, true); };
+  function metal(g, x0, x1) { const m = g.createLinearGradient(x0, 0, x1, 0); m.addColorStop(0, '#7d8188'); m.addColorStop(.45, '#f3f4f6'); m.addColorStop(1, '#8b8f96'); return m; }
+  function arcText(g, text, r, top, spacing) {
+    const chars = [...text], ws = chars.map(ch => g.measureText(ch).width + spacing), total = ws.reduce((a, b) => a + b, 0) - spacing;
+    g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    let off = 0;
+    chars.forEach((ch, i) => {
+      const mid = off + (ws[i] - spacing) / 2;
+      const a = top ? -Math.PI / 2 - total / 2 / r + mid / r : Math.PI / 2 + total / 2 / r - mid / r;
+      g.save(); g.translate(r * Math.cos(a), r * Math.sin(a)); g.rotate(top ? a + Math.PI / 2 : a - Math.PI / 2); g.fillText(ch, 0, 0); g.restore();
+      off += ws[i];
+    });
+  }
+  const VINYL = {
+    black: ['#0c0c0e', 'rgba(255,255,255,.055)', '#2a2a2e', 'rgba(0,0,0,.55)'],
+    red: ['rgba(170,18,38,.9)', 'rgba(255,220,220,.07)', 'rgba(220,60,70,.9)', 'rgba(60,0,8,.4)'],
+    smoke: ['rgba(52,50,58,.72)', 'rgba(255,255,255,.07)', 'rgba(150,150,160,.6)', 'rgba(0,0,0,.3)'],
+    gold: ['#b48a3a', 'rgba(60,35,0,.18)', '#e2c27a', 'rgba(70,40,0,.35)'],
+    white: ['#ece8e0', 'rgba(0,0,0,.06)', '#ffffff', 'rgba(0,0,0,.12)'],
+  };
+
+  // label art in a 200-unit box centred on the origin (same numbers as the SVG labels)
+  function paintVinylLabel(g, cover) {
+    const acc = curAccent(), ink = cover ? '#fff' : labelInk(acc), name = (state.producer || '').toUpperCase(), title = curTitle().toUpperCase();
+    g.save(); circ(g, 0, 0, 100); g.clip();
+    if (cover) { g.drawImage(cover, -100, -100, 200, 200); g.strokeStyle = 'rgba(0,0,0,.42)'; g.lineWidth = 32; circ(g, 0, 0, 84); g.stroke(); }
+    else {
+      g.fillStyle = acc; g.fillRect(-100, -100, 200, 200);
+      g.strokeStyle = ink; g.lineWidth = 1; g.globalAlpha = .25; circ(g, 0, 0, 94); g.stroke(); g.globalAlpha = .2; circ(g, 0, 0, 40); g.stroke(); g.globalAlpha = 1;
+      const fs = clamp(250 / Math.max(title.length, 1), 11, 26);
+      g.font = `800 ${fs}px Unbounded, sans-serif`; g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      const w = g.measureText(title).width;
+      g.save(); if (title.length > 9 && w) g.scale(150 / w, 1); g.fillText(title, 0, fs * .36); g.restore();
+    }
+    g.restore();
+    g.fillStyle = ink; g.font = '500 11px "DM Mono", monospace'; arcText(g, `PROD. BY ${name}`, 70, true, 2.4);
+    g.globalAlpha = .8; g.font = '400 9px "DM Mono", monospace'; arcText(g, `SIDE A · ${state.rpm === '45' ? '45 RPM' : '33⅓ RPM'} · STEREO`, 82, false, 2.2); g.globalAlpha = 1;
+  }
+  function paintCdPrint(g, cover) {
+    const acc = curAccent(), ink = cover ? '#fff' : labelInk(acc), name = (state.producer || '').toUpperCase(), title = curTitle().toUpperCase();
+    if (cover) { g.drawImage(cover, -100, -100, 200, 200); g.strokeStyle = 'rgba(0,0,0,.4)'; g.lineWidth = 30; circ(g, 0, 0, 82); g.stroke(); }
+    else {
+      const rg = g.createRadialGradient(0, 0, 0, 0, 0, 100); rg.addColorStop(.45, acc); rg.addColorStop(1, rgba(acc, .8));
+      g.fillStyle = rg; circ(g, 0, 0, 100); g.fill();
+      g.strokeStyle = ink; g.globalAlpha = .22; g.lineWidth = 12; circ(g, 0, 0, 64); g.stroke();
+      g.globalAlpha = .25; g.lineWidth = .8; circ(g, 0, 0, 54); g.stroke(); g.globalAlpha = .85;
+      g.fillStyle = ink; g.font = '800 13px Unbounded, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillText(String(cur + 1).padStart(2, '0'), 50, 5);
+      g.globalAlpha = 1;
+    }
+    g.fillStyle = ink; g.font = '800 12px Unbounded, sans-serif'; arcText(g, title, 78, true, 1.5);
+    g.globalAlpha = .85; g.font = '500 8.5px "DM Mono", monospace'; arcText(g, `PROD. BY ${name} · DIGITAL AUDIO`, 87, false, 2.6); g.globalAlpha = 1;
+  }
+
+  // ---- static layers, drawn once per export ----
+  function layerTurntable(s) {
+    const U = s / 100, pad = 14 * U, c = mk(s + pad * 2, s + pad * 2), g = c.getContext('2d');
+    const css = n => getComputedStyle(stage).getPropertyValue(n).trim();
+    g.translate(pad, pad);
+    g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 8 * U; g.shadowOffsetY = 3.4 * U;
+    const pg = g.createLinearGradient(.3 * s, 0, .7 * s, s); pg.addColorStop(0, css('--plinth-a')); pg.addColorStop(1, css('--plinth-b'));
+    g.fillStyle = pg; rr(g, 0, 0, s, s, 4 * U); g.fill(); g.restore();
+    const hl = g.createLinearGradient(0, 0, .45 * s, .8 * s); hl.addColorStop(0, 'rgba(255,255,255,.10)'); hl.addColorStop(.35, 'rgba(255,255,255,0)');
+    g.fillStyle = hl; rr(g, 0, 0, s, s, 4 * U); g.fill();
+    g.scale(U, U);
+    const ink = css('--plinth-ink'), well = 'rgba(0,0,0,.28)', acc = curAccent();
+    g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 3 * U; g.shadowOffsetY = 1.4 * U; g.fillStyle = '#1f1f23'; circ(g, 44, 50, 41.5); g.fill(); g.restore();
+    g.fillStyle = well; circ(g, 8.5, 92, 4.2); g.fill();
+    g.globalAlpha = .85; g.fillStyle = metal(g, 5.2, 11.8); circ(g, 8.5, 92, 3.3); g.fill(); g.globalAlpha = 1;
+    g.fillStyle = well; rr(g, 16, 89.6, 6.4, 4.4, 1); g.fill(); rr(g, 23.6, 89.6, 6.4, 4.4, 1); g.fill();
+    g.fillStyle = acc; g.globalAlpha = state.rpm === '45' ? .15 : 1; rr(g, 16.5, 90.1, 5.4, 3.4, .7); g.fill();
+    g.globalAlpha = state.rpm === '45' ? 1 : .15; rr(g, 24.1, 90.1, 5.4, 3.4, .7); g.fill(); g.globalAlpha = 1;
+    g.fillStyle = well; rr(g, 94.3, 72, 1.6, 22, .8); g.fill();
+    g.fillStyle = metal(g, 92.6, 97.6); rr(g, 92.6, 81.5, 5, 3, .6); g.fill();
+    g.fillStyle = well; circ(g, 88.6, 67.2, 2.3); g.fill(); rr(g, 93.4, 38, 2.2, 7, .6); g.fill();
+    g.fillStyle = metal(g, 93.8, 95.2); rr(g, 93.8, 39, 1.4, 3, .4); g.fill();
+    g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    g.font = '400 1.9px "DM Mono", monospace'; g.fillText('START·STOP', 8.5, 98.6);
+    g.font = '400 2px "DM Mono", monospace'; g.fillText('33', 19.2, 97.4); g.fillText('45', 26.8, 97.4);
+    g.font = '400 1.7px "DM Mono", monospace'; g.fillText('PITCH', 95.1, 97.8);
+    g.fillStyle = 'rgba(0,0,0,.35)'; circ(g, 86, 13, 7); g.fill();
+    g.fillStyle = metal(g, 80, 92); circ(g, 86, 13, 6); g.fill();
+    g.fillStyle = '#1d1e21'; circ(g, 86, 13, 4.4); g.fill();
+    return { c, pad };
+  }
+  function layerPlatter(s, cover) {
+    const U = s / 100, Rp = 41.5 * U, c = mk(Rp * 2, Rp * 2), g = c.getContext('2d');
+    g.translate(Rp, Rp);
+    const pg = g.createRadialGradient(0, 0, 0, 0, 0, Rp);
+    [[0, '#1f1f23'], [.93, '#1f1f23'], [.94, '#9a9da3'], [.965, '#5c5f65'], [.98, '#c4c7cc'], [1, '#6b6e74']].forEach(([o, col]) => pg.addColorStop(o, col));
+    g.fillStyle = pg; circ(g, 0, 0, Rp); g.fill();
+    g.strokeStyle = 'rgba(235,238,242,.95)'; g.lineWidth = .026 * Rp;
+    for (let i = 0; i < 100; i++) { const a = i * 3.6 * RAD; g.beginPath(); g.arc(0, 0, .973 * Rp, a, a + 1.1 * RAD); g.stroke(); }
+    const R = Rp * .964;
+    let [vin, groove, edge, gap] = VINYL[state.vinyl] || VINYL.black;
+    if (state.vinyl === 'accent') { const a = curAccent(); vin = rgba(a, .88); groove = 'rgba(0,0,0,.09)'; edge = mix(a, '#ffffff', .4); gap = 'rgba(0,0,0,.18)'; }
+    const vg2 = g.createRadialGradient(0, 0, 0, 0, 0, R); vg2.addColorStop(0, vin); vg2.addColorStop(.97, vin); vg2.addColorStop(.985, edge); vg2.addColorStop(1, vin);
+    g.fillStyle = vg2; circ(g, 0, 0, R); g.fill();
+    g.strokeStyle = groove; g.lineWidth = .0015 * R;
+    for (let r = .36; r < .97; r += .01) { circ(g, 0, 0, (r + .00775) * R); g.stroke(); }
+    g.strokeStyle = gap; g.lineWidth = .01 * R; circ(g, 0, 0, .569 * R); g.stroke(); circ(g, 0, 0, .769 * R); g.stroke();
+    const LR = .34 * R; g.save(); g.scale(LR / 100, LR / 100); paintVinylLabel(g, cover); g.restore();
+    return c;
+  }
+  function layerSheen(R) {
+    const c = mk(R * 2, R * 2), g = c.getContext('2d'); g.translate(R, R);
+    const cg = g.createConicGradient((300 - 90) * RAD, 0, 0);
+    [[0, 'rgba(255,255,255,0)'], [.04, 'rgba(255,255,255,0)'], [.09, 'rgba(255,255,255,.16)'], [.15, 'rgba(255,255,255,0)'], [.5, 'rgba(255,255,255,0)'], [.58, 'rgba(255,255,255,.11)'], [.65, 'rgba(255,255,255,0)'], [1, 'rgba(255,255,255,0)']].forEach(([o, col]) => cg.addColorStop(o, col));
+    g.fillStyle = cg; ring(g, .36 * R, .97 * R); g.fill('evenodd');
+    return c;
+  }
+  function layerDiscBase(R) {
+    const pad = R * .2, c = mk(R * 2 + pad * 2, R * 2 + pad * 2), g = c.getContext('2d'); g.translate(R + pad, R + pad);
+    g.save(); g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = .09 * R; g.shadowOffsetY = .04 * R; g.fillStyle = '#dfe3e8'; circ(g, 0, 0, R); g.fill(); g.restore();
+    g.globalCompositeOperation = 'destination-out'; circ(g, 0, 0, R); g.fill(); g.globalCompositeOperation = 'source-over';
+    const bg = g.createRadialGradient(0, 0, 0, 0, 0, R);
+    [[0, 'rgba(225,230,236,0)'], [.07, 'rgba(225,230,236,0)'], [.076, 'rgba(225,230,236,.34)'], [.21, 'rgba(225,230,236,.34)'], [.215, '#a8aeb6'], [.226, '#a8aeb6'], [.232, '#dfe3e8'], [.976, '#dfe3e8'], [.982, '#969ca4'], [1, '#969ca4']].forEach(([o, col]) => bg.addColorStop(o, col));
+    g.fillStyle = bg; circ(g, 0, 0, R); g.fill();
+    return { c, pad };
+  }
+  function layerDiscPrint(R, cover) {
+    const c = mk(R * 2, R * 2), g = c.getContext('2d'); g.translate(R, R);
+    ring(g, .238 * R, .972 * R); g.clip('evenodd'); g.scale(R / 100, R / 100); paintCdPrint(g, cover);
+    return c;
+  }
+  function layerRainbow(R) {
+    const c = mk(R * 2, R * 2), g = c.getContext('2d'); g.translate(R, R);
+    ring(g, .23 * R, .976 * R); g.clip('evenodd');
+    const cg = g.createConicGradient((210 - 90) * RAD, 0, 0), z = 'rgba(255,255,255,0)';
+    [[0, z], [.04, 'rgba(255,70,140,.38)'], [.08, 'rgba(255,210,90,.38)'], [.12, 'rgba(90,255,190,.38)'], [.16, 'rgba(90,160,255,.38)'], [.21, z], [.5, z],
+     [.54, 'rgba(255,70,140,.32)'], [.58, 'rgba(255,210,90,.32)'], [.62, 'rgba(90,255,190,.32)'], [.66, 'rgba(90,160,255,.32)'], [.71, z], [1, z]].forEach(([o, col]) => cg.addColorStop(o, col));
+    g.fillStyle = cg; g.fillRect(-R, -R, R * 2, R * 2);
+    const vx = Math.sin(125 * RAD), vy = -Math.cos(125 * RAD), L = R * 1.3, lg = g.createLinearGradient(-vx * L, -vy * L, vx * L, vy * L);
+    lg.addColorStop(0, z); lg.addColorStop(.38, z); lg.addColorStop(.47, 'rgba(255,255,255,.45)'); lg.addColorStop(.56, z); lg.addColorStop(1, z);
+    g.fillStyle = lg; g.fillRect(-R, -R, R * 2, R * 2);
+    return c;
+  }
+  function layerDiscman(s) {
+    const pad = s * .12, c = mk(s + pad * 2, s + pad * 2), g = c.getContext('2d'); g.translate(pad, pad);
+    const light = state.room === 'cream' || state.room === 'chrome';
+    const bg = g.createRadialGradient(.34 * s, .28 * s, 0, .34 * s, .28 * s, s * .85);
+    (light ? [[0, '#fbfbfc'], [.58, '#c9ccd2'], [1, '#9a9ea6']] : [[0, '#4a4d55'], [.58, '#23252a'], [1, '#16171a']]).forEach(([o, col]) => bg.addColorStop(o, col));
+    g.save(); g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = .09 * s; g.shadowOffsetY = .035 * s; g.fillStyle = bg; circ(g, s / 2, s / 2, s / 2); g.fill(); g.restore();
+    const wg = g.createRadialGradient(s / 2, s / 2, .3 * s, s / 2, s / 2, .41 * s); wg.addColorStop(0, '#0d0e10'); wg.addColorStop(.85, '#0d0e10'); wg.addColorStop(1, '#000');
+    g.fillStyle = wg; circ(g, s / 2, s / 2, .41 * s); g.fill();
+    [.22, .73].forEach(x => { const b = g.createRadialGradient((x + .02) * s, .9375 * s, 0, (x + .025) * s, .95 * s, .025 * s); b.addColorStop(0, '#5a5d65'); b.addColorStop(1, '#1c1d21'); g.fillStyle = b; circ(g, (x + .025) * s, .95 * s, .025 * s); g.fill(); });
+    g.fillStyle = '#08090b'; rr(g, .32 * s, .913 * s, .36 * s, .066 * s, .012 * s); g.fill();
+    return { c, pad };
+  }
+  function layerLid(s) {
+    const c = mk(s, s), g = c.getContext('2d'), r = .425 * s, cx = s / 2;
+    g.save(); circ(g, cx, cx, r); g.clip();
+    const a = g.createLinearGradient(cx - r * .77, cx - r * .64, cx + r * .77, cx + r * .64); a.addColorStop(0, 'rgba(255,255,255,.22)'); a.addColorStop(.32, 'rgba(255,255,255,0)');
+    g.fillStyle = a; g.fillRect(0, 0, s, s);
+    const b = g.createLinearGradient(cx + r * .77, cx + r * .64, cx - r * .77, cx - r * .64); b.addColorStop(0, 'rgba(255,255,255,.08)'); b.addColorStop(.25, 'rgba(255,255,255,0)');
+    g.fillStyle = b; g.fillRect(0, 0, s, s); g.restore();
+    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = .006 * s; circ(g, cx, cx, r - .003 * s); g.stroke();
+    const hb = g.createRadialGradient(.49 * s, .48 * s, 0, .5 * s, .5 * s, .04 * s); hb.addColorStop(0, '#d9dce1'); hb.addColorStop(1, '#6f737a');
+    g.fillStyle = 'rgba(0,0,0,.35)'; circ(g, cx, cx, .044 * s); g.fill(); g.fillStyle = hb; circ(g, cx, cx, .04 * s); g.fill();
+    return c;
+  }
+  function layerGrain() {
+    const c = mk(256, 256), g = c.getContext('2d'), im = g.createImageData(256, 256);
+    for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+    g.putImageData(im, 0, 0); return c;
+  }
+  function layerBlur(img) {
+    const t = mk(24, 24); t.getContext('2d').drawImage(img, 0, 0, 24, 24);
+    const t2 = mk(96, 96), g2 = t2.getContext('2d'); g2.imageSmoothingQuality = 'high'; g2.drawImage(t, 0, 0, 96, 96);
+    return t2;
+  }
+
+  // ---- per-frame drawing ----
+  function effOpacity(el) { let o = 1; for (let n = el; n && n !== stage; n = n.parentElement) o *= parseFloat(getComputedStyle(n).opacity) || 0; return o; }
+  function drawText(g, el, sr, k) {
+    const node = [...el.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+    if (!node || el.getClientRects().length === 0) return;
+    const cs = getComputedStyle(el), text = node.textContent, up = cs.textTransform === 'uppercase';
+    g.font = `${cs.fontStyle} ${cs.fontWeight} ${parseFloat(cs.fontSize) * k}px ${cs.fontFamily}`;
+    if ('letterSpacing' in g) g.letterSpacing = cs.letterSpacing === 'normal' ? '0px' : `${parseFloat(cs.letterSpacing) * k}px`;
+    g.fillStyle = cs.color; g.globalAlpha = effOpacity(el); g.textAlign = 'left'; g.textBaseline = 'middle';
+    const range = document.createRange(), lines = [], re = /\S+/g; let m;
+    while ((m = re.exec(text))) {
+      range.setStart(node, m.index); range.setEnd(node, m.index + m[0].length);
+      const r = range.getClientRects()[0]; if (!r) continue;
+      const last = lines[lines.length - 1];
+      if (last && Math.abs(last.top - r.top) < r.height / 2) last.end = m.index + m[0].length;
+      else lines.push({ top: r.top, bottom: r.bottom, left: r.left, start: m.index, end: m.index + m[0].length });
+    }
+    lines.forEach(l => { let t = text.slice(l.start, l.end); if (up) t = t.toUpperCase(); g.fillText(t, (l.left - sr.left) * k, ((l.top + l.bottom) / 2 - sr.top) * k); });
+    g.globalAlpha = 1; if ('letterSpacing' in g) g.letterSpacing = '0px';
+  }
+  function drawDisc(g, cx, cy, R, set) {
+    g.drawImage(set.base.c, cx - R - set.base.pad, cy - R - set.base.pad);
+    g.save(); g.translate(cx, cy); g.rotate(cAngle * RAD); g.drawImage(set.print, -R, -R); g.restore();
+    g.save(); g.globalCompositeOperation = 'screen'; g.drawImage(set.rainbow, cx - R, cy - R); g.restore();
+  }
+  function discSet(R) { return { base: layerDiscBase(R), print: layerDiscPrint(R, xp.cover), rainbow: layerRainbow(R) }; }
+
+  function drawFrame(now) {
+    const g = xp.g, sr = stage.getBoundingClientRect(), k = XW / sr.width, u = XW / 100;
+    const rel = el => { const r = el.getBoundingClientRect(); return { x: (r.left - sr.left) * k, y: (r.top - sr.top) * k, w: r.width * k, h: r.height * k }; };
+    const css = n => getComputedStyle(stage).getPropertyValue(n).trim();
+    const ink = css('--ink'), bg = css('--bg'), glow = css('--glow'), acc = curAccent();
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+    g.fillStyle = bg; g.fillRect(0, 0, XW, XH);
+    if (xp.blur && state.coverBg) { g.globalAlpha = .5; const w = XH * 1.24 * 1.1; g.drawImage(xp.blur, (XW - w) / 2, (XH - w) / 2, w, w); g.globalAlpha = 1; }
+    { // glow
+      const gr = 75 * u * Math.SQRT2 * .62 * (1 + pulse * .07), gx = XW / 2, gy = XH * .42, rg = g.createRadialGradient(gx, gy, 0, gx, gy, gr);
+      rg.addColorStop(0, rgba(glow, 1)); rg.addColorStop(1, rgba(glow, 0));
+      g.globalAlpha = .55 + .45 * pulse; g.fillStyle = rg; g.fillRect(gx - gr, gy - gr, gr * 2, gr * 2); g.globalAlpha = 1;
+    }
+    // decks
+    const T = rel($('.turntable'));
+    if (T.w > 0) {
+      if (!xp.tt || Math.abs(xp.tt.s - T.w) > 1) xp.tt = { s: T.w, plinth: layerTurntable(T.w), platter: layerPlatter(T.w, xp.cover), sheen: layerSheen(T.w * .4) };
+      const U = T.w / 100, L = xp.tt;
+      g.drawImage(L.plinth.c, T.x - L.plinth.pad, T.y - L.plinth.pad);
+      g.save(); g.translate(T.x, T.y); g.scale(U, U);
+      if (playing) { g.shadowColor = '#ff9b45'; g.shadowBlur = 1.2 * U; }
+      g.fillStyle = playing ? '#ffb067' : '#3a2a20'; circ(g, 7.5, 7.5, 1.6); g.fill(); g.restore();
+      const cx = T.x + 44 * U, cy = T.y + 50 * U;
+      g.save(); g.translate(cx, cy); g.rotate(vAngle * RAD); g.drawImage(L.platter, -L.platter.width / 2, -L.platter.height / 2); g.restore();
+      g.drawImage(L.sheen, cx - L.sheen.width / 2, cy - L.sheen.height / 2);
+      const sg = g.createRadialGradient(cx - .3 * U, cy - .3 * U, 0, cx, cy, .8 * U); sg.addColorStop(0, '#fff'); sg.addColorStop(.6, '#8a8d93'); sg.addColorStop(1, '#3d3f43');
+      g.fillStyle = sg; circ(g, cx, cy, .8 * U); g.fill();
+      // tonearm
+      g.save(); g.translate(T.x, T.y); g.scale(U, U);
+      g.translate(86, 13); g.rotate(armA * RAD); g.translate(-86, -13);
+      g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 1.4 * U; g.shadowOffsetX = 1.2 * U; g.shadowOffsetY = 2.4 * U;
+      g.fillStyle = metal(g, 83, 89); rr(g, 83, 2.2, 6, 5.4, 1.2); g.fill();
+      g.strokeStyle = metal(g, 80, 88); g.lineWidth = 1.6; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(86, 13); g.lineTo(86, 56); g.lineTo(81, 66); g.stroke();
+      g.save(); g.translate(81, 67); g.rotate(26 * RAD); g.translate(-81, -67);
+      g.fillStyle = '#232428'; rr(g, 78.6, 64.2, 5, 6.6, .8); g.fill();
+      g.shadowColor = 'transparent'; g.strokeStyle = '#9fa3aa'; g.lineWidth = .35; g.stroke();
+      g.fillStyle = '#c8cbd0'; rr(g, 82.6, 62.6, 3.2, .9, .4); g.fill(); g.restore();
+      g.shadowColor = 'transparent'; g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(83, 4.6, 6, .6);
+      g.fillStyle = metal(g, 84, 88); circ(g, 86, 13, 2); g.fill();
+      g.restore();
+    }
+    const D = rel($('.discman'));
+    if (D.w > 0) {
+      if (!xp.dm || Math.abs(xp.dm.s - D.w) > 1) xp.dm = { s: D.w, body: layerDiscman(D.w), lid: layerLid(D.w), disc: discSet(D.w * .39) };
+      g.drawImage(xp.dm.body.c, D.x - xp.dm.body.pad, D.y - xp.dm.body.pad);
+      drawDisc(g, D.x + D.w / 2, D.y + D.h / 2, D.w * .39, xp.dm.disc);
+      g.drawImage(xp.dm.lid, D.x, D.y);
+      g.save(); g.shadowColor = acc; g.shadowBlur = .01 * D.w; g.font = `500 ${2.5 * u}px "DM Mono", monospace`; g.fillStyle = acc; g.textBaseline = 'middle';
+      const ly = D.y + .946 * D.h; g.textAlign = 'left'; g.fillText($('#lcdTrack').textContent, D.x + .335 * D.w + .01 * D.w, ly);
+      g.textAlign = 'right'; g.fillText($('#lcdTime').textContent, D.x + .665 * D.w, ly); g.restore();
+    }
+    const C = rel($('.cd-loose'));
+    if (C.w > 0) {
+      if (!xp.cl || Math.abs(xp.cl.s - C.w) > 1) xp.cl = { s: C.w, disc: discSet(C.w / 2) };
+      drawDisc(g, C.x + C.w / 2, C.y + C.h / 2, C.w / 2, xp.cl.disc);
+    }
+    // header
+    drawText(g, $('.prod-by'), sr, k); drawText(g, $('#sName'), sr, k);
+    const chip = rel($('.chip'));
+    g.fillStyle = rgba(bg, .55); rr(g, chip.x, chip.y, chip.w, chip.h, chip.h / 2); g.fill();
+    g.strokeStyle = rgba(ink, .28); g.lineWidth = Math.max(1, k); g.stroke();
+    const dot = rel($('.chip .dot'));
+    g.save();
+    if (playing) { g.globalAlpha = .675 + .325 * Math.cos(now / 1200 * TAU); g.fillStyle = acc; g.shadowColor = acc; g.shadowBlur = 2 * u; } else g.fillStyle = rgba(ink, .35);
+    circ(g, dot.x + dot.w / 2, dot.y + dot.h / 2, dot.w / 2); g.fill(); g.restore();
+    drawText(g, $('#sStatus'), sr, k);
+    // info
+    drawText(g, $('#sTitle'), sr, k);
+    $$('.meta span').forEach(sp => {
+      if (!sp.textContent) return;
+      const r = rel(sp), hot = sp.classList.contains('hot');
+      rr(g, r.x, r.y, r.w, r.h, u); g.fillStyle = hot ? acc : rgba(ink, .09); g.fill();
+      if (!hot) { g.strokeStyle = rgba(ink, .16); g.lineWidth = Math.max(1, k); g.stroke(); }
+      drawText(g, sp, sr, k);
+    });
+    drawText(g, $('#tCur'), sr, k); drawText(g, $('#tDur'), sr, k);
+    const bar = rel($('.prog .bar')), fw = parseFloat($('#pFill').style.width || '0') / 100 * bar.w;
+    g.globalAlpha = .9;
+    g.fillStyle = rgba(ink, .18); rr(g, bar.x, bar.y, bar.w, bar.h, bar.h / 2); g.fill();
+    g.fillStyle = acc; rr(g, bar.x, bar.y, Math.max(bar.h, fw), bar.h, bar.h / 2); g.fill();
+    g.save(); g.shadowColor = acc; g.shadowBlur = 2 * u; circ(g, bar.x + fw, bar.y + bar.h / 2, 1.2 * u); g.fill(); g.restore();
+    g.globalAlpha = 1;
+    // footer
+    if (state.viz) { const v = rel(viz); g.drawImage(viz, v.x, v.y, v.w, v.h); }
+    drawText(g, $('#sHandle'), sr, k); drawText(g, $('#sTag'), sr, k);
+    // film grain
+    g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = .14; g.fillStyle = xp.grainPat; g.fillRect(0, 0, XW, XH); g.restore();
+  }
+
+  function pickMime() {
+    const list = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1.4d002a,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    return list.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; } }) || '';
+  }
+  const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  async function startExport() {
+    if (xp) return;
+    if (!track()) { toast('Add a beat first.'); return; }
+    const probe = document.createElement('canvas');
+    if (!probe.captureStream || !window.MediaRecorder || !pickMime()) {
+      toast("This browser can't make videos. Use Chrome or Safari, or use full-screen mode with your screen recorder."); return;
+    }
+    if (recMode) exitRec();
+    pause();
+    const t = track();
+    if (!t.buffer) {
+      stage.classList.add('loading');
+      try { await ensureBuffer(t); } catch (e) { stage.classList.remove('loading'); toast(`Couldn't open "${t.title}".`); return; }
+      stage.classList.remove('loading');
+    }
+    const start = clamp(parseTime(state.startAt), 0, Math.max(0, t.duration - 1));
+    const clip = +state.clip, rest = t.loop ? t.duration : t.duration - start;
+    const len = clip > 0 ? (t.loop ? clip : Math.min(clip, rest)) : rest;
+    xp = { phase: 'prep', len, cancelled: false };
+    document.body.classList.add('exporting'); document.body.classList.remove('sheet');
+    $('#expTime').textContent = `0:00 / ${fmt(len)}`;
+    await nextFrame();
+    try { await Promise.all(['800 20px Unbounded', '500 20px "DM Mono"', '400 20px "DM Mono"', 'italic 600 20px Fraunces', '800 20px Syne'].map(f => document.fonts.load(f))); } catch (e) {}
+    if (!xp || xp.cancelled) return;
+    const cv = mk(XW, XH);
+    cv.style.cssText = 'position:fixed;left:-20000px;top:0;width:10px;height:18px;pointer-events:none';
+    document.body.appendChild(cv);
+    xp.cv = cv; xp.g = cv.getContext('2d');
+    xp.cover = await loadImg(state.cover);
+    xp.blur = xp.cover ? layerBlur(xp.cover) : null;
+    xp.grainPat = xp.g.createPattern(layerGrain(), 'repeat');
+    pos = start; refresh();
+    drawFrame(performance.now());
+
+    const c = audio(); if (c.state === 'suspended') { try { await c.resume(); } catch (e) {} }
+    const dest = c.createMediaStreamDestination(); gain.connect(dest); xp.dest = dest;
+    const stream = cv.captureStream(30); dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
+    const mime = pickMime();
+    let rec;
+    try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000, audioBitsPerSecond: 192000 }); }
+    catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { cleanupExport(); toast("This browser couldn't start a video recording."); return; } }
+    const chunks = [];
+    xp.rec = rec; xp.mime = (rec.mimeType || mime).split(';')[0]; xp.chunks = chunks;
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = () => finishExport();
+    rec.start(500);
+    gain.gain.cancelScheduledValues(c.currentTime); gain.gain.setValueAtTime(0, c.currentTime); gain.gain.linearRampToValueAtTime(1, c.currentTime + .08);
+    await play();
+    if (!xp || xp.cancelled) return;
+    xp.t0 = c.currentTime; xp.phase = 'rec';
+  }
+  function exportTick(now) {
+    if (!xp || !xp.g) return;
+    if (xp.phase === 'rec' && ctx) {
+      const el = ctx.currentTime - xp.t0;
+      $('#expTime').textContent = `${fmt(Math.min(el, xp.len))} / ${fmt(xp.len)}`;
+      if (xp.len > 4 && el >= xp.len - 1.5 && !xp.fading) {
+        xp.fading = true; gain.gain.cancelScheduledValues(ctx.currentTime); gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime); gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.4);
+      }
+      if (el >= xp.len || !playing) { if (playing) pause(); xp.phase = 'tail'; xp.tailEnd = now + 1400; }
+    }
+    if (xp.phase === 'rec' || xp.phase === 'tail' || xp.phase === 'prep') drawFrame(now);
+    if (xp.phase === 'tail' && now >= xp.tailEnd) { xp.phase = 'stopping'; try { xp.rec.stop(); } catch (e) { finishExport(); } }
+  }
+  function cleanupExport() {
+    if (!xp) return;
+    if (xp.dest) { try { gain.disconnect(xp.dest); } catch (e) {} }
+    if (xp.cv) xp.cv.remove();
+    if (ctx) { gain.gain.cancelScheduledValues(ctx.currentTime); gain.gain.setValueAtTime(1, ctx.currentTime); }
+    document.body.classList.remove('exporting');
+    xp = null; refresh();
+  }
+  function cancelExport() {
+    if (!xp) return;
+    xp.cancelled = true; pause();
+    if (xp.rec && xp.rec.state !== 'inactive') { try { xp.rec.stop(); } catch (e) {} }
+    cleanupExport();
+    toast('Video cancelled.');
+  }
+  let lastVideo = null;
+  function finishExport() {
+    if (!xp || xp.cancelled) return;
+    const blob = new Blob(xp.chunks, { type: xp.mime || 'video/webm' });
+    const ext = /mp4/.test(blob.type) ? 'mp4' : 'webm', len = xp.len;
+    cleanupExport();
+    if (!blob.size) { toast('The video came out empty. Keep this screen open while it records, then try again.'); return; }
+    const slug = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const name = `${slug(curTitle()) || 'beat'}${state.producer ? '-' + slug(state.producer) : ''}.${ext}`;
+    if (lastVideo && lastVideo.url) URL.revokeObjectURL(lastVideo.url);
+    lastVideo = { blob, name, url: URL.createObjectURL(blob) };
+    $('#vidInfo').textContent = `${fmt(len)} · 1080 × 1920 · ${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)} MB`;
+    const v = $('#vidPrev'); v.hidden = false; v.onerror = () => { v.hidden = true; }; v.src = lastVideo.url;
+    $('#vidHint').textContent = ext === 'webm'
+      ? 'This browser saves WebM videos. TikTok on a computer accepts them; for your phone, export from Safari or the Claude app to get an MP4.'
+      : 'On iPhone, choose Save Video in the share menu to put it in Photos. Then in TikTok tap + → Upload.';
+    $('#vidModal').hidden = false;
+  }
+  async function saveVideo() {
+    if (!lastVideo) return;
+    const { blob, name } = lastVideo, btn = $('#vidSave');
+    if (downloadsNS) {
+      btn.disabled = true;
+      try { await downloadsNS.save({ filename: name, data: blob }); btn.disabled = false; toast('Video saved.'); return; }
+      catch (e) { btn.disabled = false; if (e && (e.code === 'declined' || e.code === 'rate_limited')) return; if (e && e.code === 'too_large') { toast('That video is too big to save here. Try a shorter clip length.'); return; } }
+    }
+    try {
+      const file = new File([blob], name, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = lastVideo.url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    toast('Downloading your video.');
+  }
+  $('#vidSave').addEventListener('click', saveVideo);
+  $('#vidClose').addEventListener('click', () => { $('#vidModal').hidden = true; const v = $('#vidPrev'); v.pause(); });
+  $('#expCancel').addEventListener('click', cancelExport);
 
   /* ---------- recording mode ---------- */
   let recMode = false, cdTimer = null;
@@ -1197,14 +1665,17 @@ label.f input:focus { border-color: var(--accent); outline: none; }
     renderText(); renderLabels(); renderFields();
   });
   $('#recBtn').addEventListener('click', enterRec);
-  $('#fabRec').addEventListener('click', enterRec);
+  $('#fabRec').addEventListener('click', startExport);
+  $('#exportBtn').addEventListener('click', startExport);
   $('#fabEdit').addEventListener('click', () => document.body.classList.add('sheet'));
   $('#closeSheet').addEventListener('click', () => document.body.classList.remove('sheet'));
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { if (recMode) exitRec(); else document.body.classList.remove('sheet'); return; }
+    if (e.key === 'Escape') { if (xp) cancelExport(); else if (recMode) exitRec(); else if (!$('#vidModal').hidden) $('#vidModal').hidden = true; else document.body.classList.remove('sheet'); return; }
+    if (xp) return;
     if (e.target.closest('input, select, textarea')) return;
     if (e.code === 'Space') { e.preventDefault(); toggle(); }
-    else if (e.key === 'r' || e.key === 'R') { recMode ? exitRec() : enterRec(); }
+    else if (e.key === 'r' || e.key === 'R') startExport();
+    else if (e.key === 'f' || e.key === 'F') { recMode ? exitRec() : enterRec(); }
     else if (e.key === 'ArrowRight') seek(position() + 5);
     else if (e.key === 'ArrowLeft') seek(position() - 5);
   });
