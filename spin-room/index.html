@@ -108,8 +108,13 @@ button { cursor: pointer; }
 .deck-area > * { display: none; }
 .stage[data-mode="vinyl"] .turntable, .stage[data-mode="both"] .turntable, .stage[data-mode="both"] .cd-loose,
 .stage[data-mode="cd"] .discman, .stage[data-mode="record"] .record-solo, .stage[data-mode="disc"] .cd-solo,
-.stage[data-mode="cassette"] .cassette, .stage[data-mode="mp3"] .pocket { display: block; }
-.record-solo, .cd-solo, .cassette, .pocket { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
+.stage[data-mode="cassette"] .cassette, .stage[data-mode="mp3"] .pocket, .stage[data-mode="boombox"] .boombox,
+.stage[data-mode="jukebox"] .jukebox, .stage[data-mode="reel"] .reel2reel, .stage[data-mode="car"] .carstereo { display: block; }
+.record-solo, .cd-solo, .cassette, .pocket, .boombox, .jukebox, .reel2reel, .carstereo { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
+.boombox { aspect-ratio: 180 / 110; width: min(100%, calc(94 * var(--u))); }
+.jukebox { aspect-ratio: 110 / 160; height: min(100%, calc(98 * var(--u))); }
+.reel2reel { aspect-ratio: 120 / 150; height: min(100%, calc(96 * var(--u))); }
+.carstereo { aspect-ratio: 160 / 100; width: min(100%, calc(94 * var(--u))); }
 .record-solo { aspect-ratio: 1; height: min(100%, calc(86 * var(--u))); }
 .cd-solo { aspect-ratio: 1; height: min(100%, calc(82 * var(--u))); }
 .cassette { aspect-ratio: 160 / 101; width: min(100%, calc(92 * var(--u))); }
@@ -512,6 +517,10 @@ body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc(
 
           <div class="cassette" aria-label="Cassette tape"><canvas class="dev-canvas"></canvas></div>
           <div class="pocket" aria-label="MP3 player"><canvas class="dev-canvas"></canvas></div>
+          <div class="boombox" aria-label="Boombox"><canvas class="dev-canvas"></canvas></div>
+          <div class="jukebox" aria-label="Jukebox"><canvas class="dev-canvas"></canvas></div>
+          <div class="reel2reel" aria-label="Reel-to-reel tape machine"><canvas class="dev-canvas"></canvas></div>
+          <div class="carstereo" aria-label="Car stereo"><canvas class="dev-canvas"></canvas></div>
         </div>
 
         <div class="s-info">
@@ -598,7 +607,8 @@ body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc(
       <div class="row"><span>Player</span>
         <div class="seg seg-grid" data-set="mode">
           <button data-v="vinyl">Turntable</button><button data-v="cd">CD player</button><button data-v="both">Both</button><button data-v="cassette">Cassette</button>
-          <button data-v="record">Record</button><button data-v="disc">CD</button><button data-v="mp3">MP3 player</button>
+          <button data-v="record">Record</button><button data-v="disc">CD</button><button data-v="mp3">MP3 player</button><button data-v="boombox">Boombox</button>
+          <button data-v="jukebox">Jukebox</button><button data-v="reel">Reel-to-reel</button><button data-v="car">Car stereo</button>
         </div>
       </div>
       <div class="row"><span>Record speed</span>
@@ -694,7 +704,7 @@ body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc(
 
   /* ---------- settings ---------- */
   const KEY = 'spinroom.v1';
-  const SPIN_MODES = ['vinyl', 'both', 'record']; // these say "Now spinning"; the rest "Now playing"
+  const SPIN_MODES = ['vinyl', 'both', 'record', 'jukebox']; // these say "Now spinning"; the rest "Now playing"
   const DEFAULTS = { producer: 'YOUR NAME', handle: '@yourname', tagline: 'Beats in bio', format: 'tall', mode: 'vinyl', rpm: '33', room: 'oxblood', vinyl: 'black', accent: '', font: 'wide', coverBg: true, viz: true, safe: false, startAt: '0:00', clip: '30', countdown: '3', cover: null };
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
@@ -1166,7 +1176,7 @@ body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc(
     pulse += (bass - pulse) * (1 - Math.exp(-dt * (bass > pulse ? 18 : 5)));
     stage.style.setProperty('--pulse', pulse.toFixed(3));
     drawViz(dt);
-    drawDevices({ frac, playing, cur: p, dur: d, levels, aL: tapeAL, aR: tapeAR });
+    drawDevices({ frac, playing, cur: p, dur: d, levels, aL: tapeAL, aR: tapeAR, pulse, vAngle, t: now / 1000 });
     exportTick(now);
 
     // clip length during recording mode
@@ -1460,10 +1470,7 @@ body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc(
     }
     const CS = rel($('.cd-solo'));
     if (CS.w > 0) S.cs = { box: CS, disc: discSet(CS.w / 2) };
-    const CA = rel($('.cassette'));
-    if (CA.w > 0) S.cas = { box: CA, L: cassetteLayers(CA.w, cover) };
-    const PO = rel($('.pocket'));
-    if (PO.w > 0) S.pod = { box: PO, L: pocketLayers(PO.w, cover) };
+    S.devs = devices.map(d => ({ d, box: rel(d.el) })).filter(o => o.box.w > 0).map(({ d, box }) => ({ box, draw: d.draw, L: d.make(box.w, cover) }));
     const C = rel($('.cd-loose'));
     if (C.w > 0) S.cl = { box: C, disc: discSet(C.w / 2) };
     // static words: header, title, BPM/key pills, handle and tagline
@@ -1533,8 +1540,7 @@ body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc(
       g.fillStyle = S.bg; circ(g, cx, cy, .009 * B.w); g.fill();
     }
     if (S.cs) { const B = S.cs.box; disc(S.cs.disc, B.x + B.w / 2, B.y + B.h / 2); }
-    if (S.cas) drawCassette(g, S.cas.box.x, S.cas.box.y, S.cas.box.w, S.cas.L, F);
-    if (S.pod) drawPocket(g, S.pod.box.x, S.pod.box.y, S.pod.box.w, S.pod.L, F);
+    for (const dv of S.devs) dv.draw(g, dv.box.x, dv.box.y, dv.box.w, dv.L, F);
     g.drawImage(S.text, 0, 0);
     // status chip
     const ch = S.chip; setFont(g, ch.f);
@@ -2009,10 +2015,295 @@ body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc(
     g.restore();
   }
 
+  // shared bits for the players below
+  function knob(g, x, y, r, light) {
+    const kg = g.createRadialGradient(x - r * .3, y - r * .35, r * .1, x, y, r);
+    kg.addColorStop(0, light ? '#ffffff' : '#6b6d74'); kg.addColorStop(1, light ? '#b9bcc2' : '#1b1c20');
+    g.fillStyle = kg; circ(g, x, y, r); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = r * .08; circ(g, x, y, r); g.stroke();
+    g.strokeStyle = light ? 'rgba(0,0,0,.45)' : 'rgba(255,255,255,.6)'; g.lineWidth = r * .14; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x, y - r * .25); g.lineTo(x, y - r * .8); g.stroke();
+  }
+  function screwAt(g, x, y, r) {
+    const sc = g.createRadialGradient(x - r * .3, y - r * .3, 0, x, y, r); sc.addColorStop(0, '#f4f4f6'); sc.addColorStop(1, '#7c8088');
+    g.fillStyle = sc; circ(g, x, y, r); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = r * .2; g.beginPath(); g.moveTo(x - r * .6, y); g.lineTo(x + r * .6, y); g.stroke();
+  }
+  const levelAvg = (lv, a, b) => { let s = 0; for (let i = a; i < b; i++) s += lv[i] || 0; return Math.min(1, s / (b - a)); };
+
+  // ---- boombox: 180 × 110 ----
+  function boomboxLayers(W) {
+    const s = W / 180, H = 110 * s, pad = 14 * s, light = isLightRoom(), acc = curAccent();
+    const c = mk(W + pad * 2, H + pad * 2), g = c.getContext('2d'); g.translate(pad, pad); g.scale(s, s);
+    // handle
+    g.strokeStyle = light ? '#8d9097' : '#5d6068'; g.lineWidth = 4; g.lineJoin = 'round';
+    g.beginPath(); rrp(g, 40, 3, 100, 20, 8); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 1; g.beginPath(); rrp(g, 40, 2.4, 100, 20, 8); g.stroke();
+    // body
+    g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 9 * s; g.shadowOffsetY = 4 * s;
+    const bg = g.createLinearGradient(0, 14, 0, 110); bg.addColorStop(0, light ? '#ece8e0' : '#34353b'); bg.addColorStop(1, light ? '#bcb6aa' : '#121317');
+    g.fillStyle = bg; rr(g, 0, 14, 180, 96, 9); g.fill(); g.restore();
+    g.strokeStyle = light ? 'rgba(255,255,255,.85)' : 'rgba(255,255,255,.12)'; g.lineWidth = .7; rr(g, .5, 14.5, 179, 95, 8.6); g.stroke();
+    g.fillStyle = light ? 'rgba(0,0,0,.06)' : 'rgba(0,0,0,.25)'; rr(g, 5, 19, 170, 86, 6); g.fill();
+    // speaker wells
+    for (const cx of [40, 140]) {
+      g.fillStyle = '#0b0b0e'; circ(g, cx, 66, 30); g.fill();
+      g.strokeStyle = light ? '#9ea1a8' : '#55585f'; g.lineWidth = 1.6; circ(g, cx, 66, 30); g.stroke();
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + Math.PI / 8; screwAt(g, cx + Math.cos(a) * 28, 66 + Math.sin(a) * 28, .9); }
+    }
+    // tuning strip and EQ sliders
+    g.fillStyle = '#0d0e11'; rr(g, 12, 24, 52, 8, 1.5); g.fill(); rr(g, 116, 24, 52, 8, 1.5); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = .3;
+    for (let i = 0; i <= 20; i++) { const x = 15 + i * 2.3; g.beginPath(); g.moveTo(x, 30.5); g.lineTo(x, i % 5 ? 29.3 : 28.3); g.stroke(); }
+    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '500 2px "DM Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    ['88', '94', '100', '106'].forEach((t, i) => g.fillText(t, 15 + i * 11.5, 26.4));
+    g.fillStyle = '#ff5a3c'; g.fillRect(38, 25, .5, 6);
+    for (let i = 0; i < 6; i++) { const x = 121 + i * 8; g.fillStyle = 'rgba(255,255,255,.2)'; g.fillRect(x, 25.5, .6, 5); g.fillStyle = '#c9ccd2'; g.fillRect(x - 1.4, 26 + ((i * 7) % 4), 3.4, 1.4); }
+    // centre column: display, tape window, name, knobs
+    g.fillStyle = '#060708'; rr(g, 73, 24, 34, 18, 2); g.fill();
+    g.fillStyle = '#0e0d11'; rr(g, 75, 49, 30, 19, 3); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = .5; rr(g, 75, 49, 30, 19, 3); g.stroke();
+    g.fillStyle = light ? '#3a3631' : '#d9d6d0'; g.font = '500 2.6px "DM Mono", monospace'; if ('letterSpacing' in g) g.letterSpacing = '.3px';
+    g.fillText('PROD. BY', 90, 74);
+    g.font = '800 4px Unbounded, sans-serif'; if ('letterSpacing' in g) g.letterSpacing = '0px';
+    fitFont(g, (state.producer || '').toUpperCase(), px => `800 ${px}px Unbounded, sans-serif`, 4, 32, 2); g.fillText((state.producer || '').toUpperCase(), 90, 79.5);
+    knob(g, 82, 92, 5, light); knob(g, 98, 92, 5, light);
+    g.fillStyle = light ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.5)'; g.font = '500 1.9px "DM Mono", monospace';
+    g.fillText('VOL', 82, 99.5); g.fillText('BASS', 98, 99.5);
+    // piano keys on top
+    for (let i = 0; i < 6; i++) { g.fillStyle = light ? '#d7d8dc' : '#4a4c53'; rr(g, 69 + i * 7.4, 15.2, 6.4, 3.4, .8); g.fill(); }
+    return { s, pad, c };
+  }
+  function drawBoombox(g, x, y, W, L, F) {
+    const s = L.s, acc = curAccent();
+    g.drawImage(L.c, x - L.pad, y - L.pad);
+    g.save(); g.translate(x, y); g.scale(s, s);
+    const k = 1 + F.pulse * .07;
+    for (const cx of [40, 140]) {
+      if (F.pulse > .05) { g.strokeStyle = rgba(acc, Math.min(.8, F.pulse * .9)); g.lineWidth = 1.2; circ(g, cx, 66, 27.6); g.stroke(); }
+      const sur = g.createRadialGradient(cx, 66, 22 * k, cx, 66, 26.5); sur.addColorStop(0, '#2b2b30'); sur.addColorStop(.5, '#3a3a40'); sur.addColorStop(1, '#141417');
+      g.fillStyle = sur; circ(g, cx, 66, 26.5); g.fill();
+      const cone = g.createRadialGradient(cx - 4, 62, 2, cx, 66, 22.5 * k); cone.addColorStop(0, '#3c3c43'); cone.addColorStop(1, '#101013');
+      g.fillStyle = cone; circ(g, cx, 66, 22.5 * k); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.06)'; g.lineWidth = .4; for (const r of [9, 13, 17, 21]) { circ(g, cx, 66, r * k); g.stroke(); }
+      const cap = g.createRadialGradient(cx - 2.5, 63.5, .5, cx, 66, 8 * k); cap.addColorStop(0, '#6a6b72'); cap.addColorStop(1, '#17171a');
+      g.fillStyle = cap; circ(g, cx, 66, 8 * k); g.fill();
+    }
+    // level meter in the display
+    g.fillStyle = acc;
+    for (let i = 0; i < 10; i++) { const lv = Math.min(1, F.levels[i * 2] || 0), h = Math.max(.6, lv * 13); g.globalAlpha = .45 + lv * .55; g.fillRect(75.5 + i * 3, 40 - h, 2.2, h); }
+    g.globalAlpha = 1;
+    // little reels in the tape window
+    for (const [cx, a] of [[83, F.aL], [97, F.aR]]) {
+      g.save(); g.translate(cx, 58.5); g.rotate(a);
+      g.fillStyle = '#ecebee'; circ(g, 0, 0, 3.4); g.fill(); g.fillStyle = '#18171b'; circ(g, 0, 0, 2); g.fill();
+      g.fillStyle = '#ecebee'; for (let i = 0; i < 3; i++) { g.rotate(Math.PI * 2 / 3); g.fillRect(-.4, -2.2, .8, 1); }
+      g.restore();
+    }
+    // the play key lights up while playing
+    if (F.playing) { g.fillStyle = acc; rr(g, 69 + 2 * 7.4, 15.2, 6.4, 3.4, .8); g.fill(); }
+    g.restore();
+  }
+
+  // ---- jukebox: 110 × 160 ----
+  function jukeboxLayers(W, cover) {
+    const s = W / 110, H = 160 * s, pad = 16 * s, light = isLightRoom(), acc = curAccent();
+    const archPath = (g, i) => { g.beginPath(); g.moveTo(i, 158 - i * .2); g.lineTo(i, 55); g.arc(55, 55, 55 - i, Math.PI, 0); g.lineTo(110 - i, 158 - i * .2); };
+    const under = mk(W + pad * 2, H + pad * 2), g = under.getContext('2d'); g.translate(pad, pad); g.scale(s, s);
+    g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 9 * s; g.shadowOffsetY = 4 * s;
+    const wood = g.createLinearGradient(0, 0, 110, 0);
+    (light ? [[0, '#d7c6a2'], [.5, '#f4ead6'], [1, '#cdb994']] : [[0, '#2a130b'], [.5, '#5b2f1c'], [1, '#26110a']]).forEach(([o, col]) => wood.addColorStop(o, col));
+    g.fillStyle = wood; archPath(g, 0); g.lineTo(110, 156); g.quadraticCurveTo(110, 160, 106, 160); g.lineTo(4, 160); g.quadraticCurveTo(0, 160, 0, 156); g.closePath(); g.fill(); g.restore();
+    // window
+    g.fillStyle = '#09080b'; g.beginPath(); g.moveTo(14, 92); g.lineTo(14, 55); g.arc(55, 55, 41, Math.PI, 0); g.lineTo(96, 92); g.closePath(); g.fill();
+    // grille backing
+    g.fillStyle = '#0b0a0d'; rr(g, 14, 128, 82, 26, 3); g.fill();
+    const record = layerPlatter(50 * s, cover, true);
+    const over = mk(W + pad * 2, H + pad * 2), o = over.getContext('2d'); o.translate(pad, pad); o.scale(s, s);
+    // glass glare
+    o.save(); o.beginPath(); o.moveTo(14, 92); o.lineTo(14, 55); o.arc(55, 55, 41, Math.PI, 0); o.lineTo(96, 92); o.closePath(); o.clip();
+    const gl = o.createLinearGradient(14, 20, 70, 90); gl.addColorStop(0, 'rgba(255,255,255,.18)'); gl.addColorStop(.35, 'rgba(255,255,255,0)'); gl.addColorStop(1, 'rgba(255,255,255,.05)');
+    o.fillStyle = gl; o.fillRect(14, 14, 82, 78); o.restore();
+    o.strokeStyle = light ? '#b8a27a' : '#c8a46a'; o.lineWidth = 1.2; o.beginPath(); o.moveTo(14, 92); o.lineTo(14, 55); o.arc(55, 55, 41, Math.PI, 0); o.lineTo(96, 92); o.closePath(); o.stroke();
+    // selection card
+    o.fillStyle = '#f5f0e4'; rr(o, 14, 97, 82, 24, 2); o.fill();
+    o.fillStyle = acc; o.fillRect(14, 97, 82, 3);
+    const ink = '#1c1814', title = curTitle(), up = state.font !== 'serif', ttl = up ? title.toUpperCase() : title;
+    o.fillStyle = ink; o.textAlign = 'center'; o.textBaseline = 'middle';
+    fitFont(o, ttl, titleFont, 7, 64, 3); o.fillText(ttl, 50, 108);
+    o.font = '500 3px "DM Mono", monospace'; if ('letterSpacing' in o) o.letterSpacing = '.4px';
+    o.fillText(`PROD. BY ${(state.producer || '').toUpperCase()}`, 50, 116); if ('letterSpacing' in o) o.letterSpacing = '0px';
+    o.fillStyle = acc; rr(o, 82, 102, 11, 7, 1.2); o.fill();
+    o.fillStyle = labelInk(acc); o.font = '800 4px Unbounded, sans-serif'; o.fillText('A1', 87.5, 105.6);
+    // selector buttons
+    for (let i = 0; i < 8; i++) knob(o, 19 + i * 10.3, 124.6, 2.1, true);
+    // grille slats
+    o.fillStyle = light ? '#cbb68d' : '#3a1d12';
+    for (let i = 0; i < 12; i++) o.fillRect(16 + i * 6.8, 128, 3.2, 26);
+    o.strokeStyle = light ? '#b8a27a' : '#c8a46a'; o.lineWidth = .8; rr(o, 14, 128, 82, 26, 3); o.stroke();
+    // neon tube along the arch, drawn on its own so it can pulse
+    const neon = mk(W + pad * 2, H + pad * 2), n = neon.getContext('2d'); n.translate(pad, pad); n.scale(s, s);
+    n.shadowColor = acc; n.shadowBlur = 6 * s; n.strokeStyle = mix(acc, '#ffffff', .35); n.lineWidth = 2.6; n.lineCap = 'round';
+    archPath(n, 5); n.stroke(); n.shadowBlur = 2 * s; n.strokeStyle = '#ffffff'; n.globalAlpha = .55; n.lineWidth = .8; archPath(n, 5); n.stroke();
+    return { s, pad, under, over, neon, record };
+  }
+  function drawJukebox(g, x, y, W, L, F) {
+    const s = L.s, acc = curAccent();
+    g.drawImage(L.under, x - L.pad, y - L.pad);
+    g.save(); g.translate(x + 55 * s, y + 62 * s); g.rotate(F.vAngle * RAD); g.drawImage(L.record, -L.record.width / 2, -L.record.height / 2); g.restore();
+    g.save(); g.translate(x, y); g.scale(s, s);
+    g.fillStyle = acc; g.globalAlpha = .25 + F.pulse * .6; rr(g, 14, 128, 82, 26, 3); g.fill(); g.globalAlpha = 1;
+    g.restore();
+    g.drawImage(L.over, x - L.pad, y - L.pad);
+    g.globalAlpha = .6 + F.pulse * .4; g.drawImage(L.neon, x - L.pad, y - L.pad); g.globalAlpha = 1;
+  }
+
+  // ---- reel-to-reel: 120 × 150 ----
+  function reelLayers(W) {
+    const s = W / 120, H = 150 * s, pad = 14 * s, light = isLightRoom(), acc = curAccent();
+    const c = mk(W + pad * 2, H + pad * 2), g = c.getContext('2d'); g.translate(pad, pad);
+    g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 9 * s; g.shadowOffsetY = 4 * s;
+    const mg = g.createLinearGradient(0, 0, W, H); mg.addColorStop(0, light ? '#eceef1' : '#45464c'); mg.addColorStop(1, light ? '#a7aab0' : '#17181b');
+    g.fillStyle = mg; rr(g, 0, 0, W, H, 6 * s); g.fill(); g.restore();
+    g.scale(s, s);
+    g.strokeStyle = light ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.04)'; g.lineWidth = .25;
+    for (let yy = 2; yy < 148; yy += 1.2) { g.beginPath(); g.moveTo(2, yy); g.lineTo(118, yy); g.stroke(); }
+    for (const [sx, sy] of [[5, 5], [115, 5], [5, 145], [115, 145]]) screwAt(g, sx, sy, 1.8);
+    // tape path parts
+    g.fillStyle = '#16161a'; rr(g, 47, 78, 26, 12, 2); g.fill();
+    for (const hx of [53, 60, 67]) { g.fillStyle = '#c9ccd2'; rr(g, hx - 2, 79.5, 4, 5, 1); g.fill(); }
+    for (const gx of [21, 99]) { g.fillStyle = '#c9ccd2'; circ(g, gx, 82, 3.6); g.fill(); g.fillStyle = '#4b4e55'; circ(g, gx, 82, 1.2); g.fill(); }
+    // VU meters
+    for (const mx of [14, 64]) {
+      g.fillStyle = '#121214'; rr(g, mx - 1, 95, 44, 27, 2); g.fill();
+      const fg = g.createLinearGradient(0, 96, 0, 121); fg.addColorStop(0, '#fbf1d6'); fg.addColorStop(1, '#e9d9ae');
+      g.fillStyle = fg; rr(g, mx, 96, 42, 25, 1.5); g.fill();
+      const px = mx + 21, py = 121;
+      g.strokeStyle = '#2a2520'; g.lineWidth = .35; g.beginPath(); g.arc(px, py, 17, Math.PI * 1.22, Math.PI * 1.78); g.stroke();
+      g.strokeStyle = '#d0322b'; g.lineWidth = .9; g.beginPath(); g.arc(px, py, 17, Math.PI * 1.62, Math.PI * 1.78); g.stroke();
+      for (let i = 0; i <= 8; i++) { const a = Math.PI * (1.22 + .56 * i / 8); g.strokeStyle = i > 5 ? '#d0322b' : '#2a2520'; g.lineWidth = .35; g.beginPath(); g.moveTo(px + Math.cos(a) * 17, py + Math.sin(a) * 17); g.lineTo(px + Math.cos(a) * 15, py + Math.sin(a) * 15); g.stroke(); }
+      g.fillStyle = '#2a2520'; g.font = '700 3px "DM Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('VU', px, 114);
+    }
+    // name plate and buttons
+    g.fillStyle = '#121214'; rr(g, 14, 126, 92, 9, 1.5); g.fill();
+    g.fillStyle = '#e9e6df'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const plate = `${curTitle()}  ·  PROD. BY ${(state.producer || '').toUpperCase()}`;
+    fitFont(g, plate, px => `500 ${px}px "DM Mono", monospace`, 3.4, 86, 1.6); g.fillText(plate, 60, 130.6);
+    for (let i = 0; i < 5; i++) { g.fillStyle = i === 2 ? acc : (light ? '#d7d8dc' : '#2c2d32'); rr(g, 22 + i * 16, 138, 12, 6, 1); g.fill(); }
+    // metal reel with three windows, turned every frame
+    const reel = mk(56 * s, 56 * s), r = reel.getContext('2d'); r.translate(28 * s, 28 * s); r.scale(s, s);
+    const rg = r.createRadialGradient(-6, -8, 2, 0, 0, 27); rg.addColorStop(0, '#f2f3f5'); rg.addColorStop(1, '#8c9097');
+    r.fillStyle = rg; circ(r, 0, 0, 27); r.fill();
+    r.strokeStyle = 'rgba(0,0,0,.3)'; r.lineWidth = .5; circ(r, 0, 0, 26.7); r.stroke();
+    r.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 3; i++) { r.save(); r.rotate(i * Math.PI * 2 / 3); r.beginPath(); r.arc(0, 0, 23, -.75, .75); r.arc(0, 0, 10, .62, -.62, true); r.closePath(); r.fill(); r.restore(); }
+    r.globalCompositeOperation = 'source-over';
+    r.fillStyle = '#2b2c31'; circ(r, 0, 0, 3.4); r.fill(); r.fillStyle = '#c9ccd2'; circ(r, 0, 0, 1.6); r.fill();
+    return { s, pad, c, reel };
+  }
+  function drawReel(g, x, y, W, L, F) {
+    const s = L.s;
+    g.drawImage(L.c, x - L.pad, y - L.pad);
+    g.save(); g.translate(x, y); g.scale(s, s);
+    const packR = p => Math.sqrt(10 * 10 + (25 * 25 - 10 * 10) * clamp(p, 0, 1)), rl = packR(1 - F.frac), rR = packR(F.frac);
+    g.strokeStyle = '#3b2a22'; g.lineWidth = .8; g.beginPath();
+    g.moveTo(31 + rl * Math.cos(Math.PI * .85), 38 + rl * Math.sin(Math.PI * .85)); g.lineTo(17.6, 82); g.lineTo(21, 85.6); g.lineTo(73, 85.6); g.lineTo(99, 85.6); g.lineTo(102.4, 82);
+    g.lineTo(89 + rR * Math.cos(Math.PI * .15), 38 + rR * Math.sin(Math.PI * .15)); g.stroke();
+    for (const [cx, r] of [[31, rl], [89, rR]]) {
+      const pg = g.createRadialGradient(cx, 38, 8, cx, 38, r); pg.addColorStop(0, '#2a1c16'); pg.addColorStop(.85, '#3d2b22'); pg.addColorStop(1, '#4e392d');
+      g.fillStyle = pg; circ(g, cx, 38, r); g.fill();
+    }
+    g.restore();
+    for (const [cx, a] of [[31, F.aL * .45], [89, F.aR * .45]]) {
+      g.save(); g.translate(x + cx * s, y + 38 * s); g.rotate(a); g.drawImage(L.reel, -L.reel.width / 2, -L.reel.height / 2); g.restore();
+    }
+    // VU needles
+    g.save(); g.translate(x, y); g.scale(s, s);
+    const lo = levelAvg(F.levels, 0, 6), hi = Math.min(1, levelAvg(F.levels, 6, 22) * 1.5);
+    for (const [mx, v] of [[14, lo], [64, hi]]) {
+      const px = mx + 21, py = 121, a = Math.PI * (1.24 + .52 * Math.min(1, v));
+      g.strokeStyle = '#1a1714'; g.lineWidth = .55; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.cos(a) * 19, py + Math.sin(a) * 19); g.stroke();
+      g.fillStyle = '#1a1714'; circ(g, px, py, 1.3); g.fill();
+    }
+    g.restore();
+  }
+
+  // ---- car stereo in a dashboard: 160 × 100 ----
+  function carLayers(W) {
+    const s = W / 160, H = 100 * s, pad = 14 * s, acc = curAccent();
+    const c = mk(W + pad * 2, H + pad * 2), g = c.getContext('2d'); g.translate(pad, pad);
+    g.save(); g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 9 * s; g.shadowOffsetY = 4 * s;
+    const dg = g.createLinearGradient(0, 0, 0, H); dg.addColorStop(0, '#2a2b31'); dg.addColorStop(1, '#0e0e11');
+    g.fillStyle = dg; rr(g, 0, 0, W, H, 10 * s); g.fill(); g.restore();
+    g.scale(s, s);
+    g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = .6; rr(g, .5, .5, 159, 99, 9.6); g.stroke();
+    g.setLineDash([1.2, 1]); g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = .35; rr(g, 3.5, 3.5, 153, 93, 8); g.stroke(); g.setLineDash([]);
+    // air vents
+    for (const vx of [14, 86]) {
+      g.fillStyle = '#08080a'; rr(g, vx, 7, 60, 14, 3); g.fill();
+      g.strokeStyle = '#8d9097'; g.lineWidth = .7; rr(g, vx, 7, 60, 14, 3); g.stroke();
+      g.strokeStyle = '#34363c'; g.lineWidth = 1.1; for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(vx + 3, 10 + i * 2.8); g.lineTo(vx + 57, 10 + i * 2.8); g.stroke(); }
+    }
+    // head unit
+    g.fillStyle = '#07070a'; rr(g, 10, 27, 140, 52, 4); g.fill();
+    const bz = g.createLinearGradient(0, 27, 0, 79); bz.addColorStop(0, '#9da0a7'); bz.addColorStop(.5, '#4a4c52'); bz.addColorStop(1, '#8d9097');
+    g.strokeStyle = bz; g.lineWidth = 1; rr(g, 10, 27, 140, 52, 4); g.stroke();
+    // volume knob (the light ring around it is drawn each frame)
+    const kg = g.createRadialGradient(27, 49, 2, 30, 53, 12.5); kg.addColorStop(0, '#5a5c63'); kg.addColorStop(1, '#141518');
+    g.fillStyle = kg; circ(g, 30, 53, 12.5); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = .3;
+    for (let i = 0; i < 48; i++) { const a = i * Math.PI / 24; g.beginPath(); g.moveTo(30 + Math.cos(a) * 10.5, 53 + Math.sin(a) * 10.5); g.lineTo(30 + Math.cos(a) * 12.3, 53 + Math.sin(a) * 12.3); g.stroke(); }
+    g.fillStyle = '#1c1d21'; circ(g, 30, 53, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.55)'; circ(g, 30, 47.6, .8); g.fill();
+    // display
+    g.fillStyle = '#030405'; rr(g, 50, 33, 78, 31, 2); g.fill();
+    g.fillStyle = rgba(acc, .05); rr(g, 50, 33, 78, 31, 2); g.fill();
+    // preset buttons
+    g.font = '500 3px "DM Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (let i = 0; i < 6; i++) { g.fillStyle = '#1b1c20'; rr(g, 50 + i * 13.1, 67.5, 11.6, 7, 1.4); g.fill(); g.fillStyle = 'rgba(255,255,255,.6)'; g.fillText(String(i + 1), 55.8 + i * 13.1, 71.1); }
+    // right side
+    knob(g, 139, 44, 6, false);
+    g.fillStyle = '#1b1c20'; rr(g, 133, 59, 12, 8, 1.4); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.6)'; g.beginPath(); g.moveTo(139, 61); g.lineTo(141.6, 63.6); g.lineTo(136.4, 63.6); g.closePath(); g.fill(); g.fillRect(136.4, 64.4, 5.2, .7);
+    // climate knobs
+    for (const kx of [44, 80, 116]) knob(g, kx, 89, 5, false);
+    return { s, pad, c };
+  }
+  function drawCar(g, x, y, W, L, F) {
+    const s = L.s, acc = curAccent();
+    g.drawImage(L.c, x - L.pad, y - L.pad);
+    g.save(); g.translate(x, y); g.scale(s, s);
+    // light ring around the volume knob follows the bass
+    const start = Math.PI * .75, sweep = Math.PI * 1.5 * (.12 + .88 * Math.min(1, F.pulse * 1.3));
+    g.strokeStyle = rgba(acc, .22); g.lineWidth = 1.2; g.beginPath(); g.arc(30, 53, 14.6, start, start + Math.PI * 1.5); g.stroke();
+    g.save(); g.shadowColor = acc; g.shadowBlur = 3 * s; g.strokeStyle = acc; g.beginPath(); g.arc(30, 53, 14.6, start, start + sweep); g.stroke(); g.restore();
+    // display
+    g.save(); g.beginPath(); rrp(g, 50, 33, 78, 31, 2); g.clip();
+    g.fillStyle = acc; g.font = '500 3.4px "DM Mono", monospace'; g.textBaseline = 'middle';
+    g.textAlign = 'left'; g.globalAlpha = .75; g.fillText(`TRACK ${String(cur + 1).padStart(2, '0')}`, 53.5, 37.6);
+    g.textAlign = 'right'; g.fillText(F.playing ? `▶ ${fmt(F.cur)}` : `❚❚ ${fmt(F.cur)}`, 124.5, 37.6); g.globalAlpha = 1;
+    const text = `${curTitle().toUpperCase()}  ·  PROD. BY ${(state.producer || '').toUpperCase()}`;
+    g.font = '500 6.4px "DM Mono", monospace'; g.textAlign = 'left';
+    g.shadowColor = acc; g.shadowBlur = 2 * s;
+    const tw = g.measureText(text).width, gap = 18;
+    if (tw <= 70) { g.textAlign = 'center'; g.fillText(text, 89, 46.5); }
+    else { const off = (F.t * 11) % (tw + gap); g.fillText(text, 53.5 - off, 46.5); g.fillText(text, 53.5 - off + tw + gap, 46.5); }
+    g.shadowBlur = 0;
+    for (let i = 0; i < 22; i++) { const lv = Math.min(1, F.levels[i] || 0), h = Math.max(.6, lv * 7); g.globalAlpha = .45 + lv * .55; g.fillRect(53.5 + i * 3.25, 61.5 - h, 2.3, h); }
+    g.globalAlpha = 1;
+    const gl = g.createLinearGradient(50, 33, 90, 64); gl.addColorStop(0, 'rgba(255,255,255,.06)'); gl.addColorStop(.5, 'rgba(255,255,255,0)');
+    g.fillStyle = gl; g.fillRect(50, 33, 78, 31);
+    g.restore(); g.restore();
+  }
+
   // On-screen versions: a canvas that overhangs its box by 14% for the shadow
   const devices = [
     { el: $('.cassette'), make: cassetteLayers, draw: drawCassette, ratio: 101 / 160 },
     { el: $('.pocket'), make: pocketLayers, draw: drawPocket, ratio: 165 / 100 },
+    { el: $('.boombox'), make: boomboxLayers, draw: drawBoombox, ratio: 110 / 180 },
+    { el: $('.jukebox'), make: jukeboxLayers, draw: drawJukebox, ratio: 160 / 110 },
+    { el: $('.reel2reel'), make: reelLayers, draw: drawReel, ratio: 150 / 120 },
+    { el: $('.carstereo'), make: carLayers, draw: drawCar, ratio: 100 / 160 },
   ].map(d => Object.assign(d, { cv: $('canvas', d.el), cache: null }));
   function drawDevices(F) {
     for (const d of devices) {
