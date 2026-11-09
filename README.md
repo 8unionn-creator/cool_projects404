@@ -6,6 +6,7 @@ Things I build to sharpen my skills and make my own work easier.
 |---|---|---|
 | [⏪ Rewind](rewind/) | Undo history and a code map for AI coding agents: every agent step saved as a Git snapshot you can restore, `rewind bisect` to find the step that broke the tests, an interactive map that replays what the agent changed, and an MCP server so agents can use it themselves | Go, Git internals, static analysis, MCP |
 | [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
+| [💿 Spin Room](spin-room/) | A record player and CD player that spin to your beats, made to screen-record for TikTok | HTML, CSS, JS, Web Audio |
 
 ## ⏪ Rewind — [`rewind/`](rewind/)
 
@@ -34,3 +35,17 @@ A focus timer that works like a real kitchen timer. Drag the dial to set the min
 - Light and dark themes, works on phones
 
 **How to run it:** open `tomato-dial/index.html` in any browser. Nothing to install, no build step. Your data stays in your browser's localStorage and is never sent anywhere.
+
+## 💿 Spin Room — [`spin-room/`](spin-room/index.html)
+
+A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable CD player spins them: the tonearm drops and tracks across the record as the beat plays, the platter spins up and slows down like a real one, and the sound bars and background glow move with the bass.
+
+**What it does**
+- **Three decks:** record player, CD player, or both on screen at once
+- **Your tag on everything:** producer name, beat title, BPM, key, handle and tagline. Cover art prints on the record label and the CD, and can blur into the background. BPM and key are read from file names like `night_drive_140bpm_F#min.mp3`
+- **Looks:** 6 vinyl colors, 5 rooms, any accent color, 3 title styles, 33⅓ or 45 RPM
+- **Recording mode:** hides the controls, counts down, plays from your start time, and fades out at 15, 30 or 60 seconds. A guide shows where TikTok's buttons and caption will cover the video
+- Comes with a built-in demo beat made in the browser, so it works before you add anything
+
+**How to use it:** open `spin-room/index.html` in a browser. Add beats, style it, start your phone's screen recorder, then tap **Record**. Double-tap or press `Esc` to leave recording mode. Beats stay on your device and are never uploaded.
+
