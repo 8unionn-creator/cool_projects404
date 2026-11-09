@@ -41,7 +41,7 @@ A focus timer that works like a real kitchen timer. Drag the dial to set the min
 A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable CD player spins them: the tonearm drops and tracks across the record as the beat plays, the platter spins up and slows down like a real one, and the sound bars and background glow move with the bass.
 
 **What it does**
-- **Three decks:** record player, CD player, or both on screen at once
+- **Seven players:** turntable, portable CD player, both together, a record on its own, a CD on its own, a cassette tape (the reels turn and the tape winds across as the beat plays), and a pocket MP3 player with a click wheel and a screen showing your cover, title and live sound bars
 - **Finds BPM and key by itself** when you add a beat (½ and ×2 buttons fix a tempo read at half or double speed)
 - **Your tag on everything:** producer name, beat title, BPM, key, handle and tagline. Cover art prints on the record label and the CD, and can blur into the background. BPM and key in file names like `night_drive_140bpm_F#min.mp3` are used before detection
 - **Two formats:** vertical 9:16 for TikTok, Reels and Shorts, or widescreen 16:9 for YouTube (deck on the left, your title and sound bars on the right)
