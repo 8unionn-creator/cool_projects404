@@ -337,6 +337,9 @@ body.exporting .exp-bar { display: flex; }
 .exp-bar button { border: 0; border-radius: 99px; padding: 7px 14px; background: var(--ui-raise); font-weight: 600; font-size: 13px; }
 body.exporting .panel, body.exporting .fab { display: none !important; }
 body.exporting .app { grid-template-columns: minmax(0, 1fr); }
+.stage-wrap > * { grid-area: 1 / 1; }
+.xp-canvas { display: block; width: auto; max-width: 100%; aspect-ratio: 9 / 16; border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .55); }
+body.xp-preview .stage { visibility: hidden; }
 body.exporting .stage-wrap { padding-top: calc(70px + env(safe-area-inset-top, 0px)); }
 .modal { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .65); }
 [hidden] { display: none !important; }
@@ -592,7 +595,7 @@ body.exporting .stage {
         </label>
       </div>
       <button class="btn big" id="exportBtn">Record video</button>
-      <p class="hint">Makes a 1080 × 1920 video with your beat's sound, ready for TikTok, Instagram Reels or YouTube Shorts. It records in real time, so a 30-second video takes 30 seconds. Keep this screen open until it's done.</p>
+      <p class="hint">Makes a 1080 × 1920 video with your beat's sound, ready for TikTok, Instagram Reels or YouTube Shorts. It's made at a steady 30 frames a second, so it plays smoothly even if your phone is busy. Keep this screen open until it's done.</p>
       <div class="alt">
         <h3>Or use your screen recorder</h3>
         <label class="f">Countdown
@@ -611,7 +614,7 @@ body.exporting .stage {
   <button class="play" id="fabPlay">Play</button>
   <button id="fabRec">Record</button>
 </div>
-<div class="exp-bar" id="expBar" role="status"><span class="rec-dot"></span><span>Recording video</span><span id="expTime">0:00 / 0:30</span><button id="expCancel">Cancel</button></div>
+<div class="exp-bar" id="expBar" role="status"><span class="rec-dot"></span><span id="expLabel">Recording video</span><span id="expTime">0:00 / 0:30</span><button id="expCancel">Cancel</button></div>
 <div class="modal" id="vidModal" hidden>
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="vidTitle">
     <h3 id="vidTitle">Your video is ready</h3>
@@ -1058,7 +1061,7 @@ body.exporting .stage {
       if (live) { const a = Math.floor(2 * Math.pow(170, i / (half - 1))), b = Math.floor(2 * Math.pow(170, (i + 1) / (half - 1))) ; let s = 0, n = 0; for (let k = a; k <= Math.max(a, b - 1) && k < freq.length; k++) { s += freq[k]; n++; } v = n ? s / n / 255 : 0; v = Math.pow(v, 1.6) * (1 + i / half * .8); }
       levels[i] = v > levels[i] ? v : Math.max(v, levels[i] - dt * 1.8);
     }
-    const accent = getComputedStyle(stage).getPropertyValue('--accent').trim() || '#f0b35b';
+    const accent = curAccent();
     const gap = w / BARS, bw = gap * .46, mid = h / 2;
     vg.fillStyle = accent;
     for (let i = 0; i < half; i++) {
@@ -1112,9 +1115,12 @@ body.exporting .stage {
   }
 
   /* ---------- video export ----------
-     Redraws the stage onto a 1080×1920 canvas every frame, using the on-screen layout for positions,
-     and records it together with the beat's audio. */
-  const XW = 1080, XH = 1920, TAU = Math.PI * 2, RAD = Math.PI / 180;
+     The page measures the on-screen stage once, pre-draws everything that doesn't move, then draws
+     each video frame onto a 1080×1920 canvas. Where the browser can encode H.264 + AAC itself
+     (WebCodecs), frames are made one by one at a steady 30 fps and packed into an MP4, faster or
+     slower than real time but never dropping a frame. Otherwise it records the canvas live. */
+  const XW = 1080, XH = 1920, FPS = 30, TAIL = 1.4, TAU = Math.PI * 2, RAD = Math.PI / 180;
+  const ANY_CODEC = /[?&]anycodec\b/.test(location.search); // test switch: allow VP9/Opus when H.264/AAC are missing
   let xp = null;
   let downloadsNS = null;
   try { if (window.claude && window.claude.use) window.claude.use('downloads').then(ns => { downloadsNS = ns; }, () => {}); } catch (e) {}
@@ -1124,10 +1130,16 @@ body.exporting .stage {
   const mix = (h1, h2, t) => { const a = hexRgb(h1), b = hexRgb(h2); return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',')})`; };
   const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; };
   const loadImg = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
   function rr(g, x, y, w, h, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else { g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); } }
   const circ = (g, x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, TAU); };
   const ring = (g, r0, r1) => { g.beginPath(); g.arc(0, 0, r1, 0, TAU); g.arc(0, 0, r0, 0, TAU, true); };
   function metal(g, x0, x1) { const m = g.createLinearGradient(x0, 0, x1, 0); m.addColorStop(0, '#7d8188'); m.addColorStop(.45, '#f3f4f6'); m.addColorStop(1, '#8b8f96'); return m; }
+  // a soft shadow without ctx.filter (which Safari lacks): draw far off-canvas and offset only the shadow back in
+  function withShadow(g, color, blur, dx, dy, draw) {
+    g.save(); g.shadowColor = color; g.shadowBlur = blur; g.shadowOffsetX = 20000 + dx; g.shadowOffsetY = dy;
+    g.translate(-20000, 0); draw(); g.restore();
+  }
   function arcText(g, text, r, top, spacing) {
     const chars = [...text], ws = chars.map(ch => g.measureText(ch).width + spacing), total = ws.reduce((a, b) => a + b, 0) - spacing;
     g.textAlign = 'center'; g.textBaseline = 'alphabetic';
@@ -1147,7 +1159,7 @@ body.exporting .stage {
     white: ['#ece8e0', 'rgba(0,0,0,.06)', '#ffffff', 'rgba(0,0,0,.12)'],
   };
 
-  // label art in a 200-unit box centred on the origin (same numbers as the SVG labels)
+  // ---- label art, in a 200-unit box centred on the origin (same numbers as the SVG labels) ----
   function paintVinylLabel(g, cover) {
     const acc = curAccent(), ink = cover ? '#fff' : labelInk(acc), name = (state.producer || '').toUpperCase(), title = curTitle().toUpperCase();
     g.save(); circ(g, 0, 0, 100); g.clip();
@@ -1179,7 +1191,7 @@ body.exporting .stage {
     g.globalAlpha = .85; g.font = '500 8.5px "DM Mono", monospace'; arcText(g, `PROD. BY ${name} · DIGITAL AUDIO`, 87, false, 2.6); g.globalAlpha = 1;
   }
 
-  // ---- static layers, drawn once per export ----
+  // ---- pre-drawn layers ----
   function layerTurntable(s) {
     const U = s / 100, pad = 14 * U, c = mk(s + pad * 2, s + pad * 2), g = c.getContext('2d');
     const css = n => getComputedStyle(stage).getPropertyValue(n).trim();
@@ -1236,6 +1248,25 @@ body.exporting .stage {
     g.fillStyle = cg; ring(g, .36 * R, .97 * R); g.fill('evenodd');
     return c;
   }
+  function layerArm(U, shadow) {
+    // the arm drawn upright around its pivot; sprite spans x 74..95, y 0..75 (turntable units)
+    const c = mk(21 * U, 75 * U), g = c.getContext('2d');
+    const draw = () => {
+      g.save(); g.scale(U, U); g.translate(-74, 0);
+      const fill = col => shadow ? '#000' : col;
+      g.fillStyle = fill(metal(g, 83, 89)); rr(g, 83, 2.2, 6, 5.4, 1.2); g.fill();
+      g.strokeStyle = fill(metal(g, 80, 88)); g.lineWidth = 1.6; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(86, 13); g.lineTo(86, 56); g.lineTo(81, 66); g.stroke();
+      g.save(); g.translate(81, 67); g.rotate(26 * RAD); g.translate(-81, -67);
+      g.fillStyle = fill('#232428'); rr(g, 78.6, 64.2, 5, 6.6, .8); g.fill();
+      if (!shadow) { g.strokeStyle = '#9fa3aa'; g.lineWidth = .35; g.stroke(); }
+      g.fillStyle = fill('#c8cbd0'); rr(g, 82.6, 62.6, 3.2, .9, .4); g.fill(); g.restore();
+      if (!shadow) { g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(83, 4.6, 6, .6); g.fillStyle = metal(g, 84, 88); circ(g, 86, 13, 2); g.fill(); }
+      g.restore();
+    };
+    if (shadow) withShadow(g, 'rgba(0,0,0,.5)', 1.4 * U, 0, 0, draw); else draw();
+    return { c, px: 12 * U, py: 13 * U };
+  }
   function layerDiscBase(R) {
     const pad = R * .2, c = mk(R * 2 + pad * 2, R * 2 + pad * 2), g = c.getContext('2d'); g.translate(R + pad, R + pad);
     g.save(); g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = .09 * R; g.shadowOffsetY = .04 * R; g.fillStyle = '#dfe3e8'; circ(g, 0, 0, R); g.fill(); g.restore();
@@ -1286,26 +1317,42 @@ body.exporting .stage {
     g.fillStyle = 'rgba(0,0,0,.35)'; circ(g, cx, cx, .044 * s); g.fill(); g.fillStyle = hb; circ(g, cx, cx, .04 * s); g.fill();
     return c;
   }
-  function layerGrain() {
-    const c = mk(256, 256), g = c.getContext('2d'), im = g.createImageData(256, 256);
-    for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
-    g.putImageData(im, 0, 0); return c;
+  function glowDot(r, color, blur) { // a dot with its glow baked in
+    const pad = blur * 1.5, c = mk((r + pad) * 2, (r + pad) * 2), g = c.getContext('2d');
+    if (blur) { g.shadowColor = color; g.shadowBlur = blur; }
+    g.fillStyle = color; circ(g, r + pad, r + pad, r); g.fill();
+    return c;
   }
-  function layerBlur(img) {
-    const t = mk(24, 24); t.getContext('2d').drawImage(img, 0, 0, 24, 24);
-    const t2 = mk(96, 96), g2 = t2.getContext('2d'); g2.imageSmoothingQuality = 'high'; g2.drawImage(t, 0, 0, 96, 96);
-    return t2;
+  function layerBackground(cover) {
+    const c = mk(XW, XH), g = c.getContext('2d');
+    g.fillStyle = getComputedStyle(stage).getPropertyValue('--bg').trim(); g.fillRect(0, 0, XW, XH);
+    if (cover && state.coverBg) {
+      const t = mk(24, 24); t.getContext('2d').drawImage(cover, 0, 0, 24, 24);
+      const t2 = mk(96, 96), g2 = t2.getContext('2d'); g2.imageSmoothingQuality = 'high'; g2.drawImage(t, 0, 0, 96, 96);
+      g.globalAlpha = .5; const w = XH * 1.24 * 1.1; g.drawImage(t2, (XW - w) / 2, (XH - w) / 2, w, w); g.globalAlpha = 1;
+    }
+    // film grain
+    const n = mk(256, 256), ng = n.getContext('2d'), im = ng.createImageData(256, 256);
+    for (let i = 0; i < im.data.length; i += 4) { const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+    ng.putImageData(im, 0, 0);
+    g.globalCompositeOperation = 'overlay'; g.globalAlpha = .14; g.fillStyle = g.createPattern(n, 'repeat'); g.fillRect(0, 0, XW, XH);
+    return c;
+  }
+  function layerGlow(R) {
+    const glow = getComputedStyle(stage).getPropertyValue('--glow').trim(), c = mk(R * 2, R * 2), g = c.getContext('2d');
+    const rg = g.createRadialGradient(R, R, 0, R, R, R); rg.addColorStop(0, rgba(glow, 1)); rg.addColorStop(1, rgba(glow, 0));
+    g.fillStyle = rg; g.fillRect(0, 0, R * 2, R * 2); return c;
   }
 
-  // ---- per-frame drawing ----
+  // ---- text, read from the on-screen stage ----
   function effOpacity(el) { let o = 1; for (let n = el; n && n !== stage; n = n.parentElement) o *= parseFloat(getComputedStyle(n).opacity) || 0; return o; }
+  function fontOf(el, k) { const cs = getComputedStyle(el); return { font: `${cs.fontStyle} ${cs.fontWeight} ${parseFloat(cs.fontSize) * k}px ${cs.fontFamily}`, ls: cs.letterSpacing === 'normal' ? 0 : parseFloat(cs.letterSpacing) * k, color: cs.color, up: cs.textTransform === 'uppercase', alpha: effOpacity(el) }; }
+  function setFont(g, f) { g.font = f.font; if ('letterSpacing' in g) g.letterSpacing = `${f.ls}px`; g.fillStyle = f.color; g.globalAlpha = f.alpha; }
   function drawText(g, el, sr, k) {
     const node = [...el.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
     if (!node || el.getClientRects().length === 0) return;
-    const cs = getComputedStyle(el), text = node.textContent, up = cs.textTransform === 'uppercase';
-    g.font = `${cs.fontStyle} ${cs.fontWeight} ${parseFloat(cs.fontSize) * k}px ${cs.fontFamily}`;
-    if ('letterSpacing' in g) g.letterSpacing = cs.letterSpacing === 'normal' ? '0px' : `${parseFloat(cs.letterSpacing) * k}px`;
-    g.fillStyle = cs.color; g.globalAlpha = effOpacity(el); g.textAlign = 'left'; g.textBaseline = 'middle';
+    const f = fontOf(el, k), text = node.textContent;
+    setFont(g, f); g.textAlign = 'left'; g.textBaseline = 'middle';
     const range = document.createRange(), lines = [], re = /\S+/g; let m;
     while ((m = re.exec(text))) {
       range.setStart(node, m.index); range.setEnd(node, m.index + m[0].length);
@@ -1314,119 +1361,178 @@ body.exporting .stage {
       if (last && Math.abs(last.top - r.top) < r.height / 2) last.end = m.index + m[0].length;
       else lines.push({ top: r.top, bottom: r.bottom, left: r.left, start: m.index, end: m.index + m[0].length });
     }
-    lines.forEach(l => { let t = text.slice(l.start, l.end); if (up) t = t.toUpperCase(); g.fillText(t, (l.left - sr.left) * k, ((l.top + l.bottom) / 2 - sr.top) * k); });
+    lines.forEach(l => { let t = text.slice(l.start, l.end); if (f.up) t = t.toUpperCase(); g.fillText(t, (l.left - sr.left) * k, ((l.top + l.bottom) / 2 - sr.top) * k); });
     g.globalAlpha = 1; if ('letterSpacing' in g) g.letterSpacing = '0px';
   }
-  function drawDisc(g, cx, cy, R, set) {
-    g.drawImage(set.base.c, cx - R - set.base.pad, cy - R - set.base.pad);
-    g.save(); g.translate(cx, cy); g.rotate(cAngle * RAD); g.drawImage(set.print, -R, -R); g.restore();
-    g.save(); g.globalCompositeOperation = 'screen'; g.drawImage(set.rainbow, cx - R, cy - R); g.restore();
-  }
-  function discSet(R) { return { base: layerDiscBase(R), print: layerDiscPrint(R, xp.cover), rainbow: layerRainbow(R) }; }
 
-  function drawFrame(now) {
-    const g = xp.g, sr = stage.getBoundingClientRect(), k = XW / sr.width, u = XW / 100;
+  // Measure the stage and pre-draw everything that stays still. Runs once per export.
+  async function buildScene() {
+    try { await Promise.all(['800 20px Unbounded', '500 20px "DM Mono"', '400 20px "DM Mono"', 'italic 600 20px Fraunces', '800 20px Syne', '500 20px "Instrument Sans"'].map(f => document.fonts.load(f))); } catch (e) {}
+    const sr = stage.getBoundingClientRect(), k = XW / sr.width, u = XW / 100;
     const rel = el => { const r = el.getBoundingClientRect(); return { x: (r.left - sr.left) * k, y: (r.top - sr.top) * k, w: r.width * k, h: r.height * k }; };
     const css = n => getComputedStyle(stage).getPropertyValue(n).trim();
-    const ink = css('--ink'), bg = css('--bg'), glow = css('--glow'), acc = curAccent();
-    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
-    g.fillStyle = bg; g.fillRect(0, 0, XW, XH);
-    if (xp.blur && state.coverBg) { g.globalAlpha = .5; const w = XH * 1.24 * 1.1; g.drawImage(xp.blur, (XW - w) / 2, (XH - w) / 2, w, w); g.globalAlpha = 1; }
-    { // glow
-      const gr = 75 * u * Math.SQRT2 * .62 * (1 + pulse * .07), gx = XW / 2, gy = XH * .42, rg = g.createRadialGradient(gx, gy, 0, gx, gy, gr);
-      rg.addColorStop(0, rgba(glow, 1)); rg.addColorStop(1, rgba(glow, 0));
-      g.globalAlpha = .55 + .45 * pulse; g.fillStyle = rg; g.fillRect(gx - gr, gy - gr, gr * 2, gr * 2); g.globalAlpha = 1;
-    }
-    // decks
+    const cover = await loadImg(state.cover);
+    const S = { k, u, acc: curAccent(), ink: css('--ink'), bg: css('--bg') };
+    S.back = layerBackground(cover);
+    S.glowR = 75 * u * Math.SQRT2 * .62; S.glow = layerGlow(S.glowR);
     const T = rel($('.turntable'));
     if (T.w > 0) {
-      if (!xp.tt || Math.abs(xp.tt.s - T.w) > 1) xp.tt = { s: T.w, plinth: layerTurntable(T.w), platter: layerPlatter(T.w, xp.cover), sheen: layerSheen(T.w * .4) };
-      const U = T.w / 100, L = xp.tt;
-      g.drawImage(L.plinth.c, T.x - L.plinth.pad, T.y - L.plinth.pad);
-      g.save(); g.translate(T.x, T.y); g.scale(U, U);
-      if (playing) { g.shadowColor = '#ff9b45'; g.shadowBlur = 1.2 * U; }
-      g.fillStyle = playing ? '#ffb067' : '#3a2a20'; circ(g, 7.5, 7.5, 1.6); g.fill(); g.restore();
-      const cx = T.x + 44 * U, cy = T.y + 50 * U;
-      g.save(); g.translate(cx, cy); g.rotate(vAngle * RAD); g.drawImage(L.platter, -L.platter.width / 2, -L.platter.height / 2); g.restore();
-      g.drawImage(L.sheen, cx - L.sheen.width / 2, cy - L.sheen.height / 2);
-      const sg = g.createRadialGradient(cx - .3 * U, cy - .3 * U, 0, cx, cy, .8 * U); sg.addColorStop(0, '#fff'); sg.addColorStop(.6, '#8a8d93'); sg.addColorStop(1, '#3d3f43');
-      g.fillStyle = sg; circ(g, cx, cy, .8 * U); g.fill();
-      // tonearm
-      g.save(); g.translate(T.x, T.y); g.scale(U, U);
-      g.translate(86, 13); g.rotate(armA * RAD); g.translate(-86, -13);
-      g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 1.4 * U; g.shadowOffsetX = 1.2 * U; g.shadowOffsetY = 2.4 * U;
-      g.fillStyle = metal(g, 83, 89); rr(g, 83, 2.2, 6, 5.4, 1.2); g.fill();
-      g.strokeStyle = metal(g, 80, 88); g.lineWidth = 1.6; g.lineCap = 'round'; g.lineJoin = 'round';
-      g.beginPath(); g.moveTo(86, 13); g.lineTo(86, 56); g.lineTo(81, 66); g.stroke();
-      g.save(); g.translate(81, 67); g.rotate(26 * RAD); g.translate(-81, -67);
-      g.fillStyle = '#232428'; rr(g, 78.6, 64.2, 5, 6.6, .8); g.fill();
-      g.shadowColor = 'transparent'; g.strokeStyle = '#9fa3aa'; g.lineWidth = .35; g.stroke();
-      g.fillStyle = '#c8cbd0'; rr(g, 82.6, 62.6, 3.2, .9, .4); g.fill(); g.restore();
-      g.shadowColor = 'transparent'; g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(83, 4.6, 6, .6);
-      g.fillStyle = metal(g, 84, 88); circ(g, 86, 13, 2); g.fill();
-      g.restore();
+      const U = T.w / 100;
+      S.tt = { box: T, U, plinth: layerTurntable(T.w), platter: layerPlatter(T.w, cover), sheen: layerSheen(T.w * .4), arm: layerArm(U, false), armShadow: layerArm(U, true),
+        lightOn: glowDot(1.6 * U, '#ffb067', 1.6 * U), lightOff: glowDot(1.6 * U, '#3a2a20', 0) };
     }
+    const discSet = R => ({ R, base: layerDiscBase(R), print: layerDiscPrint(R, cover), rainbow: layerRainbow(R) });
     const D = rel($('.discman'));
-    if (D.w > 0) {
-      if (!xp.dm || Math.abs(xp.dm.s - D.w) > 1) xp.dm = { s: D.w, body: layerDiscman(D.w), lid: layerLid(D.w), disc: discSet(D.w * .39) };
-      g.drawImage(xp.dm.body.c, D.x - xp.dm.body.pad, D.y - xp.dm.body.pad);
-      drawDisc(g, D.x + D.w / 2, D.y + D.h / 2, D.w * .39, xp.dm.disc);
-      g.drawImage(xp.dm.lid, D.x, D.y);
-      g.save(); g.shadowColor = acc; g.shadowBlur = .01 * D.w; g.font = `500 ${2.5 * u}px "DM Mono", monospace`; g.fillStyle = acc; g.textBaseline = 'middle';
-      const ly = D.y + .946 * D.h; g.textAlign = 'left'; g.fillText($('#lcdTrack').textContent, D.x + .335 * D.w + .01 * D.w, ly);
-      g.textAlign = 'right'; g.fillText($('#lcdTime').textContent, D.x + .665 * D.w, ly); g.restore();
-    }
+    if (D.w > 0) S.dm = { box: D, body: layerDiscman(D.w), lid: layerLid(D.w), disc: discSet(D.w * .39), lcd: { font: `500 ${2.5 * u}px "DM Mono", monospace`, x0: D.x + .345 * D.w, x1: D.x + .665 * D.w, y: D.y + .946 * D.h } };
     const C = rel($('.cd-loose'));
-    if (C.w > 0) {
-      if (!xp.cl || Math.abs(xp.cl.s - C.w) > 1) xp.cl = { s: C.w, disc: discSet(C.w / 2) };
-      drawDisc(g, C.x + C.w / 2, C.y + C.h / 2, C.w / 2, xp.cl.disc);
-    }
-    // header
-    drawText(g, $('.prod-by'), sr, k); drawText(g, $('#sName'), sr, k);
-    const chip = rel($('.chip'));
-    g.fillStyle = rgba(bg, .55); rr(g, chip.x, chip.y, chip.w, chip.h, chip.h / 2); g.fill();
-    g.strokeStyle = rgba(ink, .28); g.lineWidth = Math.max(1, k); g.stroke();
-    const dot = rel($('.chip .dot'));
-    g.save();
-    if (playing) { g.globalAlpha = .675 + .325 * Math.cos(now / 1200 * TAU); g.fillStyle = acc; g.shadowColor = acc; g.shadowBlur = 2 * u; } else g.fillStyle = rgba(ink, .35);
-    circ(g, dot.x + dot.w / 2, dot.y + dot.h / 2, dot.w / 2); g.fill(); g.restore();
-    drawText(g, $('#sStatus'), sr, k);
-    // info
-    drawText(g, $('#sTitle'), sr, k);
+    if (C.w > 0) S.cl = { box: C, disc: discSet(C.w / 2) };
+    // static words: header, title, BPM/key pills, handle and tagline
+    const txt = mk(XW, XH), tg = txt.getContext('2d');
+    drawText(tg, $('.prod-by'), sr, k); drawText(tg, $('#sName'), sr, k); drawText(tg, $('#sTitle'), sr, k);
     $$('.meta span').forEach(sp => {
       if (!sp.textContent) return;
       const r = rel(sp), hot = sp.classList.contains('hot');
-      rr(g, r.x, r.y, r.w, r.h, u); g.fillStyle = hot ? acc : rgba(ink, .09); g.fill();
-      if (!hot) { g.strokeStyle = rgba(ink, .16); g.lineWidth = Math.max(1, k); g.stroke(); }
-      drawText(g, sp, sr, k);
+      rr(tg, r.x, r.y, r.w, r.h, u); tg.fillStyle = hot ? S.acc : rgba(S.ink, .09); tg.fill();
+      if (!hot) { tg.strokeStyle = rgba(S.ink, .16); tg.lineWidth = Math.max(1, k); tg.stroke(); }
+      drawText(tg, sp, sr, k);
     });
-    drawText(g, $('#tCur'), sr, k); drawText(g, $('#tDur'), sr, k);
-    const bar = rel($('.prog .bar')), fw = parseFloat($('#pFill').style.width || '0') / 100 * bar.w;
-    g.globalAlpha = .9;
-    g.fillStyle = rgba(ink, .18); rr(g, bar.x, bar.y, bar.w, bar.h, bar.h / 2); g.fill();
-    g.fillStyle = acc; rr(g, bar.x, bar.y, Math.max(bar.h, fw), bar.h, bar.h / 2); g.fill();
-    g.save(); g.shadowColor = acc; g.shadowBlur = 2 * u; circ(g, bar.x + fw, bar.y + bar.h / 2, 1.2 * u); g.fill(); g.restore();
-    g.globalAlpha = 1;
-    // footer
-    if (state.viz) { const v = rel(viz); g.drawImage(viz, v.x, v.y, v.w, v.h); }
-    drawText(g, $('#sHandle'), sr, k); drawText(g, $('#sTag'), sr, k);
-    // film grain
-    g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = .14; g.fillStyle = xp.grainPat; g.fillRect(0, 0, XW, XH); g.restore();
+    drawText(tg, $('#sHandle'), sr, k); drawText(tg, $('#sTag'), sr, k);
+    S.text = txt;
+    // moving parts of the header and progress row
+    const chip = rel($('.chip')), ccs = getComputedStyle($('.chip')), dot = rel($('.chip .dot'));
+    S.chip = { right: chip.x + chip.w, y: chip.y, h: chip.h, padL: parseFloat(ccs.paddingLeft) * k, padR: parseFloat(ccs.paddingRight) * k, gap: (parseFloat(ccs.columnGap) || parseFloat(ccs.gap) || 0) * k, dot: dot.w, f: fontOf($('#sStatus'), k),
+      dotOn: glowDot(dot.w / 2, S.acc, 2 * u), dotOff: glowDot(dot.w / 2, rgba(S.ink, .35), 0), widths: {} };
+    const pc = rel($('#tCur')), pd = rel($('#tDur'));
+    S.times = { f: fontOf($('#tCur'), k), xCur: pc.x, xDur: pd.x + pd.w, y: pc.y + pc.h / 2 };
+    S.bar = rel($('.prog .bar')); S.knob = glowDot(1.2 * u, S.acc, 2 * u);
+    S.viz = state.viz ? rel(viz) : null;
+    return S;
   }
 
-  function pickMime() {
+  // Draws one video frame. F holds what moves: angles, arm, pulse, sound bars, time and status.
+  function renderFrame(g, S, F) {
+    const u = S.u;
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+    g.drawImage(S.back, 0, 0);
+    const gr = S.glowR * (1 + F.pulse * .07);
+    g.globalAlpha = .55 + .45 * F.pulse; g.drawImage(S.glow, XW / 2 - gr, XH * .42 - gr, gr * 2, gr * 2); g.globalAlpha = 1;
+    if (S.tt) {
+      const T = S.tt.box, U = S.tt.U, L = S.tt;
+      g.drawImage(L.plinth.c, T.x - L.plinth.pad, T.y - L.plinth.pad);
+      const lt = F.playing ? L.lightOn : L.lightOff; g.drawImage(lt, T.x + 7.5 * U - lt.width / 2, T.y + 7.5 * U - lt.height / 2);
+      const cx = T.x + 44 * U, cy = T.y + 50 * U;
+      g.save(); g.translate(cx, cy); g.rotate(F.vAngle * RAD); g.drawImage(L.platter, -L.platter.width / 2, -L.platter.height / 2); g.restore();
+      g.drawImage(L.sheen, cx - L.sheen.width / 2, cy - L.sheen.height / 2);
+      const sg = g.createRadialGradient(cx - .3 * U, cy - .3 * U, 0, cx, cy, .8 * U); sg.addColorStop(0, '#fff'); sg.addColorStop(.6, '#8a8d93'); sg.addColorStop(1, '#3d3f43');
+      g.fillStyle = sg; circ(g, cx, cy, .8 * U); g.fill();
+      const px = T.x + 86 * U, py = T.y + 13 * U, a = F.armA * RAD;
+      g.save(); g.translate(px + 1.2 * U, py + 2.4 * U); g.rotate(a); g.drawImage(L.armShadow.c, -L.armShadow.px, -L.armShadow.py); g.restore();
+      g.save(); g.translate(px, py); g.rotate(a); g.drawImage(L.arm.c, -L.arm.px, -L.arm.py); g.restore();
+    }
+    const disc = (set, cx, cy) => {
+      const R = set.R;
+      g.drawImage(set.base.c, cx - R - set.base.pad, cy - R - set.base.pad);
+      g.save(); g.translate(cx, cy); g.rotate(F.cAngle * RAD); g.drawImage(set.print, -R, -R); g.restore();
+      g.globalCompositeOperation = 'screen'; g.drawImage(set.rainbow, cx - R, cy - R); g.globalCompositeOperation = 'source-over';
+    };
+    if (S.dm) {
+      const D = S.dm.box;
+      g.drawImage(S.dm.body.c, D.x - S.dm.body.pad, D.y - S.dm.body.pad);
+      disc(S.dm.disc, D.x + D.w / 2, D.y + D.h / 2);
+      g.drawImage(S.dm.lid, D.x, D.y);
+      const l = S.dm.lcd; g.font = l.font; g.fillStyle = S.acc; g.textBaseline = 'middle';
+      g.textAlign = 'left'; g.fillText(String(cur + 1).padStart(2, '0'), l.x0, l.y);
+      g.textAlign = 'right'; g.fillText(fmt(F.cur), l.x1, l.y);
+    }
+    if (S.cl) { const C = S.cl.box; disc(S.cl.disc, C.x + C.w / 2, C.y + C.h / 2); }
+    g.drawImage(S.text, 0, 0);
+    // status chip
+    const ch = S.chip; setFont(g, ch.f);
+    const tw = ch.widths[F.status] ?? (ch.widths[F.status] = g.measureText(ch.f.up ? F.status.toUpperCase() : F.status).width);
+    const w = ch.padL + ch.dot + ch.gap + tw + ch.padR, x = ch.right - w;
+    g.globalAlpha = 1; rr(g, x, ch.y, w, ch.h, ch.h / 2); g.fillStyle = rgba(S.bg, .55); g.fill();
+    g.strokeStyle = rgba(S.ink, .28); g.lineWidth = Math.max(1, S.k); g.stroke();
+    const dimg = F.playing ? ch.dotOn : ch.dotOff;
+    g.globalAlpha = F.playing ? .675 + .325 * Math.cos(F.t / 1.2 * TAU) : 1;
+    g.drawImage(dimg, x + ch.padL + ch.dot / 2 - dimg.width / 2, ch.y + ch.h / 2 - dimg.height / 2);
+    setFont(g, ch.f); g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillText(ch.f.up ? F.status.toUpperCase() : F.status, x + ch.padL + ch.dot + ch.gap, ch.y + ch.h / 2);
+    // progress row
+    const tm = S.times; setFont(g, tm.f); g.textBaseline = 'middle';
+    g.textAlign = 'left'; g.fillText(fmt(F.cur), tm.xCur, tm.y); g.textAlign = 'right'; g.fillText(fmt(F.dur), tm.xDur, tm.y);
+    if ('letterSpacing' in g) g.letterSpacing = '0px';
+    const b = S.bar, fw = clamp(F.frac, 0, 1) * b.w;
+    g.globalAlpha = .9; g.fillStyle = rgba(S.ink, .18); rr(g, b.x, b.y, b.w, b.h, b.h / 2); g.fill();
+    g.fillStyle = S.acc; rr(g, b.x, b.y, Math.max(b.h, fw), b.h, b.h / 2); g.fill();
+    g.drawImage(S.knob, b.x + fw - S.knob.width / 2, b.y + b.h / 2 - S.knob.height / 2); g.globalAlpha = 1;
+    // sound bars
+    if (S.viz) {
+      const v = S.viz, half = BARS / 2, gap = v.w / BARS, bw = gap * .46, mid = v.y + v.h / 2;
+      g.fillStyle = S.acc;
+      for (let i = 0; i < half; i++) {
+        const lv = Math.min(1, F.levels[i]), bh = Math.max(bw, lv * v.h * .96);
+        g.globalAlpha = .35 + lv * .65;
+        for (const slot of [half - 1 - i, half + i]) { rr(g, v.x + slot * gap + (gap - bw) / 2, mid - bh / 2, bw, bh, bw / 2); g.fill(); }
+      }
+      g.globalAlpha = 1;
+    }
+  }
+
+  // ---- making the file ----
+  let muxerP = null;
+  const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  function loadMuxer() {
+    if (window.Mp4Muxer) return Promise.resolve(window.Mp4Muxer);
+    if (!muxerP) muxerP = loadScript('vendor/mp4-muxer.js').catch(() => loadScript('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js'))
+      .then(() => window.Mp4Muxer || Promise.reject(new Error('no muxer'))).catch(e => { muxerP = null; throw e; });
+    return muxerP;
+  }
+  async function frameByFrameCodecs() {
+    if (!window.VideoEncoder || !window.AudioEncoder || !window.VideoFrame || !window.AudioData || !window.OfflineAudioContext) return null;
+    const ok = async (E, cfg) => { try { return (await E.isConfigSupported(cfg)).supported; } catch (e) { return false; } };
+    let video = null, audioC = null;
+    for (const c of ['avc1.640028', 'avc1.4d0028', 'avc1.640032', 'avc1.4d0032']) if (await ok(VideoEncoder, { codec: c, width: XW, height: XH, bitrate: 10e6, framerate: FPS })) { video = c; break; }
+    if (await ok(AudioEncoder, { codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, bitrate: 192000 })) audioC = 'mp4a.40.2';
+    if (ANY_CODEC) {
+      if (!video && await ok(VideoEncoder, { codec: 'vp09.00.40.08', width: XW, height: XH, bitrate: 10e6, framerate: FPS })) video = 'vp09.00.40.08';
+      if (!audioC && await ok(AudioEncoder, { codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 192000 })) audioC = 'opus';
+    }
+    return video && audioC ? { video, audio: audioC } : null;
+  }
+  function liveCodec() {
+    if (!document.createElement('canvas').captureStream || !window.MediaRecorder) return '';
     const list = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1.4d002a,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
     return list.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; } }) || '';
   }
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
+  // Spectrum of the rendered audio at time t, shaped like the live analyser's output (0-255 per bin)
+  function makeSpectrum(abuf) {
+    const N = 1024, half = N / 2, re = new Float32Array(N), im = new Float32Array(N), mag = new Float32Array(half), out = new Uint8Array(half), win = new Float32Array(N);
+    for (let i = 0; i < N; i++) win[i] = .42 - .5 * Math.cos(TAU * i / N) + .08 * Math.cos(2 * TAU * i / N);
+    const L = abuf.getChannelData(0), R = abuf.numberOfChannels > 1 ? abuf.getChannelData(1) : L, sr = abuf.sampleRate;
+    return t => {
+      const end = Math.floor(t * sr);
+      for (let i = 0; i < N; i++) { const j = end - N + i; re[i] = j >= 0 && j < L.length ? (L[j] + R[j]) * .5 * win[i] : 0; im[i] = 0; }
+      fft(re, im);
+      for (let k = 0; k < half; k++) {
+        const m = Math.hypot(re[k], im[k]) / N;
+        mag[k] = .64 * mag[k] + .36 * m;
+        out[k] = clamp(Math.round((20 * Math.log10(mag[k] + 1e-12) + 100) / 70 * 255), 0, 255);
+      }
+      return out;
+    };
+  }
+
   async function startExport() {
     if (xp) return;
     if (!track()) { toast('Add a beat first.'); return; }
-    const probe = document.createElement('canvas');
-    if (!probe.captureStream || !window.MediaRecorder || !pickMime()) {
-      toast("This browser can't make videos. Use Chrome or Safari, or use full-screen mode with your screen recorder."); return;
-    }
+    const codecs = await frameByFrameCodecs();
+    const live = liveCodec();
+    if (!codecs && !live) { toast("This browser can't make videos. Use Chrome or Safari, or use full-screen mode with your screen recorder."); return; }
+    let Muxer = null;
+    if (codecs) { try { Muxer = await loadMuxer(); } catch (e) { Muxer = null; } }
+    if (codecs && !Muxer && !live) { toast("Couldn't load the video maker. Check your connection and try again."); return; }
     if (recMode) exitRec();
     pause();
     const t = track();
@@ -1438,58 +1544,143 @@ body.exporting .stage {
     const start = clamp(parseTime(state.startAt), 0, Math.max(0, t.duration - 1));
     const clip = +state.clip, rest = t.loop ? t.duration : t.duration - start;
     const len = clip > 0 ? (t.loop ? clip : Math.min(clip, rest)) : rest;
-    xp = { phase: 'prep', len, cancelled: false };
-    document.body.classList.add('exporting'); document.body.classList.remove('sheet');
-    $('#expTime').textContent = `0:00 / ${fmt(len)}`;
-    await nextFrame();
-    try { await Promise.all(['800 20px Unbounded', '500 20px "DM Mono"', '400 20px "DM Mono"', 'italic 600 20px Fraunces', '800 20px Syne'].map(f => document.fonts.load(f))); } catch (e) {}
-    if (!xp || xp.cancelled) return;
-    const cv = mk(XW, XH);
-    cv.style.cssText = 'position:fixed;left:-20000px;top:0;width:10px;height:18px;pointer-events:none';
-    document.body.appendChild(cv);
-    xp.cv = cv; xp.g = cv.getContext('2d');
-    xp.cover = await loadImg(state.cover);
-    xp.blur = xp.cover ? layerBlur(xp.cover) : null;
-    xp.grainPat = xp.g.createPattern(layerGrain(), 'repeat');
+    xp = { len, start, cancelled: false, mode: codecs && Muxer ? 'frames' : 'live' };
     pos = start; refresh();
-    drawFrame(performance.now());
+    document.body.classList.add('exporting'); document.body.classList.remove('sheet');
+    $('#expLabel').textContent = xp.mode === 'frames' ? 'Making video' : 'Recording video';
+    $('#expTime').textContent = xp.mode === 'frames' ? '0%' : `0:00 / ${fmt(len)}`;
+    await nextFrame();
+    const scene = await buildScene();
+    if (!xp || xp.cancelled) return;
+    xp.scene = scene;
+    const cv = mk(XW, XH); cv.className = 'xp-canvas';
+    cv.style.height = `${stage.getBoundingClientRect().height}px`;
+    stage.parentElement.appendChild(cv); document.body.classList.add('xp-preview');
+    xp.cv = cv; xp.g = cv.getContext('2d');
+    try { if (xp.mode === 'frames') await exportFrames(t, codecs, Muxer); else await exportLive(live); }
+    catch (e) { const was = xp && !xp.cancelled; cleanupExport(); if (was) toast("The video couldn't be made on this device. Try a shorter length, or use full-screen mode with your screen recorder."); }
+  }
 
+  // Steady 30 fps: every frame is drawn and encoded in order, so nothing is dropped
+  async function exportFrames(t, codecs, Mx) {
+    const job = xp, { len, start } = job, total = len + TAIL, sr = 48000, frames = Math.round(total * FPS);
+    // 1. the sound, with the same fade-in and fade-out as live playback
+    const oc = new OfflineAudioContext(2, Math.ceil(total * sr), sr);
+    const src = oc.createBufferSource(), gn = oc.createGain();
+    src.buffer = t.buffer; src.loop = !!t.loop; src.connect(gn); gn.connect(oc.destination);
+    gn.gain.setValueAtTime(0, 0); gn.gain.linearRampToValueAtTime(1, .08);
+    if (len > 4) { gn.gain.setValueAtTime(1, len - 1.5); gn.gain.linearRampToValueAtTime(0, len - .1); }
+    src.start(0, start); src.stop(len);
+    const abuf = await oc.startRendering();
+    if (job.cancelled) return;
+    const target = new Mx.ArrayBufferTarget();
+    const muxer = new Mx.Muxer({
+      target, fastStart: 'in-memory', firstTimestampBehavior: 'offset',
+      video: { codec: codecs.video.startsWith('avc') ? 'avc' : 'vp9', width: XW, height: XH, frameRate: FPS },
+      audio: { codec: codecs.audio === 'opus' ? 'opus' : 'aac', numberOfChannels: 2, sampleRate: sr },
+    });
+    let failed = null;
+    // For AAC, write the decoder header ourselves (AAC-LC, 48 kHz, stereo): some Safari versions emit a wrong one.
+    const isAac = codecs.audio === 'mp4a.40.2';
+    const aacMeta = { decoderConfig: { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: 2, description: new Uint8Array([0x11, 0x90]) } };
+    const aenc = new AudioEncoder({ output: (c, m) => muxer.addAudioChunk(c, isAac ? aacMeta : m), error: e => { failed = e; } });
+    aenc.configure({ codec: codecs.audio, sampleRate: sr, numberOfChannels: 2, bitrate: 192000, ...(isAac ? { aac: { format: 'aac' } } : {}) });
+    const A = [abuf.getChannelData(0), abuf.getChannelData(1)], step = 4096;
+    for (let off = 0; off < abuf.length; off += step) {
+      const n = Math.min(step, abuf.length - off), data = new Float32Array(n * 2);
+      data.set(A[0].subarray(off, off + n), 0); data.set(A[1].subarray(off, off + n), n);
+      const ad = new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(off / sr * 1e6), data });
+      aenc.encode(ad); ad.close();
+    }
+    await aenc.flush(); aenc.close();
+    if (failed) throw failed;
+    // 2. the pictures
+    const venc = new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: e => { failed = e; } });
+    venc.configure({ codec: codecs.video, width: XW, height: XH, bitrate: 10e6, framerate: FPS, ...(codecs.video.startsWith('avc') ? { avc: { format: 'avc' } } : {}) });
+    const spectrum = makeSpectrum(abuf), lv = new Float32Array(BARS), dt = 1 / FPS, half = BARS / 2;
+    const F = { vAngle: 0, cAngle: 0, armA: REST, pulse: 0, levels: lv, playing: true, cur: start, dur: t.duration, frac: 0, status: '', t: 0 };
+    let vV = 0, cV = 0, endPos = start;
+    const spinning = state.mode !== 'cd' ? 'Now spinning' : 'Now playing';
+    for (let i = 0; i < frames; i++) {
+      if (job.cancelled) { try { venc.close(); } catch (e) {} return; }
+      if (failed) throw failed;
+      const tt = i * dt; F.t = tt;
+      F.playing = tt < len;
+      const vT = F.playing ? (state.rpm === '45' ? 270 : 200) : 0, cT = F.playing ? 520 : 0;
+      vV += (vT - vV) * (1 - Math.exp(-dt * (F.playing ? 3.2 : 1.4))); cV += (cT - cV) * (1 - Math.exp(-dt * (F.playing ? 3 : 1.2)));
+      F.vAngle = (F.vAngle + vV * dt) % 360; F.cAngle = (F.cAngle + cV * dt) % 360;
+      let p = start + Math.min(tt, len); if (t.loop && t.duration) p %= t.duration;
+      if (F.playing) endPos = p;
+      F.cur = F.playing ? p : endPos; F.frac = t.duration ? F.cur / t.duration : 0;
+      F.status = F.playing ? spinning : 'Paused';
+      const armT = F.playing ? A_OUT + (A_IN - A_OUT) * F.frac : REST;
+      F.armA += (armT - F.armA) * (1 - Math.exp(-dt * 2.6));
+      const fq = spectrum(tt);
+      let bass = 0; for (let k = 1; k < 7; k++) bass += fq[k]; bass = Math.pow(bass / 6 / 255, 2.2);
+      F.pulse += (bass - F.pulse) * (1 - Math.exp(-dt * (bass > F.pulse ? 18 : 5)));
+      for (let b = 0; b < half; b++) {
+        const a0 = Math.floor(2 * Math.pow(170, b / (half - 1))), a1 = Math.floor(2 * Math.pow(170, (b + 1) / (half - 1)));
+        let s = 0, n = 0; for (let k = a0; k <= Math.max(a0, a1 - 1) && k < fq.length; k++) { s += fq[k]; n++; }
+        let v = n ? s / n / 255 : 0; v = Math.pow(v, 1.6) * (1 + b / half * .8);
+        lv[b] = v > lv[b] ? v : Math.max(v, lv[b] - dt * 1.8);
+      }
+      renderFrame(job.g, job.scene, F);
+      const vf = new VideoFrame(job.cv, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+      venc.encode(vf, { keyFrame: i % (FPS * 2) === 0 }); vf.close();
+      while (venc.encodeQueueSize > 4) await sleep(4);
+      if (i % 3 === 0) { $('#expTime').textContent = `${Math.floor(i / frames * 100)}%`; await sleep(0); }
+    }
+    await venc.flush(); venc.close();
+    if (failed) throw failed;
+    muxer.finalize();
+    const blob = new Blob([target.buffer], { type: 'video/mp4' });
+    finishExport(blob, job.len);
+  }
+
+  // Fallback: plays the beat and records the canvas as it goes
+  async function exportLive(mime) {
     const c = audio(); if (c.state === 'suspended') { try { await c.resume(); } catch (e) {} }
     const dest = c.createMediaStreamDestination(); gain.connect(dest); xp.dest = dest;
-    const stream = cv.captureStream(30); dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
-    const mime = pickMime();
+    const stream = xp.cv.captureStream(FPS); dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
     let rec;
     try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000, audioBitsPerSecond: 192000 }); }
-    catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { cleanupExport(); toast("This browser couldn't start a video recording."); return; } }
-    const chunks = [];
-    xp.rec = rec; xp.mime = (rec.mimeType || mime).split(';')[0]; xp.chunks = chunks;
+    catch (e) { rec = new MediaRecorder(stream); }
+    const chunks = [], type = (rec.mimeType || mime).split(';')[0];
+    xp.rec = rec;
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    rec.onstop = () => finishExport();
+    rec.onstop = () => { if (xp && !xp.cancelled) finishExport(new Blob(chunks, { type: type || 'video/webm' }), xp.len); };
+    xp.last = 0; drawLive(performance.now());
     rec.start(500);
     gain.gain.cancelScheduledValues(c.currentTime); gain.gain.setValueAtTime(0, c.currentTime); gain.gain.linearRampToValueAtTime(1, c.currentTime + .08);
     await play();
     if (!xp || xp.cancelled) return;
     xp.t0 = c.currentTime; xp.phase = 'rec';
   }
+  function drawLive(now) {
+    if (now - xp.last < 1000 / FPS - 3) return; // 30 fps is enough; skipping the rest keeps phones smooth
+    xp.last = now;
+    const d = duration(), p = position();
+    renderFrame(xp.g, xp.scene, { vAngle, cAngle, armA, pulse, levels, playing, cur: p, dur: d, frac: d ? p / d : 0, status: $('#sStatus').textContent, t: now / 1000 });
+  }
   function exportTick(now) {
-    if (!xp || !xp.g) return;
+    if (!xp || xp.mode !== 'live' || !xp.g || !xp.rec) return;
     if (xp.phase === 'rec' && ctx) {
       const el = ctx.currentTime - xp.t0;
       $('#expTime').textContent = `${fmt(Math.min(el, xp.len))} / ${fmt(xp.len)}`;
       if (xp.len > 4 && el >= xp.len - 1.5 && !xp.fading) {
         xp.fading = true; gain.gain.cancelScheduledValues(ctx.currentTime); gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime); gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.4);
       }
-      if (el >= xp.len || !playing) { if (playing) pause(); xp.phase = 'tail'; xp.tailEnd = now + 1400; }
+      if (el >= xp.len || !playing) { if (playing) pause(); xp.phase = 'tail'; xp.tailEnd = now + TAIL * 1000; }
     }
-    if (xp.phase === 'rec' || xp.phase === 'tail' || xp.phase === 'prep') drawFrame(now);
-    if (xp.phase === 'tail' && now >= xp.tailEnd) { xp.phase = 'stopping'; try { xp.rec.stop(); } catch (e) { finishExport(); } }
+    drawLive(now);
+    if (xp.phase === 'tail' && now >= xp.tailEnd) { xp.phase = 'stopping'; try { xp.rec.stop(); } catch (e) { cleanupExport(); } }
   }
   function cleanupExport() {
     if (!xp) return;
     if (xp.dest) { try { gain.disconnect(xp.dest); } catch (e) {} }
     if (xp.cv) xp.cv.remove();
     if (ctx) { gain.gain.cancelScheduledValues(ctx.currentTime); gain.gain.setValueAtTime(1, ctx.currentTime); }
-    document.body.classList.remove('exporting');
+    document.body.classList.remove('exporting', 'xp-preview');
     xp = null; refresh();
   }
   function cancelExport() {
@@ -1500,17 +1691,15 @@ body.exporting .stage {
     toast('Video cancelled.');
   }
   let lastVideo = null;
-  function finishExport() {
-    if (!xp || xp.cancelled) return;
-    const blob = new Blob(xp.chunks, { type: xp.mime || 'video/webm' });
-    const ext = /mp4/.test(blob.type) ? 'mp4' : 'webm', len = xp.len;
+  function finishExport(blob, len) {
     cleanupExport();
     if (!blob.size) { toast('The video came out empty. Keep this screen open while it records, then try again.'); return; }
+    const ext = /mp4/.test(blob.type) ? 'mp4' : 'webm';
     const slug = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const name = `${slug(curTitle()) || 'beat'}${state.producer ? '-' + slug(state.producer) : ''}.${ext}`;
     if (lastVideo && lastVideo.url) URL.revokeObjectURL(lastVideo.url);
     lastVideo = { blob, name, url: URL.createObjectURL(blob) };
-    $('#vidInfo').textContent = `${fmt(len)} · 1080 × 1920 · ${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)} MB`;
+    $('#vidInfo').textContent = `${fmt(len)} · 1080 × 1920 · 30 fps · ${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)} MB`;
     const v = $('#vidPrev'); v.hidden = false; v.onerror = () => { v.hidden = true; }; v.src = lastVideo.url;
     $('#vidHint').textContent = ext === 'webm'
       ? 'This browser saves WebM videos. TikTok on a computer accepts them; for your phone, export from Safari or the Claude app to get an MP4.'
@@ -1523,7 +1712,7 @@ body.exporting .stage {
     if (downloadsNS) {
       btn.disabled = true;
       try { await downloadsNS.save({ filename: name, data: blob }); btn.disabled = false; toast('Video saved.'); return; }
-      catch (e) { btn.disabled = false; if (e && (e.code === 'declined' || e.code === 'rate_limited')) return; if (e && e.code === 'too_large') { toast('That video is too big to save here. Try a shorter clip length.'); return; } }
+      catch (e) { btn.disabled = false; if (e && (e.code === 'declined' || e.code === 'rate_limited')) return; if (e && e.code === 'too_large') { toast('That video is too big to save here. Try a shorter length.'); return; } }
     }
     try {
       const file = new File([blob], name, { type: blob.type });

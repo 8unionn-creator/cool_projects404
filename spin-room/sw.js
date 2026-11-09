@@ -1,7 +1,7 @@
 // Keeps Spin Room working offline once it has been opened. Always tries the network first,
 // so a new version shows up as soon as you're online.
-const CACHE = 'spin-room-v1';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png'];
+const CACHE = 'spin-room-v2';
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png', './vendor/mp4-muxer.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
