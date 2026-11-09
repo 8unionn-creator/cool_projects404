@@ -338,7 +338,7 @@ body.exporting .exp-bar { display: flex; }
 body.exporting .panel, body.exporting .fab { display: none !important; }
 body.exporting .app { grid-template-columns: minmax(0, 1fr); }
 .stage-wrap > * { grid-area: 1 / 1; }
-.xp-canvas { display: block; width: auto; max-width: 100%; aspect-ratio: 9 / 16; border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .55); }
+.xp-canvas { display: block; width: auto; max-width: 100%; border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .55); }
 body.xp-preview .stage { visibility: hidden; }
 body.exporting .stage-wrap { padding-top: calc(70px + env(safe-area-inset-top, 0px)); }
 .modal { position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .65); }
@@ -373,6 +373,33 @@ body.exporting .stage-wrap { padding-top: calc(70px + env(safe-area-inset-top, 0
 body.exporting .stage {
   height: min(calc(100dvh - 90px - env(safe-area-inset-top, 0px)), calc((100vw - 32px) * 16 / 9));
   width: auto; aspect-ratio: 9 / 16; max-width: none; border-radius: 14px;
+}
+/* Widescreen (YouTube): the deck fills the left, the words sit on the right */
+.stage[data-format="wide"] {
+  --u: min(1cqh, calc(0.5625cqw));
+  aspect-ratio: 16 / 9; height: auto;
+  width: min(calc(100vw - 440px), calc((100dvh - 40px) * 16 / 9));
+}
+.stage[data-format="wide"] .frame {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "deck top" "deck ." "deck info" "deck foot";
+  column-gap: calc(7 * var(--u)); row-gap: calc(3 * var(--u));
+  padding: calc(6 * var(--u)) calc(7 * var(--u));
+}
+.stage[data-format="wide"] .s-top { grid-area: top; }
+.stage[data-format="wide"] .deck-area { grid-area: deck; }
+.stage[data-format="wide"] .s-info { grid-area: info; }
+.stage[data-format="wide"] .s-foot { grid-area: foot; }
+.stage[data-format="wide"] .turntable { height: min(100%, calc(80 * var(--u))); }
+.stage[data-format="wide"] .discman { height: min(100%, calc(80 * var(--u))); }
+.stage[data-format="wide"][data-mode="both"] .turntable { height: min(84%, calc(70 * var(--u))); }
+.stage[data-format="wide"] .glow { left: 27%; top: 50%; width: calc(130 * var(--u)); }
+.stage[data-format="wide"] #viz { height: calc(12 * var(--u)); }
+.stage[data-format="wide"] .safe { display: none !important; }
+body.rec .stage[data-format="wide"] { width: min(100vw, calc(100dvh * 16 / 9)); height: auto; aspect-ratio: 16 / 9; }
+body.exporting .stage[data-format="wide"] { width: min(calc(100vw - 32px), calc((100dvh - 90px) * 16 / 9)); height: auto; aspect-ratio: 16 / 9; }
+@media (max-width: 860px) {
+  .stage[data-format="wide"] { width: 100vw; height: auto; aspect-ratio: 16 / 9; }
 }
 @media (prefers-reduced-motion: reduce) {
   .stage.playing .chip .dot { animation: none; }
@@ -539,6 +566,9 @@ body.exporting .stage {
 
     <section class="grp">
       <h3>Look</h3>
+      <div class="row"><span>Format</span>
+        <div class="seg" data-set="format"><button data-v="tall">Vertical 9:16</button><button data-v="wide">Widescreen 16:9</button></div>
+      </div>
       <div class="row"><span>Deck</span>
         <div class="seg" data-set="mode">
           <button data-v="vinyl">Record player</button><button data-v="cd">CD player</button><button data-v="both">Both</button>
@@ -595,7 +625,7 @@ body.exporting .stage {
         </label>
       </div>
       <button class="btn big" id="exportBtn">Record video</button>
-      <p class="hint">Makes a 1080 × 1920 video with your beat's sound, ready for TikTok, Instagram Reels or YouTube Shorts. It's made at a steady 30 frames a second, so it plays smoothly even if your phone is busy. Keep this screen open until it's done.</p>
+      <p class="hint">Makes a video with your beat's sound: vertical 1080 × 1920 for TikTok, Reels and YouTube Shorts, or widescreen 1920 × 1080 for YouTube. Switch with Format above. It's made at a steady 30 frames a second, so it plays smoothly even if your phone is busy. Keep this screen open until it's done.</p>
       <div class="alt">
         <h3>Or use your screen recorder</h3>
         <label class="f">Countdown
@@ -637,7 +667,7 @@ body.exporting .stage {
 
   /* ---------- settings ---------- */
   const KEY = 'spinroom.v1';
-  const DEFAULTS = { producer: 'YOUR NAME', handle: '@yourname', tagline: 'Beats in bio', mode: 'vinyl', rpm: '33', room: 'oxblood', vinyl: 'black', accent: '', font: 'wide', coverBg: true, viz: true, safe: false, startAt: '0:00', clip: '30', countdown: '3', cover: null };
+  const DEFAULTS = { producer: 'YOUR NAME', handle: '@yourname', tagline: 'Beats in bio', format: 'tall', mode: 'vinyl', rpm: '33', room: 'oxblood', vinyl: 'black', accent: '', font: 'wide', coverBg: true, viz: true, safe: false, startAt: '0:00', clip: '30', countdown: '3', cover: null };
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
   const state = Object.assign({}, DEFAULTS, saved);
@@ -973,7 +1003,7 @@ body.exporting .stage {
     document.documentElement.style.setProperty('--accent', accent);
     stage.style.setProperty('--accent', accent);
     stage.style.setProperty('--label-ink', labelInk(accent));
-    Object.assign(stage.dataset, { mode: state.mode, room: state.room, vinyl: state.vinyl, font: state.font });
+    Object.assign(stage.dataset, { format: state.format === 'wide' ? 'wide' : 'tall', mode: state.mode, room: state.room, vinyl: state.vinyl, font: state.font });
     stage.classList.toggle('no-viz', !state.viz);
     stage.classList.toggle('show-safe', !!state.safe);
     const bg = $('#bgCover');
@@ -1119,7 +1149,7 @@ body.exporting .stage {
      each video frame onto a 1080×1920 canvas. Where the browser can encode H.264 + AAC itself
      (WebCodecs), frames are made one by one at a steady 30 fps and packed into an MP4, faster or
      slower than real time but never dropping a frame. Otherwise it records the canvas live. */
-  const XW = 1080, XH = 1920, FPS = 30, TAIL = 1.4, TAU = Math.PI * 2, RAD = Math.PI / 180;
+  let XW = 1080, XH = 1920; const FPS = 30, TAIL = 1.4, TAU = Math.PI * 2, RAD = Math.PI / 180;
   const ANY_CODEC = /[?&]anycodec\b/.test(location.search); // test switch: allow VP9/Opus when H.264/AAC are missing
   let xp = null;
   let downloadsNS = null;
@@ -1329,7 +1359,7 @@ body.exporting .stage {
     if (cover && state.coverBg) {
       const t = mk(24, 24); t.getContext('2d').drawImage(cover, 0, 0, 24, 24);
       const t2 = mk(96, 96), g2 = t2.getContext('2d'); g2.imageSmoothingQuality = 'high'; g2.drawImage(t, 0, 0, 96, 96);
-      g.globalAlpha = .5; const w = XH * 1.24 * 1.1; g.drawImage(t2, (XW - w) / 2, (XH - w) / 2, w, w); g.globalAlpha = 1;
+      g.globalAlpha = .5; const w = Math.max(XW, XH) * 1.24 * 1.1; g.drawImage(t2, (XW - w) / 2, (XH - w) / 2, w, w); g.globalAlpha = 1;
     }
     // film grain
     const n = mk(256, 256), ng = n.getContext('2d'), im = ng.createImageData(256, 256);
@@ -1368,13 +1398,14 @@ body.exporting .stage {
   // Measure the stage and pre-draw everything that stays still. Runs once per export.
   async function buildScene() {
     try { await Promise.all(['800 20px Unbounded', '500 20px "DM Mono"', '400 20px "DM Mono"', 'italic 600 20px Fraunces', '800 20px Syne', '500 20px "Instrument Sans"'].map(f => document.fonts.load(f))); } catch (e) {}
-    const sr = stage.getBoundingClientRect(), k = XW / sr.width, u = XW / 100;
+    const sr = stage.getBoundingClientRect(), k = XW / sr.width, u = Math.min(XW, XH) / 100;
     const rel = el => { const r = el.getBoundingClientRect(); return { x: (r.left - sr.left) * k, y: (r.top - sr.top) * k, w: r.width * k, h: r.height * k }; };
     const css = n => getComputedStyle(stage).getPropertyValue(n).trim();
     const cover = await loadImg(state.cover);
     const S = { k, u, acc: curAccent(), ink: css('--ink'), bg: css('--bg') };
     S.back = layerBackground(cover);
-    S.glowR = 75 * u * Math.SQRT2 * .62; S.glow = layerGlow(S.glowR);
+    const gl = $('.glow'); // centre and size from layout (offsets ignore the pulse scale)
+    S.glowX = gl.offsetLeft * k; S.glowY = gl.offsetTop * k; S.glowR = gl.offsetWidth / 2 * k * Math.SQRT2 * .62; S.glow = layerGlow(S.glowR);
     const T = rel($('.turntable'));
     if (T.w > 0) {
       const U = T.w / 100;
@@ -1415,7 +1446,7 @@ body.exporting .stage {
     g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
     g.drawImage(S.back, 0, 0);
     const gr = S.glowR * (1 + F.pulse * .07);
-    g.globalAlpha = .55 + .45 * F.pulse; g.drawImage(S.glow, XW / 2 - gr, XH * .42 - gr, gr * 2, gr * 2); g.globalAlpha = 1;
+    g.globalAlpha = .55 + .45 * F.pulse; g.drawImage(S.glow, S.glowX - gr, S.glowY - gr, gr * 2, gr * 2); g.globalAlpha = 1;
     if (S.tt) {
       const T = S.tt.box, U = S.tt.U, L = S.tt;
       g.drawImage(L.plinth.c, T.x - L.plinth.pad, T.y - L.plinth.pad);
@@ -1527,6 +1558,8 @@ body.exporting .stage {
   async function startExport() {
     if (xp) return;
     if (!track()) { toast('Add a beat first.'); return; }
+    if (xp) return;
+    [XW, XH] = state.format === 'wide' ? [1920, 1080] : [1080, 1920];
     const codecs = await frameByFrameCodecs();
     const live = liveCodec();
     if (!codecs && !live) { toast("This browser can't make videos. Use Chrome or Safari, or use full-screen mode with your screen recorder."); return; }
@@ -1554,7 +1587,7 @@ body.exporting .stage {
     if (!xp || xp.cancelled) return;
     xp.scene = scene;
     const cv = mk(XW, XH); cv.className = 'xp-canvas';
-    cv.style.height = `${stage.getBoundingClientRect().height}px`;
+    cv.style.height = `${stage.getBoundingClientRect().height}px`; cv.style.aspectRatio = `${XW} / ${XH}`;
     stage.parentElement.appendChild(cv); document.body.classList.add('xp-preview');
     xp.cv = cv; xp.g = cv.getContext('2d');
     try { if (xp.mode === 'frames') await exportFrames(t, codecs, Muxer); else await exportLive(live); }
@@ -1696,14 +1729,15 @@ body.exporting .stage {
     if (!blob.size) { toast('The video came out empty. Keep this screen open while it records, then try again.'); return; }
     const ext = /mp4/.test(blob.type) ? 'mp4' : 'webm';
     const slug = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const name = `${slug(curTitle()) || 'beat'}${state.producer ? '-' + slug(state.producer) : ''}.${ext}`;
+    const name = `${slug(curTitle()) || 'beat'}${state.producer ? '-' + slug(state.producer) : ''}${XW > XH ? '-youtube' : ''}.${ext}`;
     if (lastVideo && lastVideo.url) URL.revokeObjectURL(lastVideo.url);
     lastVideo = { blob, name, url: URL.createObjectURL(blob) };
-    $('#vidInfo').textContent = `${fmt(len)} · 1080 × 1920 · 30 fps · ${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)} MB`;
+    $('#vidInfo').textContent = `${fmt(len)} · ${XW} × ${XH} · 30 fps · ${ext.toUpperCase()} · ${(blob.size / 1048576).toFixed(1)} MB`;
     const v = $('#vidPrev'); v.hidden = false; v.onerror = () => { v.hidden = true; }; v.src = lastVideo.url;
     $('#vidHint').textContent = ext === 'webm'
       ? 'This browser saves WebM videos. TikTok on a computer accepts them; for your phone, export from Safari or the Claude app to get an MP4.'
-      : 'On iPhone, choose Save Video in the share menu to put it in Photos. Then in TikTok tap + → Upload.';
+      : XW > XH ? 'On iPhone, choose Save Video in the share menu to put it in Photos. Then in the YouTube app tap + → Upload a video.'
+        : 'On iPhone, choose Save Video in the share menu to put it in Photos. Then in TikTok tap + → Upload.';
     $('#vidModal').hidden = false;
   }
   async function saveVideo() {
