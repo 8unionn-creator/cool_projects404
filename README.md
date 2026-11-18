@@ -8,6 +8,7 @@ Things I build to sharpen my skills and make my own work easier.
 | [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
 | [💿 Spin Room](spin-room/) | A record player and CD player that spin to your beats, made to screen-record for TikTok | HTML, CSS, JS, Web Audio |
 | [🎛️ Stencil](stencil/) | Arrangement stencils for Logic Pro and FL Studio: 20 MIDI song structures for trap, R&B, Afrobeats and rap, with visual maps. A drag-and-drop plugin is planned | MIDI, Python, JUCE (planned) |
+| [🥁 Groove Rack](groove-rack/) | A phone-sized beat maker: channel rack, piano roll and playlist, 15 genre starters from Afrobeats and Amapiano to trap, drill and pop, WAV and MIDI export | HTML, CSS, JS, Web Audio |
 
 ## ⏪ Rewind — [`rewind/`](rewind/)
 
@@ -66,3 +67,22 @@ A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable
 Song structures you drop into Logic Pro or FL Studio and fill with your own sounds. 20 MIDI stencils (five each for trap, R&B, Afrobeats and rap) carry the tempo, section markers and a placeholder for every instrument, and a PDF shows each one as a map with its energy curve. The plugin that will let you drag sections into the timeline is designed but not built yet. [Read more →](stencil/README.md)
 
 ![Stencil arrangement map](stencil/docs/map-01.png)
+
+## 🥁 Groove Rack — [`groove-rack/`](groove-rack/index.html)
+
+A beat maker that fits on a phone. The channel rack shows one bar of steps for the drums, the playlist under it shows every other track as a waveform across the whole loop, and a piano roll opens for anything melodic. Every sound is synthesized in the browser, so there is nothing to download.
+
+**What it does**
+- **Channel rack:** tap a step to add a hit, drag up or down for velocity, drag sideways to paint or erase, hold a hit for rolls (2, 3 or 4 hits in a step), ghost notes and more. Each track can use 12, 16, 24 or 32 steps per bar, so triplet hats and 6/8 grooves work as well as straight 16ths
+- **Two racks:** *Drums* and *Audio*. The `Audio ▸` button swaps them; whichever rack is not open shows up in the playlist as waveforms, with a playhead across all bars
+- **Piano roll** for 808s, bass, log drums, keys, pads, plucks, leads and vocal chops: drag to set length, move notes, single notes or scale-aware triads and 7ths, a key and scale highlight, and 808 slides
+- **15 genre starters**, each a full multi-bar beat: Bounce, Afrobeats, Amapiano, Afro House, Trap, Drill, Pop, House, Reggaeton, Dancehall, Boom Bap, R&B, Lo-fi, Jersey Club and Drum & Bass
+- **18 instruments, 60+ sounds:** kicks, snares, claps, snaps, rims, hats, open hats, cymbals, toms, shakers, congas and talking drum, agogo and cowbell, woodblocks, 808s, bass, log drums, piano, rhodes, organ, pads, strings, plucks, bells, marimba, kalimba, guitar, leads, vocal chops and FX (squeak, reload, shot, air horn, siren, riser, scratch and more). Or load your own sound file onto any track
+- **Mixer:** volume, pan, pitch, length, tone, reverb and echo per track, mute and solo, hi-hats that choke each other, a master bus with glue compression and a limiter
+- **Song controls:** tempo (with tap tempo), swing, key and scale, transpose, loops of 1 to 8 bars, copy and clear bars, metronome
+- **Export:** WAV (the loop ×1, ×2 or ×4, tails wrapped so it loops cleanly), WAV stems per track, and a MIDI file with a track per instrument
+- Undo and redo for every edit, saved projects in the browser, project files, and share links that carry the whole beat
+- Shortcuts: `Space` play/stop · `←` `→` bar · `↑` `↓` track · `G` switch rack · `M` mute · `S` solo · `Ctrl Z` undo
+
+**How to run it:** open `groove-rack/index.html` in any browser. Nothing to install, no build step. Projects and sound files stay in your browser.
+
