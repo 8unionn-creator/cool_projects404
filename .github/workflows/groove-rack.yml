@@ -115,6 +115,8 @@ jobs:
             [ -f "dist/GrooveRack-$need.zip" ] || { echo "The $need build is missing, so there is no release." >&2; exit 1; }
           done
           version="${TAG#groove-rack-v}"
+          LINUX_ROW=""
+          [ -f dist/GrooveRack-Linux.zip ] && LINUX_ROW="| Linux | **GrooveRack-Linux.zip** | VST3 + standalone app |"
           cat > notes.md <<EOF
           **Groove Rack $version**, the GR-16 drum and bass groove machine, as a plugin for your DAW.
 
@@ -122,7 +124,7 @@ jobs:
           |---|---|---|
           | Windows 10 / 11 | **GrooveRack-Windows.zip** | VST3 + standalone app |
           | macOS 10.15 or later (Intel and Apple Silicon) | **GrooveRack-macOS.zip** | VST3, Audio Unit (Logic, GarageBand) + standalone app |
-          | Linux | **GrooveRack-Linux.zip** | VST3 + standalone app |
+          $LINUX_ROW
 
           Unzip it and follow **INSTALL.md** inside. In short: on Windows copy \`Groove Rack.vst3\` to \`C:\\Program Files\\Common Files\\VST3\\\`; on macOS copy the VST3 to \`~/Library/Audio/Plug-Ins/VST3/\` and the component to \`~/Library/Audio/Plug-Ins/Components/\`, then run the one Terminal command in INSTALL.md (these builds are not notarized by Apple). Rescan plugins in your DAW and load **Groove Rack** as an instrument.
 
