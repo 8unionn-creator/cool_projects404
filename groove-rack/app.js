@@ -42,7 +42,7 @@ const RES_LABEL = { 12: '1/8 triplet', 16: '1/16', 24: '1/16 triplet', 32: '1/32
 
 /* ---------- state ---------- */
 let P = null;
-const ui = { gen: { complexity: 1, scope: 'all' }, sel: null, bar: 0, follow: true, rollOpen: false, chord: 0, scaleOnly: false, metro: false, muted: false };
+const ui = { gen: { complexity: 1, scope: 'all' }, queued: null, queuedFrom: -1, sel: null, bar: 0, follow: true, rollOpen: false, chord: 0, scaleOnly: false, metro: false, muted: false };
 const hist = { undo: [], redo: [] };
 const snap = () => JSON.stringify(P);
 function commit() { hist.undo.push(snap()); if (hist.undo.length > 200) hist.undo.shift(); hist.redo.length = 0; }
@@ -78,13 +78,13 @@ function audition(tr, note) {
 }
 
 /* ---------- transport ---------- */
-const S = { playing: false, nextTick: 0, nextTime: 0, aTick: 0, aTime: 0, timer: 0, st: null, map: null };
+const S = { playing: false, nextTick: 0, nextTime: 0, aTick: 0, aTime: 0, timer: 0, st: null, map: null, pend: null, landing: null };
 function tickMap() { if (!S.map) S.map = GR.buildTickMap(P); return S.map; }
 function play() {
   if (HOST) { HOST.call('setPlaying', true); S.playing = true; H.playing = true; H.tick = 0; H.at = performance.now(); renderTransport(); return; }
   resume();
   S.st = GR.newState(); S.playing = true;
-  S.nextTick = 0; S.nextTime = ctx.currentTime + 0.08; S.aTick = 0; S.aTime = S.nextTime;
+  S.nextTick = 0; S.nextTime = ctx.currentTime + 0.08; S.aTick = 0; S.aTime = S.nextTime; S.pend = null; ui.queued = null;
   clearInterval(S.timer); S.timer = setInterval(sched, 25); sched();
   renderTransport();
 }
@@ -98,13 +98,15 @@ function stop() {
   renderTransport();
 }
 function toggle() { S.playing ? stop() : play(); }
+// Pick a bar. While the loop plays, playback moves there on the next bar line, so the groove never stumbles.
 function seek(bar) {
   ui.bar = clamp(bar, 0, P.bars - 1);
-  if (HOST) { if (S.playing) HOST.call('seek', ui.bar); }
-  else if (S.playing) {
-    S.nextTick = ui.bar * TPB; S.nextTime = ctx.currentTime + 0.03; S.aTick = S.nextTick; S.aTime = S.nextTime;
-  }
-  refreshBar();
+  const p = pos();
+  if (S.playing && !(HOST && H.host)) {
+    ui.queued = ui.bar; ui.queuedFrom = p == null ? -1 : Math.floor(p / TPB);
+    if (HOST) HOST.call('seek', ui.bar);
+  } else ui.queued = null;
+  refreshBar(); renderBars();
 }
 function sched() {
   if (!S.playing) return;
@@ -113,6 +115,11 @@ function sched() {
     const skip = Math.ceil((now - S.nextTime) / td); S.nextTick += skip; S.nextTime += skip * td; S.aTick = S.nextTick; S.aTime = S.nextTime;
   }
   while (S.nextTime < horizon) {
+    if (ui.queued != null && S.nextTick % TPB === 0) {   // a bar line: jump to the bar that was picked
+      const target = ui.queued * TPB, cur = S.nextTick % loopT;
+      S.nextTick += target - cur; S.landing = ui.queued; ui.queued = null;
+      S.pend = { tick: S.nextTick, time: S.nextTime };
+    }
     const tick = S.nextTick % loopT, ev = map.get(tick);
     if (ev) {
       const t = S.nextTime + GR.swing(P, tick, td);
@@ -137,6 +144,7 @@ function pos() {
     return ((p % loopT) + loopT) % loopT;
   }
   if (!S.playing || !ctx) return null;
+  if (S.pend && ctx.currentTime - (ctx.outputLatency || 0) >= S.pend.time) { S.aTick = S.pend.tick; S.aTime = S.pend.time; S.pend = null; }
   const td = GR.tickDur(P), loopT = P.bars * TPB;
   const p = S.aTick + (ctx.currentTime - (ctx.outputLatency || 0) - S.aTime) / td;
   return ((p % loopT) + loopT) % loopT;
@@ -168,8 +176,12 @@ function changed() {
   renderAll();
 }
 function autosave() { store.set('groove-rack.current', snap()); }
+// loops are 4 or 8 bars; anything else is filled out to the next one by repeating what is there
+const MIN_BARS = 4, MAX_BARS = 8;
+const snapBars = n => (n <= MIN_BARS ? MIN_BARS : MAX_BARS);
 function load(project, keepHistory) {
   P = sanitize(project);
+  if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
   if (!keepHistory) { hist.undo.length = 0; hist.redo.length = 0; }
   if (!track(ui.sel)) ui.sel = (P.tracks[0] || {}).id || null;
   ui.bar = clamp(ui.bar, 0, P.bars - 1);
@@ -331,12 +343,35 @@ function barMap(b) {
   return cells.map(c => `<i${c ? ` class="${c}"` : ''}></i>`).join('');
 }
 function renderBars() {
-  $('#bars').innerHTML = Array.from({ length: 8 }, (_, i) => i < P.bars
-    ? `<button class="bar-tile${i === ui.bar ? ' active' : ''}" data-bar="${i}" aria-label="Bar ${i + 1}" title="Show bar ${i + 1}"><span class="bt-top">${two(i + 1)}<small>PLAY</small></span><span class="bt-map" style="--rows:${Math.max(1, Math.min(6, drumTracks().length) + (bassTracks().length ? 1 : 0))}">${barMap(i)}</span></button>`
-    : `<button class="bar-tile beyond" data-bar="${i}" title="Make the loop ${i + 1} bars: the new bars repeat the first ones"><b>+</b>BAR ${i + 1}</button>`).join('');
+  const rows = Math.max(1, Math.min(6, drumTracks().length) + (bassTracks().length ? 1 : 0));
+  const segs = Array.from({ length: 8 }, (_, i) => i < P.bars
+    ? `<button class="bar-tile${i === ui.bar ? ' active' : ''}${i === ui.queued || i === S.landing ? ' queued' : ''}" data-bar="${i}" aria-label="Bar ${i + 1}" title="${S.playing ? 'Play bar ' + (i + 1) + ' from the next bar line' : 'Show bar ' + (i + 1)}"><span class="bt-top">${two(i + 1)}<small>${i === ui.queued || i === S.landing ? 'NEXT' : 'PLAY'}</small></span><span class="bt-map" style="--rows:${rows}">${barMap(i)}</span></button>`
+    : `<button class="bar-tile beyond" data-bar="${i}" aria-label="Make the loop 8 bars" title="Make the loop 8 bars: bars 5–8 repeat 1–4"><b>+</b></button>`).join('');
+  $('#bars').innerHTML = `<div class="loop-bracket" id="loopBracket" style="--n:${P.bars}"><span class="lb-label">LOOP 1–${P.bars}</span><span class="lb-handle" id="loopHandle" role="slider" tabindex="0" aria-label="Loop length in bars" aria-valuemin="4" aria-valuemax="8" aria-valuenow="${P.bars}" title="Drag to switch the loop between 4 and 8 bars (or use the arrow keys)"></span></div><div class="lane" id="lane">${segs}<i class="lane-head" id="laneHead" hidden></i></div>`;
   $('#psLoop').textContent = `LOOP · ${two(P.bars)} BAR${P.bars > 1 ? 'S' : ''}`;
   $('#followBtn').classList.toggle('on', ui.follow);
   $('#followBtn').setAttribute('aria-pressed', ui.follow);
+  document.querySelectorAll('.loop-seg [data-tool]').forEach(b => { const on = b.dataset.tool === 'len' + P.bars; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+}
+function setLoopLength(n) {
+  n = snapBars(n); if (n === P.bars) return;
+  const grow = n > P.bars;
+  edit(() => { if (grow) extendLoop(n); else P.bars = n; });
+  toast(grow ? `Loop is now ${n} bars: bars 5–8 repeat 1–4` : `Loop is now ${n} bars. Bars 5–8 are kept for when you go back to 8`);
+}
+function onLoopHandleDown(e) {
+  const hd = e.target.closest('#loopHandle'); if (!hd) return;
+  e.preventDefault(); e.stopPropagation();
+  const lane = $('#lane').getBoundingClientRect(), br = $('#loopBracket');
+  let n = P.bars;
+  br.classList.add('drag');
+  try { hd.setPointerCapture(e.pointerId); } catch (err) {}
+  const mv = ev => {
+    n = (ev.clientX - lane.left) / lane.width * 8 >= 6 ? MAX_BARS : MIN_BARS;
+    br.style.setProperty('--n', n); br.querySelector('.lb-label').textContent = `LOOP 1–${n}`;
+  };
+  const up = () => { hd.removeEventListener('pointermove', mv); hd.removeEventListener('pointerup', up); hd.removeEventListener('pointercancel', up); br.classList.remove('drag'); if (n !== P.bars) setLoopLength(n); };
+  hd.addEventListener('pointermove', mv); hd.addEventListener('pointerup', up); hd.addEventListener('pointercancel', up);
 }
 
 /* ---------- the selected channel: sound screen and knobs ---------- */
@@ -579,12 +614,18 @@ function frame() {
   const p = pos();
   if (p != null) {
     const bar = Math.floor(p / TPB);
-    if (ui.follow && bar !== ui.bar && !dragging) { ui.bar = bar; refreshBar(); }
+    if (HOST && ui.queued != null && bar !== ui.queuedFrom) ui.queued = null;
+    if (S.landing != null && bar === S.landing) S.landing = null;
+    if (ui.queued == null && S.landing == null && document.querySelector('.bar-tile.queued')) renderBars();
+    if (ui.follow && ui.queued == null && S.landing == null && bar !== ui.bar && !dragging) { ui.bar = bar; refreshBar(); }
+    const lh = $('#laneHead'); if (lh) { lh.hidden = false; lh.style.left = (p / (8 * TPB) * 100) + '%'; }
     document.querySelectorAll('.bar-tile').forEach((b, i) => b.classList.toggle('playing', i === bar && i < P.bars));
     const st = Math.floor((p % TPB) / 6);
     if (st !== lastStep && bar === ui.bar) { lastStep = st; showStep(p % TPB); }
   } else if (lastStep !== -2) {
     lastStep = -2; showStep(null);
+    const lh = $('#laneHead'); if (lh) lh.hidden = true;
+    if (ui.queued != null || S.landing != null) { ui.queued = null; S.landing = null; renderBars(); }
     document.querySelectorAll('.bar-tile.playing').forEach(b => b.classList.remove('playing'));
   }
   if (!mix && !HOST) return;
@@ -911,7 +952,7 @@ function songSheet() {
       <button class="b sm" data-tr="-1">Transpose −1</button><button class="b sm" data-tr="1">Transpose +1</button></div>
       <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Key and scale light up the piano roll and steer chord mode. Transpose moves every melodic note and the key together.</p>
     </div>
-    <div class="sh-sec"><h4>Loop length</h4><div class="seg" role="group" aria-label="Bars">${[1, 2, 3, 4, 5, 6, 7, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <div class="sh-sec"><h4>Loop length</h4><div class="seg" role="group" aria-label="Bars">${[4, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div>
       <div class="btns" style="margin-top:8px"><button class="b sm" data-double>Double the loop</button></div></div>
     <div class="sh-sec"><h4>Playback</h4><div class="btns">
       <button class="b sm${ui.metro ? ' on' : ''}" data-metro>Metronome ${ui.metro ? 'on' : 'off'}</button>
@@ -937,7 +978,7 @@ function songSheet() {
         edit(() => { P.key = (P.key + d + 12) % 12; P.tracks.forEach(t => { if (I[t.inst].pitched) t.notes.forEach(n => { n.p = clamp(n.p + d, 0, 127); }); }); });
         sh.querySelector('#s_key').value = P.key; toast('Key: ' + GR.NOTE_NAMES[P.key] + ' ' + P.scale);
       }
-      else if (b.dataset.bars) { edit(() => { P.bars = +b.dataset.bars; }); sh.querySelectorAll('[data-bars]').forEach(x => x.classList.toggle('on', +x.dataset.bars === P.bars)); }
+      else if (b.dataset.bars) { setLoopLength(+b.dataset.bars); sh.querySelectorAll('[data-bars]').forEach(x => x.classList.toggle('on', +x.dataset.bars === P.bars)); }
       else if (b.dataset.double != null) {
         if (P.bars > 4) return toast('The loop can be at most 8 bars');
         edit(() => { const L = P.bars * TPB; P.tracks.forEach(t => { t.notes = t.notes.filter(n => n.t < L); t.notes = t.notes.concat(t.notes.map(n => Object.assign({}, n, { t: n.t + L }))); }); P.bars *= 2; });
@@ -954,7 +995,7 @@ function songSheet() {
 function barSheet() {
   const sh = openSheet('Bars', `
     <div class="big-bpm" style="font-size:30px"><button class="b" data-go="-1" aria-label="Previous bar">‹</button><span id="bLabel">bar ${ui.bar + 1} of ${P.bars}</span><button class="b" data-go="1" aria-label="Next bar">›</button></div>
-    <div class="sh-sec"><h4>Loop length</h4><div class="seg">${[1, 2, 3, 4, 5, 6, 7, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+    <div class="sh-sec"><h4>Loop length</h4><div class="seg">${[4, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div></div>
     <div class="sh-sec"><h4>This bar, every track</h4><div class="btns">
       <button class="b sm" data-copy="next">Copy to next bar</button>
       <button class="b sm" data-copy="all">Copy to all bars</button>
@@ -964,7 +1005,7 @@ function barSheet() {
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.go) { seek((ui.bar + +b.dataset.go + P.bars) % P.bars); lab(); }
-      else if (b.dataset.bars) { edit(() => { P.bars = +b.dataset.bars; }); lab(); }
+      else if (b.dataset.bars) { setLoopLength(+b.dataset.bars); lab(); }
       else if (b.dataset.copy) {
         const targets = b.dataset.copy === 'next' ? [(ui.bar + 1) % P.bars] : Array.from({ length: P.bars }, (_, i) => i).filter(i => i !== ui.bar);
         edit(() => P.tracks.forEach(t => copyBar(t, ui.bar, targets)));
@@ -1169,6 +1210,7 @@ function importMidi(buf, target, fileName) {
   };
   commit();
   P.bars = Math.max(bars, target ? P.bars : 1);
+  if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
   if (target) {
     target.notes = [];
     all.forEach(n => put(target, n));
@@ -1519,8 +1561,14 @@ function wire() {
   $('#bars').addEventListener('click', e => {
     const b = e.target.closest('[data-bar]'); if (!b) return;
     const i = +b.dataset.bar;
-    if (i >= P.bars) { edit(() => extendLoop(i + 1)); toast(`Loop is now ${P.bars} bars: the new bars repeat the first ones`); }
+    if (i >= P.bars) setLoopLength(MAX_BARS);
     seek(i);
+  });
+  $('#bars').addEventListener('pointerdown', onLoopHandleDown);
+  $('#bars').addEventListener('keydown', e => {
+    if (!e.target.closest('#loopHandle')) return;
+    const d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0;
+    if (d) { e.preventDefault(); e.stopPropagation(); setLoopLength(d > 0 ? MAX_BARS : MIN_BARS); const h2 = $('#loopHandle'); if (h2) h2.focus(); }
   });
   $('.ps-tools').addEventListener('click', e => {
     const b = e.target.closest('[data-tool]'); if (!b) return;
@@ -1530,10 +1578,8 @@ function wire() {
       const to = (ui.bar + 1) % P.bars;
       edit(() => P.tracks.forEach(tr => copyBar(tr, ui.bar, [to]))); toast(`Bar ${ui.bar + 1} copied onto bar ${to + 1}`); seek(to);
     } else if (t === 'clear') { edit(() => P.tracks.forEach(tr => clearBar(tr, ui.bar))); toast(`Bar ${ui.bar + 1} cleared`); }
-    else if (t === 'double') {
-      if (P.bars > 4) { toast('The loop can be at most 8 bars'); return; }
-      edit(() => extendLoop(P.bars * 2)); toast(`Loop is now ${P.bars} bars`);
-    } else if (t === 'follow') { ui.follow = !ui.follow; renderBars(); toast(ui.follow ? 'The pads follow the playing bar' : 'The pads stay on the bar you pick'); }
+    else if (t === 'len4') setLoopLength(MIN_BARS);
+    else if (t === 'len8') setLoopLength(MAX_BARS); else if (t === 'follow') { ui.follow = !ui.follow; renderBars(); toast(ui.follow ? 'The pads follow the playing bar' : 'The pads stay on the bar you pick'); }
   });
   const cp = $('#chanPanel');
   cp.addEventListener('click', onChanClick);

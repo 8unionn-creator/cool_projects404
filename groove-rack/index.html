@@ -230,7 +230,9 @@ html.in-plugin .foot-hint { display: none; }
 .ps-head .foot-label { color: #9aa3b2; }
 .ps-loop { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--screen-amber); }
 .ps-head .sp { flex: 1; }
-.ps-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.ps-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.loop-seg button { padding: 4px 10px; }
+.loop-seg button.on { color: var(--teal); }
 .tool-btn { height: 26px; padding: 0 10px; border-radius: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; }
 .tool-btn.on { color: var(--teal); border-color: #49e8d088; }
 .bar-tiles { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
@@ -254,6 +256,32 @@ html.in-plugin .foot-hint { display: none; }
 .bar-tile.beyond { align-items: center; justify-content: center; gap: 2px; background: transparent; border: 1.5px dashed #343c4c; box-shadow: none; color: #5d6575; font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .bar-tile.beyond b { font-size: 20px; line-height: 1; font-weight: 500; }
 .bar-tile.beyond:hover { border-color: var(--teal); color: var(--teal); }
+
+/* the loop lane: every bar edge to edge, a gliding playhead, a bracket with a handle for the loop length */
+.loop-wrap { position: relative; padding-top: 22px; }
+.loop-bracket { position: absolute; top: 4px; left: 0; width: calc(var(--n, 8) / 8 * 100%); height: 13px; border: 2px solid var(--teal); border-bottom: 0;
+  border-radius: 7px 7px 0 0; box-shadow: 0 -3px 12px #49e8d026; transition: width .12s ease; pointer-events: none; }
+.loop-bracket.drag { transition: none; }
+.lb-label { position: absolute; left: 10px; top: -8px; padding: 0 6px; background: #0d1018; font-family: var(--mono); font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: var(--teal); white-space: nowrap; }
+.lb-handle { position: absolute; right: -11px; top: -10px; width: 20px; height: 20px; border-radius: 5px; cursor: ew-resize; touch-action: none; pointer-events: auto;
+  background: linear-gradient(180deg, #8ff8e8, #2fbfa8); border: 1px solid #d5fff8; box-shadow: 0 0 12px #49e8d088, 0 2px 0 #0c3a33; }
+.lb-handle::before { content: ''; position: absolute; inset: 5px 7px; border-left: 1.5px solid #0c3a33; border-right: 1.5px solid #0c3a33; }
+.lane { position: relative; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border-radius: 10px; overflow: hidden;
+  border: 1px solid #08090c; background: #04070b; box-shadow: inset 0 2px 8px #000, 0 1px 0 #ffffff0d; }
+.lane .bar-tile { height: 80px; border-radius: 0; border: 0; border-right: 1px solid #ffffff12; box-shadow: none; padding: 6px 0 6px;
+  background: linear-gradient(180deg, #1b202c, #10141c); }
+.lane .bar-tile:hover { background: linear-gradient(180deg, #242a38, #141924); }
+.lane .bar-tile .bt-top { padding: 0 7px; }
+.lane .bt-map { padding: 3px 0; border-radius: 0; background: transparent; box-shadow: none; }
+.lane .bar-tile.active { color: #fff; background: linear-gradient(180deg, #2c3343, #181d28); box-shadow: inset 0 0 0 2px #ffffffcc; }
+.lane .bar-tile.playing .bt-top { color: var(--teal); }
+.lane .bar-tile.queued { animation: queued .45s steps(2, jump-none) infinite; }
+.lane .bar-tile.queued .bt-top small { visibility: visible; color: var(--lime); }
+@keyframes queued { 0% { box-shadow: inset 0 0 0 2px var(--lime); } 100% { box-shadow: inset 0 0 0 2px transparent; } }
+.lane .bar-tile.beyond { border: 0; border-right: 1px solid #ffffff08; box-shadow: none; color: #4b5363; background: repeating-linear-gradient(135deg, #0a0d13 0 6px, #0e1119 6px 12px); }
+.lane .bar-tile.beyond:hover { color: var(--teal); background: repeating-linear-gradient(135deg, #0c1418 0 6px, #10191e 6px 12px); }
+.lane-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; pointer-events: none; background: var(--lime); box-shadow: 0 0 10px var(--lime), 0 0 2px #fff; }
+@media (prefers-reduced-motion: reduce) { .lane .bar-tile.queued { animation: none; box-shadow: inset 0 0 0 2px var(--lime); } .loop-bracket { transition: none; } }
 
 /* ---------- selected channel ---------- */
 .chan-panel { position: relative; z-index: 1; margin-bottom: 12px; display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 190px; gap: 14px; align-items: stretch;
@@ -388,8 +416,9 @@ select.txt { padding: 7px 9px; }
   .chan-panel { grid-template-columns: minmax(0, 1fr); padding: 10px; }
   .cp-screen { order: 1; } .cp-knobs { order: 2; } .cp-side { order: 3; }
   .cp-knobs { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 10px; grid-row: auto; grid-column: auto; }
-  .bar-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .bar-tile { height: 62px; }
+  .lane .bar-tile { height: 62px; }
+  .lane .bt-top { font-size: 9.5px; padding: 0 4px; }
+  .lane .bt-top small { display: none; }
   .ch-name { font-size: 12px; }
   .ch-sample { font-size: 9px; }
   .gr-chassis { padding: 14px; border-radius: 17px; }
@@ -477,11 +506,11 @@ select.txt { padding: 7px 9px; }
       <div class="ps-tools">
         <button class="silicone-btn tool-btn" data-tool="copy" title="Copy this bar onto the next one">COPY → NEXT</button>
         <button class="silicone-btn tool-btn" data-tool="clear" title="Clear every channel in this bar">CLEAR BAR</button>
-        <button class="silicone-btn tool-btn" data-tool="double" title="Double the loop: the new bars repeat the old ones">×2 LOOP</button>
+        <div class="seg loop-seg" role="group" aria-label="Loop length"><button data-tool="len4" title="Loop 4 bars">4 BARS</button><button data-tool="len8" title="Loop 8 bars: bars 5–8 repeat 1–4 the first time">8 BARS</button></div>
         <button class="silicone-btn tool-btn" data-tool="follow" id="followBtn" title="Show the bar that is playing">FOLLOW</button>
       </div>
     </div>
-    <div class="bar-tiles" id="bars"></div>
+    <div class="loop-wrap" id="bars"></div>
   </section>
 
   <footer class="gr-foot">

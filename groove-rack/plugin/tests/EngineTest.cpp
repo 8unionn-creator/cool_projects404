@@ -99,6 +99,28 @@ int main (int argc, char** argv)
         check (std::abs (e2.uiBpm.load() - dawBpm) < 1e-9 && e2.uiDawTempo.load(), "the plugin reports the DAW's tempo to the UI");
     }
 
+    // picking a bar while the plugin plays on its own: the jump waits for the bar line, nothing stumbles
+    {
+        gr::Engine e3; e3.prepare (sr, block); e3.setPattern (pattern);
+        e3.internalPlay = true;
+        const double bpm3 = 120.0, barSamples = 4 * 60.0 / bpm3 * sr;
+        std::vector<int64> kicks; double tickAfter = -1;
+        int64 pos = 0;
+        for (; pos < (int64) (barSamples * 2.5); pos += block)
+        {
+            if (pos >= (int64) (barSamples * 0.3) && pos < (int64) (barSamples * 0.3) + block) e3.seekBar = 5;
+            AudioBuffer<float> b (2, block); MidiBuffer midi;
+            gr::Engine::Transport tp; tp.hasBpm = true; tp.bpm = bpm3;
+            e3.process (b, midi, tp);
+            for (const auto m : midi) if (m.getMessage().isNoteOn() && m.getMessage().getNoteNumber() == 36) kicks.push_back (pos + m.samplePosition);
+            if (tickAfter < 0 && pos > (int64) barSamples + block) tickAfter = e3.uiTick.load();
+        }
+        int before = 0; bool onLine = false;
+        for (auto k : kicks) { if (k < (int64) barSamples - 1) ++before; if (std::llabs (k - (int64) std::llround (barSamples)) <= 1) onLine = true; }
+        check (before == 5, "the rest of bar 1 still plays after a bar is picked (" + String (before) + " of 5 kicks)");
+        check (onLine && tickAfter >= 5 * 96 && tickAfter < 6 * 96, "playback moves to bar 6 exactly on the bar line (tick " + String (tickAfter, 1) + ")");
+    }
+
     // MIDI in: a note on the kick's note plays it while the DAW is stopped
     {
         MidiBuffer midi; midi.addEvent (MidiMessage::noteOn (1, 36, (uint8) 110), 0);

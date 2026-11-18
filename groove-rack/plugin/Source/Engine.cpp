@@ -208,15 +208,14 @@ void Engine::choke (Voice& v)
     v.relStep = 1.0f / (float) (0.014 * sr);
 }
 
-void Engine::schedule (const Pattern& P, double start, double tps, int n)
+void Engine::schedule (const Pattern& P, double start, double end, double tps, int base)
 {
     const int loopT = P.loopTicks();
-    const double end = start + n * tps;
     for (double k = std::ceil (start - 1e-7); k < end - 1e-7; k += 1.0)
     {
         const auto ki = (int64) std::llround (k);
         const int lt = (int) (((ki % loopT) + loopT) % loopT);
-        const double off = (k - start) / tps;
+        const double off = base + (k - start) / tps;
         const double swing = (lt % 12 == 6) ? P.swing / 100.0 * 3.0 / tps : 0.0;
         for (const auto& [ti, ni] : P.ticks[(size_t) lt])
         {
@@ -542,9 +541,14 @@ void Engine::process (AudioBuffer<float>& out, MidiBuffer& midi, const Transport
         }
         else
         {
-            if (! wasPlaying) internalTick = 0;
             const int sb = seekBar.exchange (-1);
-            if (sb >= 0) internalTick = sb * (double) TPB;
+            if (sb >= 0) pendingSeek = sb;
+            if (! wasPlaying)
+            {
+                // starting: begin at the picked bar, or at the top
+                internalTick = pendingSeek >= 0 ? pendingSeek * (double) TPB : 0.0;
+                pendingSeek = -1;
+            }
             start = internalTick;
         }
         const bool continuous = wasPlaying && std::abs (start - expectedTick) < 0.5;
@@ -555,11 +559,29 @@ void Engine::process (AudioBuffer<float>& out, MidiBuffer& midi, const Transport
             events.erase (std::remove_if (events.begin(), events.end(), [] (const Event& e) { return ! e.live; }), events.end());
             mono = {};
         }
-        schedule (P, start, tps, n);
-        expectedTick = start + n * tps;
+        const double end = start + n * tps;
+        double barLine = std::ceil (start / TPB - 1e-9) * TPB;
+        if (! tp.hostPlaying && pendingSeek >= 0 && barLine < end - 1e-9)
+        {
+            // a bar was picked while playing: finish this bar, then carry on from the picked one on the bar line
+            const int split = jlimit (0, n, (int) std::llround ((barLine - start) / tps));
+            schedule (P, start, barLine, tps, 0);
+            const double to = pendingSeek * (double) TPB;
+            pendingSeek = -1;
+            schedule (P, to, to + (n - split) * tps, tps, split);
+            mono = {};
+            expectedTick = to + (n - split) * tps;
+            uiTick.store (std::fmod (to, (double) loopT));
+        }
+        else
+        {
+            if (tp.hostPlaying) pendingSeek = -1;
+            schedule (P, start, end, tps, 0);
+            expectedTick = end;
+            uiTick.store (std::fmod (std::fmod (start, (double) loopT) + loopT, (double) loopT));
+        }
         if (! tp.hostPlaying)
             internalTick = expectedTick;
-        uiTick.store (std::fmod (std::fmod (start, (double) loopT) + loopT, (double) loopT));
     }
     else if (wasPlaying)
     {
