@@ -234,59 +234,6 @@ function synth(o) {
     lp.connect(A.in); A.out.connect(out);
   };
 }
-function piano(ctx, out, t, n) {
-  const ps = semi(n), f = mtof(n.p) * ps, dk = n.decay;
-  const gate = ctx.createGain(); const end = t + n.dur;
-  gate.gain.setValueAtTime(1, end); gate.gain.linearRampToValueAtTime(0, end + 0.25);
-  const lo = Math.max(0.4, 1.4 - (n.p - 48) / 60);  // lower notes ring longer
-  [[1, 0.5, 2.2], [2, 0.22, 1.4], [3, 0.12, 0.9], [4, 0.07, 0.6], [5, 0.04, 0.4]].forEach(([r, lv, d]) => {
-    osc(ctx, 'sine', f * r * (1 + (r - 1) * 0.0006), t, d * dk * lo + n.dur).connect(perc(ctx, t, n.vel * lv, 0.003, d * dk * lo)).connect(gate);
-  });
-  noise(ctx, t, 0.05).connect(filt(ctx, 'bandpass', 3000, 1)).connect(perc(ctx, t, n.vel * 0.05, 0.001, 0.02)).connect(gate);
-  gate.connect(out);
-}
-function fm(o) {
-  return (ctx, out, t, n) => {
-    const ps = semi(n), f = mtof(n.p) * ps, dk = n.decay;
-    const gate = ctx.createGain(); const end = t + n.dur;
-    gate.gain.setValueAtTime(1, end); gate.gain.linearRampToValueAtTime(0, end + o.rel);
-    const len = o.dec * dk + n.dur;
-    const car = osc(ctx, 'sine', f, t, len), mod = osc(ctx, 'sine', f * o.ratio, t, len);
-    const idx = ctx.createGain();
-    idx.gain.setValueAtTime(f * o.i0, t); idx.gain.exponentialRampToValueAtTime(Math.max(f * o.i1, 0.01), t + o.idec);
-    mod.connect(idx).connect(car.frequency);
-    car.connect(perc(ctx, t, n.vel * o.lvl, 0.003, o.dec * dk)).connect(gate);
-    if (o.tine) osc(ctx, 'sine', f * o.tine, t, 0.3).connect(perc(ctx, t, n.vel * 0.04, 0.001, 0.12)).connect(gate);
-    gate.connect(out);
-  };
-}
-function marimba(ctx, out, t, n) {
-  const ps = semi(n), f = mtof(n.p) * ps, dk = n.decay;
-  osc(ctx, 'sine', f, t, 0.8).connect(perc(ctx, t, n.vel * 0.8, 0.002, 0.45 * dk)).connect(out);
-  osc(ctx, 'sine', f * 3.93, t, 0.2).connect(perc(ctx, t, n.vel * 0.12, 0.001, 0.07 * dk)).connect(out);
-}
-// Karplus-Strong plucked string, rendered in JS once per pitch and sample rate
-function ksBuffer(ctx, p, bright) {
-  const c = cache(ctx), key = 'ks' + p + '_' + bright;
-  if (c[key]) return c[key];
-  const sr = ctx.sampleRate, len = Math.floor(sr * 1.6), b = ctx.createBuffer(1, len, sr), d = b.getChannelData(0);
-  const N = Math.max(2, Math.round(sr / mtof(p))), damp = 0.996 - Math.max(0, p - 60) * 0.0004;
-  let lp = 0;
-  for (let i = 0; i < N; i++) { const r = Math.random() * 2 - 1; lp += (r - lp) * bright; d[i] = lp; }
-  for (let i = N; i < len; i++) d[i] = 0.5 * (d[i - N] + d[i - N - 1 < 0 ? 0 : i - N - 1]) * damp;
-  c[key] = b; return b;
-}
-function guitar(o) {
-  return (ctx, out, t, n) => {
-    const s = ctx.createBufferSource(); s.buffer = ksBuffer(ctx, Math.round(n.p), o.bright);
-    s.playbackRate.value = semi(n);
-    const g = ctx.createGain(); g.gain.setValueAtTime(n.vel * o.lvl, t);
-    const end = t + n.dur; g.gain.setValueAtTime(n.vel * o.lvl, end);
-    g.gain.exponentialRampToValueAtTime(0.0001, end + 0.12 * n.decay);
-    s.connect(filt(ctx, 'lowpass', o.lp, 0.5)).connect(g).connect(out);
-    s.start(t); s.stop(end + 0.2);
-  };
-}
 function logdrum(o) {
   return (ctx, out, t, n) => {
     const ps = semi(n), f = mtof(n.p) * ps, dk = n.decay;
@@ -426,12 +373,12 @@ const I = GR.INST = {
     big: ['big clap', clap({ bp: 1000, dec: 0.42, sp: 0.014, q: 0.8 })],
     tight: ['tight clap', clap({ bp: 1600, dec: 0.1, sp: 0.008 })]
   } },
-  snap: { label: 'Snap', cat: 'Drums', group: 'drums', gm: 39, sounds: { snap: ['finger snap', snapFn] } },
+  snap: { label: 'Snap', cat: 'Drums', group: 'drums', gm: 31, sounds: { snap: ['finger snap', snapFn] } },
   rim: { label: 'Rim', cat: 'Drums', group: 'drums', gm: 37, sounds: { rim: ['rimshot', rimFn] } },
   hat: { label: 'Hi-hat', cat: 'Drums', group: 'drums', gm: 42, choke: 'hat', sounds: {
     tight: ['tight hat', hat({ dec: 0.045, hp: 7000, lvl: 0.8 })],
     crisp: ['crisp hat', hat({ dec: 0.07, hp: 6000, metal: 1, lvl: 1.0 })],
-    soft: ['soft hat', hat({ dec: 0.05, hp: 5000, lvl: 0.75 })]
+    soft: ['soft hat', hat({ dec: 0.05, hp: 5000, lvl: 0.75 }), { gm: 44 }]
   } },
   openhat: { label: 'Open Hat', cat: 'Drums', group: 'drums', gm: 46, choke: 'hat', sounds: {
     open: ['open hat', hat({ dec: 0.38, hp: 6500, metal: 1, lvl: 0.9 })],
@@ -439,77 +386,50 @@ const I = GR.INST = {
     short: ['short open hat', hat({ dec: 0.2, hp: 7000, lvl: 0.9 })]
   } },
   cymbal: { label: 'Cymbal', cat: 'Drums', group: 'drums', gm: 49, sounds: {
-    crash: ['crash', cymbal({ dec: 1.6, hp: 4000, lvl: 0.9 })],
-    ride: ['ride', cymbal({ dec: 0.8, hp: 6000, lvl: 1.0 })]
+    crash: ['crash', cymbal({ dec: 1.6, hp: 4000, lvl: 0.9 }), { gm: 49 }],
+    ride: ['ride', cymbal({ dec: 0.8, hp: 6000, lvl: 1.0 }), { gm: 51 }]
   } },
   tom: { label: 'Tom', cat: 'Drums', group: 'drums', gm: 45, sounds: {
-    low: ['low tom', tom({ f: 95 })], mid: ['mid tom', tom({ f: 135 })], high: ['high tom', tom({ f: 185 })]
+    low: ['low tom', tom({ f: 95 }), { gm: 45 }], mid: ['mid tom', tom({ f: 135 }), { gm: 47 }], high: ['high tom', tom({ f: 185 }), { gm: 50 }]
   } },
   shaker: { label: 'Shaker', cat: 'Percussion', group: 'drums', gm: 70, sounds: {
     shaker: ['shaker', shaker({ f: 5500, a: 0.012, dec: 0.07, lvl: 1.4 })],
-    tamb: ['tambourine', shaker({ f: 7000, a: 0.004, dec: 0.06, lvl: 0.8, jingle: 1 })],
-    cabasa: ['cabasa', shaker({ f: 8000, a: 0.02, dec: 0.05, lvl: 1.2 })]
+    tamb: ['tambourine', shaker({ f: 7000, a: 0.004, dec: 0.06, lvl: 0.8, jingle: 1 }), { gm: 54 }],
+    cabasa: ['cabasa', shaker({ f: 8000, a: 0.02, dec: 0.05, lvl: 1.2 }), { gm: 69 }]
   } },
   conga: { label: 'Conga', cat: 'Percussion', group: 'drums', gm: 63, sounds: {
-    high: ['conga hi', conga({ f: 330, dec: 0.22 })],
-    low: ['conga lo', conga({ f: 220, dec: 0.3 })],
-    bongo: ['bongo', conga({ f: 460, dec: 0.13 })],
-    slap: ['conga slap', conga({ f: 300, dec: 0.1, slap: 1 })],
-    talk: ['talking drum', conga({ f: 190, dec: 0.4, bend: 1 })]
+    high: ['conga hi', conga({ f: 330, dec: 0.22 }), { gm: 63 }],
+    low: ['conga lo', conga({ f: 220, dec: 0.3 }), { gm: 64 }],
+    bongo: ['bongo', conga({ f: 460, dec: 0.13 }), { gm: 60 }],
+    slap: ['conga slap', conga({ f: 300, dec: 0.1, slap: 1 }), { gm: 62 }],
+    talk: ['talking drum', conga({ f: 190, dec: 0.4, bend: 1 }), { gm: 65 }]
   } },
   bell: { label: 'Bell', cat: 'Percussion', group: 'drums', gm: 56, sounds: {
-    agogo: ['agogo bell', bellPerc({ f: 880, dec: 0.18 })],
-    low: ['low agogo', bellPerc({ f: 660, dec: 0.2 })],
-    cowbell: ['cowbell', bellPerc({ f: 560, dec: 0.25 })]
+    agogo: ['agogo bell', bellPerc({ f: 880, dec: 0.18 }), { gm: 67 }],
+    low: ['low agogo', bellPerc({ f: 660, dec: 0.2 }), { gm: 68 }],
+    cowbell: ['cowbell', bellPerc({ f: 560, dec: 0.25 }), { gm: 56 }]
   } },
   block: { label: 'Woodblock', cat: 'Percussion', group: 'drums', gm: 76, sounds: {
-    wood: ['woodblock', block({ f: 1000, dec: 0.06 })], clave: ['clave', block({ f: 2500, dec: 0.05 })],
-    tick: ['log tick', block({ f: 700, dec: 0.04 })]
+    wood: ['woodblock', block({ f: 1000, dec: 0.06 }), { gm: 76 }], clave: ['clave', block({ f: 2500, dec: 0.05 }), { gm: 75 }],
+    tick: ['log tick', block({ f: 700, dec: 0.04 }), { gm: 77 }]
   } },
-  b808: { label: '808', cat: 'Bass', group: 'audio', pitched: true, mono: true, base: 24, sounds: {
+  b808: { label: '808', cat: 'Bass & 808', group: 'audio', pitched: true, mono: true, base: 24, sounds: {
     clean: ['clean 808', bass808({})],
     dirty: ['dirty 808', bass808({ drive: 0.6, lp: 2500, lvl: 0.8 })],
     slide: ['sliding 808', bass808({ drive: 0.4, lp: 2200, lvl: 0.85 }), { autoSlide: true }],
     sub: ['sub 808', bass808({ lvl: 0.9 })]
   } },
-  bass: { label: 'Bass', cat: 'Bass', group: 'audio', pitched: true, mono: true, base: 28, sounds: {
+  bass: { label: 'Bass', cat: 'Bass & 808', group: 'audio', pitched: true, mono: true, base: 28, sounds: {
     synth: ['synth bass', synth({ waves: [['sawtooth', 0, 0.5], ['sine', 0, 0.8, 0.5]], cut: 500, env: 1400, envDec: 0.15, a: 0.004, d: 0.3, s: 0.7, r: 0.06, lvl: 0.5 })],
     pluck: ['pluck bass', synth({ waves: [['square', 0, 0.4], ['sine', 0, 0.6]], cut: 300, env: 2200, envDec: 0.1, a: 0.002, d: 0.25, s: 0.25, r: 0.05, lvl: 0.55 })],
     reese: ['reese bass', synth({ waves: [['sawtooth', -14, 0.4], ['sawtooth', 14, 0.4], ['sine', 0, 0.6, 0.5]], cut: 700, a: 0.01, d: 0.3, s: 0.9, r: 0.08, lvl: 0.45 })],
     round: ['round bass', synth({ waves: [['triangle', 0, 0.8], ['sine', 0, 0.6, 0.5]], cut: 900, a: 0.005, d: 0.4, s: 0.6, r: 0.06, lvl: 0.6 })]
   } },
-  logdrum: { label: 'Log Drum', cat: 'Bass', group: 'audio', pitched: true, mono: true, base: 24, sounds: {
+  logdrum: { label: 'Log Drum', cat: 'Bass & 808', group: 'audio', pitched: true, mono: true, base: 24, sounds: {
     log: ['log drum', logdrum({ body: 0.35, drive: 0.5, lp: 1800, lvl: 0.75 })],
     knock: ['knock log', logdrum({ body: 0.6, drive: 0.8, lp: 2600, lvl: 0.6 })]
   } },
-  keys: { label: 'Keys', cat: 'Keys & synths', group: 'audio', pitched: true, base: 48, sounds: {
-    piano: ['piano', piano],
-    rhodes: ['rhodes', fm({ ratio: 1, i0: 1.6, i1: 0.15, idec: 0.5, dec: 2.4, rel: 0.2, lvl: 0.4, tine: 14 })],
-    organ: ['organ', synth({ waves: [['sine', 0, 0.5], ['sine', 0, 0.35, 2], ['sine', 0, 0.2, 3], ['sine', 0, 0.12, 4], ['sine', 0, 0.3, 0.5]], cut: 6000, a: 0.005, d: 0.1, s: 1, r: 0.06, lvl: 0.3 })]
-  } },
-  pad: { label: 'Pad', cat: 'Keys & synths', group: 'audio', pitched: true, base: 48, sounds: {
-    warm: ['warm pad', synth({ waves: [['sawtooth', -7, 0.3], ['sawtooth', 7, 0.3], ['triangle', 0, 0.3, 0.5]], cut: 1300, a: 0.3, d: 0.6, s: 0.8, r: 0.6, lvl: 0.9 })],
-    supersaw: ['supersaw', synth({ waves: [-18, -8, 0, 8, 18].map(d => ['sawtooth', d, 0.16]), cut: 4500, a: 0.01, d: 0.4, s: 0.85, r: 0.25, lvl: 0.7 })],
-    strings: ['strings', synth({ waves: [['sawtooth', -10, 0.3], ['sawtooth', 10, 0.3]], cut: 2400, a: 0.18, d: 0.4, s: 0.9, r: 0.5, lvl: 0.8, vib: 1 })]
-  } },
-  pluck: { label: 'Pluck', cat: 'Keys & synths', group: 'audio', pitched: true, base: 60, sounds: {
-    pluck: ['pluck', synth({ waves: [['sawtooth', -4, 0.4], ['sawtooth', 4, 0.4]], cut: 350, env: 5000, envDec: 0.18, a: 0.002, d: 0.35, s: 0, r: 0.1, lvl: 1.0 })],
-    bell: ['bell', fm({ ratio: 3.5, i0: 2, i1: 0.1, idec: 0.8, dec: 1.6, rel: 0.3, lvl: 0.7 })],
-    marimba: ['marimba', marimba],
-    guitar: ['guitar', guitar({ bright: 0.5, lp: 4500, lvl: 0.8 })],
-    kalimba: ['kalimba', fm({ ratio: 5.2, i0: 0.9, i1: 0.05, idec: 0.15, dec: 0.9, rel: 0.15, lvl: 0.8 })]
-  } },
-  lead: { label: 'Lead', cat: 'Keys & synths', group: 'audio', pitched: true, mono: true, base: 60, sounds: {
-    saw: ['saw lead', synth({ waves: [['sawtooth', -6, 0.35], ['sawtooth', 6, 0.35]], cut: 2800, env: 1500, envDec: 0.2, a: 0.008, d: 0.3, s: 0.8, r: 0.12, lvl: 0.3, vib: 1 })],
-    square: ['square lead', synth({ waves: [['square', 0, 0.4]], cut: 2400, a: 0.006, d: 0.2, s: 0.8, r: 0.1, lvl: 0.28, vib: 1 })],
-    flute: ['flute', synth({ waves: [['sine', 0, 0.8], ['triangle', 0, 0.2, 2]], cut: 5000, a: 0.06, d: 0.2, s: 0.9, r: 0.12, lvl: 0.4, vib: 1, breath: 0.12 })]
-  } },
-  vox: { label: 'Vox', cat: 'Vocals', group: 'audio', pitched: true, mono: true, base: 60, sounds: {
-    ah: ['vox ah', vox({ v: 'ah', lvl: 3 })], oh: ['vox oh', vox({ v: 'oh', lvl: 3.4 })],
-    ee: ['vox ee', vox({ v: 'ee', lvl: 3.4 })], oo: ['vox oo', vox({ v: 'oo', lvl: 3.8 })],
-    yeah: ['vox yeah', vox({ v: 'ee', to: 'ah', lvl: 3.2 })], hey: ['vox hey', vox({ v: 'eh', lvl: 2.6, hey: true })]
-  } },
-  fx: { label: 'FX', cat: 'FX', group: 'audio', gm: 60, sounds: {
+  fx: { label: 'FX', cat: 'FX', group: 'audio', gm: 72, sounds: {
     squeak: ['squeak', FX.squeak], reload: ['reload', FX.reload], shot: ['shot', FX.shot],
     airhorn: ['air horn', FX.airhorn], siren: ['siren', FX.siren], riser: ['riser', FX.riser],
     laser: ['laser', FX.laser], impact: ['impact', FX.impact], whistle: ['whistle', FX.whistle],
@@ -697,41 +617,105 @@ GR.wav = function (buf) {
   return new Blob([data], { type: 'audio/wav' });
 };
 
-GR.midi = function (P) {
-  const PPQ = 96, k = PPQ * 4 / TPB;   // our ticks to MIDI ticks
-  const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) | 0x80); return b; };
-  const str = s => Array.from(s).map(c => c.charCodeAt(0) & 0x7f);
-  const chunk = (id, bytes) => [...str(id), (bytes.length >>> 24) & 255, (bytes.length >>> 16) & 255, (bytes.length >>> 8) & 255, bytes.length & 255, ...bytes];
-  const tracks = [];
-  const us = Math.round(60000000 / P.bpm);
-  tracks.push([0, 0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255, 0, 0xff, 0x58, 4, 4, 2, 24, 8, 0, 0xff, 0x2f, 0]);
-  let chan = 0;
-  const loopT = P.bars * TPB;
+/* ---------- MIDI ----------
+   One note map, shared by MIDI export, MIDI import and the plugin's MIDI in/out:
+   drum, percussion and FX tracks are notes on channel 10 (General MIDI numbers, bumped up when two
+   tracks would share one); bass, 808 and log drum tracks each get their own channel, from channel 2. */
+GR.midiMap = function (P) {
+  const map = {}, used = new Set(); let ch = 1;
   P.tracks.forEach(tr => {
-    const inst = I[tr.inst]; const drum = !inst.pitched && tr.inst !== 'fx';
-    const c = drum ? 9 : chan; if (!drum) { chan++; if (chan === 9) chan++; if (chan > 15) chan = 0; }
-    const ev = []; const stepT = TPB / tr.res;
+    const inst = I[tr.inst]; if (!inst) return;
+    if (inst.pitched) { map[tr.id] = { ch: Math.min(ch, 15), note: null }; ch++; if (ch === 9) ch++; return; }
+    const snd = inst.sounds[tr.sound] || [];
+    let n = (snd[2] && snd[2].gm) || (tr.inst === 'fx' ? 72 + Math.max(0, Object.keys(inst.sounds).indexOf(tr.sound)) : inst.gm) || 60;
+    while (used.has(n) && n < 127) n++;
+    used.add(n); map[tr.id] = { ch: 9, note: n };
+  });
+  return map;
+};
+// MIDI events of the loop: [tick (PPQ 96), on/off, channel, note, velocity]
+GR.midiEvents = function (P, only) {
+  const PPQ = 96, k = PPQ * 4 / TPB, loopT = P.bars * TPB, map = GR.midiMap(P), out = {};
+  P.tracks.forEach(tr => {
+    if (only && tr.id !== only) return;
+    const inst = I[tr.inst], m = map[tr.id], ev = []; if (!m) return;
+    const stepT = TPB / tr.res;
     tr.notes.forEach(n => {
       if (n.t >= loopT) return;
       const roll = n.roll || 1;
       for (let r = 0; r < roll; r++) {
-        const t0 = Math.round((n.t + r * stepT / roll + (GR.swing(P, n.t, 1) && !r ? GR.swing(P, n.t, 1) : 0)) * k);
-        const len = Math.max(1, Math.round((inst.pitched ? (roll > 1 ? stepT / roll : (n.len || stepT)) : stepT / roll) * k) - 1);
-        const p = inst.pitched ? Math.max(0, Math.min(127, (n.p != null ? n.p : 60) + (tr.pitch || 0))) : (inst.gm || 60);
-        const v = Math.max(1, Math.min(127, Math.round(n.vel * 120)));
-        ev.push([t0, 1, 0x90 | c, p, v], [t0 + len, 0, 0x80 | c, p, 0]);
+        const t0 = Math.round((n.t + r * stepT / roll + GR.swing(P, n.t, 1)) * k);
+        const len = Math.max(1, Math.round((inst.pitched && roll === 1 ? (n.len || stepT) : stepT / roll) * k) - 1);
+        const p = inst.pitched ? Math.max(0, Math.min(127, (n.p != null ? n.p : 48) + (tr.pitch || 0))) : m.note;
+        const v = Math.max(1, Math.min(127, Math.round(n.vel * 127)));
+        ev.push([t0, 1, m.ch, p, v], [t0 + len, 0, m.ch, p, 0]);
       }
     });
     ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    out[tr.id] = ev;
+  });
+  return out;
+};
+GR.midi = function (P, only) {
+  const PPQ = 96, loopEnd = P.bars * PPQ * 4;
+  const vlq = n => { const b = [n & 0x7f]; while ((n >>= 7)) b.unshift((n & 0x7f) | 0x80); return b; };
+  const str = s => Array.from(new TextEncoder().encode(s));
+  const chunk = (id, bytes) => [...str(id), (bytes.length >>> 24) & 255, (bytes.length >>> 16) & 255, (bytes.length >>> 8) & 255, bytes.length & 255, ...bytes];
+  const us = Math.round(60000000 / P.bpm), tracks = [];
+  tracks.push([0, 0xff, 0x03, ...vlq(str(P.name || 'Groove Rack').length), ...str(P.name || 'Groove Rack'),
+    0, 0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255, 0, 0xff, 0x58, 4, 4, 2, 24, 8, 0, 0xff, 0x2f, 0]);
+  const evs = GR.midiEvents(P, only);
+  P.tracks.forEach(tr => {
+    const ev = evs[tr.id]; if (!ev) return;
     const name = str(tr.name);
     const bytes = [0, 0xff, 0x03, ...vlq(name.length), ...name];
     let last = 0;
-    ev.forEach(e => { bytes.push(...vlq(e[0] - last), e[2], e[3], e[4]); last = e[0]; });
-    bytes.push(...vlq(Math.max(0, loopT * k - last)), 0xff, 0x2f, 0);
+    ev.forEach(e => { bytes.push(...vlq(e[0] - last), (e[1] ? 0x90 : 0x80) | e[2], e[3], e[4]); last = e[0]; });
+    bytes.push(...vlq(Math.max(0, loopEnd - last)), 0xff, 0x2f, 0);
     tracks.push(bytes);
   });
-  const head = chunk('MThd', [0, 1, 0, tracks.length, 0, PPQ]);
-  const all = head.concat(...tracks.map(t => chunk('MTrk', t)));
+  const all = chunk('MThd', [0, 1, 0, tracks.length, 0, PPQ]).concat(...tracks.map(t => chunk('MTrk', t)));
   return new Blob([new Uint8Array(all)], { type: 'audio/midi' });
+};
+// read a Standard MIDI File into { bpm, ppq, tracks: [{ name, notes: [{ tick, len, ch, p, vel }] }] }
+GR.parseMidi = function (buf) {
+  const d = new DataView(buf); let o = 0;
+  const id = () => String.fromCharCode(d.getUint8(o), d.getUint8(o + 1), d.getUint8(o + 2), d.getUint8(o + 3));
+  if (id() !== 'MThd') throw new Error('not a MIDI file');
+  const hl = d.getUint32(o + 4); const ntr = d.getUint16(o + 10), div = d.getUint16(o + 12); o += 8 + hl;
+  if (div & 0x8000) throw new Error('SMPTE-timed MIDI files are not supported');
+  const res = { bpm: null, ppq: div, tracks: [] };
+  for (let ti = 0; ti < ntr && o < d.byteLength; ti++) {
+    while (o < d.byteLength && id() !== 'MTrk') { o += 8 + d.getUint32(o + 4); }
+    if (o >= d.byteLength) break;
+    const len = d.getUint32(o + 4), end = o + 8 + len; o += 8;
+    const tr = { name: '', notes: [] }, open = {};
+    let tick = 0, run = 0;
+    const vlq = () => { let v = 0, b; do { b = d.getUint8(o++); v = (v << 7) | (b & 0x7f); } while (b & 0x80); return v; };
+    while (o < end) {
+      tick += vlq();
+      let st = d.getUint8(o);
+      if (st & 0x80) o++; else st = run;
+      if (st === 0xff) {
+        const type = d.getUint8(o++), l = vlq();
+        if (type === 0x03 && !tr.name) tr.name = new TextDecoder().decode(new Uint8Array(buf, o, l));
+        if (type === 0x51 && res.bpm == null) res.bpm = Math.round(60000000 / ((d.getUint8(o) << 16) | (d.getUint8(o + 1) << 8) | d.getUint8(o + 2)) * 10) / 10;
+        o += l; continue;
+      }
+      if (st === 0xf0 || st === 0xf7) { o += vlq(); continue; }
+      run = st;
+      const type = st & 0xf0, ch = st & 0x0f, a = d.getUint8(o++), b = (type === 0xc0 || type === 0xd0) ? 0 : d.getUint8(o++);
+      const key = ch * 128 + a;
+      if (type === 0x90 && b > 0) { (open[key] = open[key] || []).push({ tick, ch, p: a, vel: b / 127 }); }
+      else if (type === 0x80 || (type === 0x90 && b === 0)) {
+        const n = open[key] && open[key].shift();
+        if (n) { n.len = Math.max(1, tick - n.tick); tr.notes.push(n); }
+      }
+    }
+    Object.values(open).forEach(list => list.forEach(n => { n.len = res.ppq / 4; tr.notes.push(n); }));
+    tr.notes.sort((x, y) => x.tick - y.tick);
+    res.tracks.push(tr); o = end;
+  }
+  return res;
 };
 })();

@@ -17,6 +17,26 @@ const ICON = {
   x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>'
 };
+/* ---------- plugin bridge ----------
+   Inside the Groove Rack plugin the page runs in the plugin's web view: the plugin plays the
+   sounds in sync with the DAW, and the page talks to it through JUCE's native functions. */
+const HOST = (() => {
+  const J = window.__JUCE__; if (!J || !J.backend) return null;
+  let next = 1; const waiting = new Map();
+  J.backend.addEventListener('__juce__complete', m => { const r = waiting.get(m.promiseId); if (r) { waiting.delete(m.promiseId); r(m.result); } });
+  return {
+    call(name, ...params) { return new Promise(res => { const id = next++; waiting.set(id, res); J.backend.emitEvent('__juce__invoke', { name, params, resultId: id }); }); },
+    on(ev, fn) { J.backend.addEventListener(ev, fn); }
+  };
+})();
+GR.HOST = HOST;
+const H = { playing: false, tick: 0, at: 0, bpm: 0, levels: {} };
+function bufToB64(buf) {
+  const u = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function b64ToBuf(b64) { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
 const RES_LABEL = { 12: '1/8 triplet', 16: '1/16', 24: '1/16 triplet', 32: '1/32' };
 
 /* ---------- state ---------- */
@@ -50,6 +70,7 @@ function resume() {
 }
 function audition(tr, note) {
   if (S.playing) return;
+  if (HOST) { HOST.call('audition', tr.id, note && note.p != null ? note.p : defaultPitch(tr), note ? note.vel : 0.85); return; }
   resume();
   const s = mix.strips[tr.id] || (GR.updateMix(mix, P, ui.muted), mix.strips[tr.id]);
   const inst = I[tr.inst];
@@ -62,6 +83,7 @@ function audition(tr, note) {
 const S = { playing: false, nextTick: 0, nextTime: 0, aTick: 0, aTime: 0, timer: 0, st: null, map: null };
 function tickMap() { if (!S.map) S.map = GR.buildTickMap(P); return S.map; }
 function play() {
+  if (HOST) { HOST.call('setPlaying', true); S.playing = true; H.playing = true; H.tick = 0; H.at = performance.now(); renderTransport(); return; }
   resume();
   S.st = GR.newState(); S.playing = true;
   S.nextTick = 0; S.nextTime = ctx.currentTime + 0.08; S.aTick = 0; S.aTime = S.nextTime;
@@ -69,6 +91,7 @@ function play() {
   renderTransport();
 }
 function stop() {
+  if (HOST) { HOST.call('setPlaying', false); S.playing = false; H.playing = false; renderTransport(); renderProgress(); return; }
   S.playing = false; clearInterval(S.timer);
   if (ctx && S.st) {
     const now = ctx.currentTime;
@@ -79,7 +102,8 @@ function stop() {
 function toggle() { S.playing ? stop() : play(); }
 function seek(bar) {
   ui.bar = clamp(bar, 0, P.bars - 1);
-  if (S.playing) {
+  if (HOST) HOST.call('seek', ui.bar);
+  else if (S.playing) {
     S.nextTick = ui.bar * TPB; S.nextTime = ctx.currentTime + 0.03; S.aTick = S.nextTick; S.aTime = S.nextTime;
   }
   renderRack(); renderRoll(); renderBarChip(); renderProgress(); renderPlaylistHead();
@@ -108,6 +132,12 @@ function metroClick(t, down) {
   o.connect(g).connect(mix.master); o.start(t); o.stop(t + 0.05);
 }
 function pos() {
+  if (HOST) {
+    if (!H.playing) return null;
+    const td = 60 / (H.bpm || P.bpm) * 4 / TPB, loopT = P.bars * TPB;
+    const p = H.tick + (performance.now() - H.at) / 1000 / td;
+    return ((p % loopT) + loopT) % loopT;
+  }
   if (!S.playing || !ctx) return null;
   const td = GR.tickDur(P), loopT = P.bars * TPB;
   const p = S.aTick + (ctx.currentTime - (ctx.outputLatency || 0) - S.aTime) / td;
@@ -121,8 +151,19 @@ function setBpm(v) {
 
 /* ---------- change pipeline ---------- */
 let saveT = 0;
+let syncT = 0;
+function syncHost() {
+  if (!HOST) return;
+  clearTimeout(syncT);
+  syncT = setTimeout(async () => {
+    let midi = '';
+    try { midi = bufToB64(await GR.midi(P).arrayBuffer()); } catch (e) {}
+    HOST.call('setProject', JSON.stringify(GR.pluginProject(P)), midi);
+  }, 40);
+}
 function changed() {
   S.map = null;
+  syncHost();
   if (mix) GR.updateMix(mix, P, ui.muted);
   if (ui.bar >= P.bars) ui.bar = P.bars - 1;
   clearTimeout(saveT); saveT = setTimeout(autosave, 400);
@@ -331,7 +372,6 @@ function renderRoll() {
     </div>
     <div class="rtools">
       <button class="chip" data-act="song" title="Key and scale">${esc(keyName)}</button>
-      <div class="seg" role="group" aria-label="Chord mode">${['note', 'triad', '7th'].map((l, i) => `<button data-chord="${i ? i + 2 : 0}" class="${ui.chord === (i ? i + 2 : 0) ? 'on' : ''}">${l}</button>`).join('')}</div>
       <button class="chip" data-act="scaleonly" aria-pressed="${ui.scaleOnly}" style="${ui.scaleOnly ? 'color:var(--gold)' : ''}">scale only</button>
       <span class="sp"></span>
       <button class="ib" data-act="octdown" aria-label="Octave down" title="Octave down">▼</button>
@@ -375,7 +415,7 @@ function drawRollNotes() {
     if (above) bits.push(`${above} note${above > 1 ? 's' : ''} above — press ▲`);
     if (below) bits.push(`${below} note${below > 1 ? 's' : ''} below — press ▼`);
     if (hidden) bits.push(`${hidden} outside the scale — turn off “scale only”`);
-    hint.textContent = bits.length ? bits.join(' · ') : 'Tap to add a note and drag right to make it longer. Drag a note to move it, tap it to delete, hold it for velocity and slide.';
+    hint.textContent = bits.length ? bits.join(' · ') : 'Tap to add a bass note and drag right to make it longer. Drag a note to move it, tap it to delete, hold it for velocity and slide.';
   }
 }
 
@@ -449,12 +489,17 @@ function frame() {
     if (ph) ph.hidden = true;
   }
   if (S.playing) renderProgress();
-  if (!mix) return;
+  if (!mix && !HOST) return;
   document.querySelectorAll('[data-meter]').forEach(m => {
-    const id = m.dataset.meter, s = mix.strips[id]; if (!s || !s.an) return;
-    s.an.getFloatTimeDomainData(tmp);
-    let pk = 0, sq = 0; for (let i = 0; i < tmp.length; i++) { const v = Math.abs(tmp[i]); if (v > pk) pk = v; sq += v * v; }
-    const rms = Math.sqrt(sq / tmp.length);
+    const id = m.dataset.meter;
+    let pk = 0, rms = 0;
+    if (HOST) { const l = H.levels[id]; if (l) { pk = l[0]; rms = l[1]; } }
+    else {
+      const s = mix.strips[id]; if (!s || !s.an) return;
+      s.an.getFloatTimeDomainData(tmp);
+      let sq = 0; for (let i = 0; i < tmp.length; i++) { const v = Math.abs(tmp[i]); if (v > pk) pk = v; sq += v * v; }
+      rms = Math.sqrt(sq / tmp.length);
+    }
     const o = lv[id] || (lv[id] = { a: 0, b: 0 });
     o.a = Math.max(Math.min(1, pk * 1.4), o.a * 0.88); o.b = Math.max(Math.min(1, rms * 3), o.b * 0.9);
     m.style.setProperty('--l', o.a.toFixed(3)); m.style.setProperty('--l2', o.b.toFixed(3));
@@ -544,6 +589,7 @@ function onMixInput(e) {
   if (!inp._c) { commit(); inp._c = 1; }
   tr[inp.dataset.k] = +inp.value;
   if (mix) GR.updateMix(mix, P, ui.muted);
+  syncHost();
   clearTimeout(saveT); saveT = setTimeout(autosave, 400);
 }
 function onMixChange(e) { const inp = e.target.closest('input[data-k]'); if (inp) { inp._c = 0; settle(); wavesSoon(); } }
@@ -567,8 +613,8 @@ function onRollDown(e) {
     group = [hit];
   } else {
     mode = 'new';
-    group = chordFrom(p0, ui.chord).map(p => addNote(tr, tick0, { p, len: tr.lastLen || stepT * 2, vel: 0.85 }));
-    group.forEach((n, i) => setTimeout(() => audition(tr, n), i * 4));
+    group = [addNote(tr, tick0, { p: p0, len: tr.lastLen || stepT * 2, vel: 0.85 })];
+    audition(tr, group[0]);
     drawRollNotes();
   }
   const orig = group.map(n => ({ t: n.t, p: n.p, len: n.len }));
@@ -605,10 +651,9 @@ function onRollDown(e) {
   cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 }
 function onRollClick(e) {
-  const b = e.target.closest('[data-act],[data-chord],[data-key]'); if (!b) return;
+  const b = e.target.closest('[data-act],[data-key]'); if (!b) return;
   const tr = selTrack(); if (!tr) return;
   if (b.dataset.key) { audition(tr, { p: +b.dataset.key, vel: 0.85 }); return; }
-  if (b.dataset.chord != null) { ui.chord = +b.dataset.chord; renderRoll(); return; }
   const a = b.dataset.act;
   if (a === 'closeroll') { ui.rollOpen = false; renderRoll(); }
   else if (a === 'octup') { tr.low = Math.min(96, tr.low + 12); ui._rollFor = null; renderRoll(); autosave(); }
@@ -737,7 +782,7 @@ function channelSheet(tr) {
     <div class="sh-sec"><h4>Name</h4><input class="txt" id="c_name" value="${esc(tr.name)}" maxlength="24" autocomplete="off"></div>
     <div class="sh-sec"><h4>Sound</h4>
       <div class="btns" style="margin-bottom:8px"><select class="txt" id="c_inst" style="width:auto" aria-label="Instrument">${instOpts}</select>
-        <button class="b sm" data-act="file">${tr.sample ? 'Replace sound file' : 'Use a sound file…'}</button>
+        <button class="b sm gold" data-act="file">${tr.sample ? 'Replace sample…' : 'Use your own sample…'}</button>
         ${tr.sample ? `<button class="b sm" data-act="unsample">Back to synth (${esc(tr.sampleName || 'file')})</button>` : ''}</div>
       <div class="btns">${sounds}</div></div>
     <div class="sh-sec"><h4>Steps per bar</h4><div class="seg">${[12, 16, 24, 32].map(r => `<button data-res="${r}" class="${r === tr.res ? 'on' : ''}" title="${RES_LABEL[r]}">${r}</button>`).join('')}</div>
@@ -753,6 +798,8 @@ function channelSheet(tr) {
       <button class="b sm" data-shift="-1" aria-label="Shift left">◀ Shift</button><button class="b sm" data-shift="1" aria-label="Shift right">Shift ▶</button>
       <button class="b sm" data-act="random">Randomize</button><button class="b sm" data-act="copyall">Copy to all bars</button>
       <button class="b sm warn" data-act="clearbar">Clear bar</button><button class="b sm warn" data-act="clearall">Clear all bars</button></div></div>
+    <div class="sh-sec"><h4>MIDI</h4><div class="btns"><button class="b sm" data-act="midiin">Import MIDI into ${esc(tr.name)}…</button><button class="b sm" data-act="midiout">Export ${esc(tr.name)} as MIDI</button></div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">In the plugin this track plays from MIDI ${midiLabel(tr)}, and sends the same notes out.</p></div>
     <div class="sh-sec"><h4>Track</h4><div class="btns"><button class="b sm" data-act="dup">Duplicate</button><button class="b sm warn" data-act="del">Delete track</button></div></div>`, sh => {
     const name = sh.querySelector('#c_name');
     name.addEventListener('change', () => edit(() => { tr.name = name.value.trim() || inst.label; }));
@@ -792,6 +839,8 @@ function channelSheet(tr) {
       } else {
         const a = b.dataset.act;
         if (a === 'file') pickSample(tr);
+        else if (a === 'midiin') importMidiFile(tr);
+        else if (a === 'midiout') { download(GR.midi(P, tr.id), fileName('mid').replace('.mid', `_${tr.name.replace(/[^\w]+/g, '')}.mid`)); toast('MIDI file ready'); }
         else if (a === 'unsample') { edit(() => { tr.sample = null; tr.sampleName = null; }); channelSheet(tr); }
         else if (a === 'mute') { edit(() => { tr.mute = !tr.mute; }); b.classList.toggle('on', tr.mute); b.textContent = tr.mute ? 'Muted' : 'Mute'; }
         else if (a === 'solo') { edit(() => { tr.solo = !tr.solo; }); b.classList.toggle('on', tr.solo); b.textContent = tr.solo ? 'Soloed' : 'Solo'; }
@@ -856,12 +905,126 @@ function noteSheet(tr, n) {
   });
 }
 
+function soundSheet(tr) {
+  const inst = I[tr.inst];
+  const sounds = Object.entries(inst.sounds).map(([k, v]) => `<button class="b sm${!tr.sample && k === tr.sound ? ' on' : ''}" data-snd="${k}">${v[0]}</button>`).join('');
+  openSheet(`${tr.name} · sound`, `
+    <div class="sh-sec"><h4>Your own sample</h4><div class="btns">
+      <button class="b sm gold" data-act="file">${tr.sample ? 'Replace sample…' : 'Choose a sample…'}</button>
+      ${tr.sample ? `<button class="b sm on" disabled>${esc(tr.sampleName || 'sample')}</button><button class="b sm" data-act="unsample">Back to built-in</button>` : ''}</div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">WAV, AIFF, MP3 or FLAC. You can also drop a file straight onto a track. ${inst.pitched ? 'A melodic sample is treated as C3 and pitched to each note.' : ''}</p></div>
+    <div class="sh-sec"><h4>Built-in ${esc(inst.label.toLowerCase())} sounds</h4><div class="btns">${sounds}</div></div>
+    <div class="sh-sec"><div class="btns"><button class="b sm" data-act="more">All settings for ${esc(tr.name)}</button></div></div>`, sh => {
+    sh.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.snd) {
+        edit(() => { tr.sound = b.dataset.snd; tr.sample = null; tr.sampleName = null; });
+        sh.querySelectorAll('[data-snd]').forEach(x => x.classList.toggle('on', x === b)); audition(tr);
+      } else if (b.dataset.act === 'file') pickSample(tr);
+      else if (b.dataset.act === 'unsample') { edit(() => { tr.sample = null; tr.sampleName = null; }); soundSheet(tr); }
+      else if (b.dataset.act === 'more') channelSheet(tr);
+    });
+  });
+}
+
+/* ---------- MIDI import ---------- */
+// pick a file: a hidden input in the browser, the plugin's own dialog inside a DAW
+let pickRes = null;
+function chooseFile(accept, pattern) {
+  if (HOST) return HOST.call('openFile', pattern).then(r => (r && r.data ? { name: r.name, buf: b64ToBuf(r.data) } : null));
+  return new Promise(res => {
+    pickRes = res; const inp = $('#anyIn'); inp.accept = accept; inp.value = ''; inp.click();
+  });
+}
+function findSoundForGm(note) {
+  for (const inst of Object.values(I)) {
+    if (inst.pitched) continue;
+    for (const [k, v] of Object.entries(inst.sounds)) if (v[2] && v[2].gm === note) return [inst.id, k];
+  }
+  const alias = { 35: 'kick', 36: 'kick', 37: 'rim', 38: 'snare', 40: 'snare', 39: 'clap', 42: 'hat', 44: 'hat', 46: 'openhat', 49: 'cymbal', 57: 'cymbal', 51: 'cymbal', 59: 'cymbal',
+    41: 'tom', 43: 'tom', 45: 'tom', 47: 'tom', 48: 'tom', 50: 'tom', 54: 'shaker', 56: 'bell', 69: 'shaker', 70: 'shaker', 31: 'snap', 75: 'block', 76: 'block', 77: 'block' };
+  return alias[note] ? [alias[note], null] : null;
+}
+async function importMidiFile(target) {
+  const f = await chooseFile('.mid,.midi,audio/midi', '*.mid;*.midi');
+  if (f) importMidi(f.buf, target, f.name);
+}
+function importMidi(buf, target, fileName) {
+  let mf;
+  try { mf = GR.parseMidi(buf); } catch (e) { toast('That file is not a MIDI file Groove Rack can read'); return; }
+  const k = TPB / (mf.ppq * 4), all = [];
+  mf.tracks.forEach(t => t.notes.forEach(n => all.push(Object.assign({ track: t.name }, n))));
+  if (!all.length) { toast('That MIDI file has no notes'); return; }
+  const last = Math.max(...all.map(n => n.tick * k));
+  const bars = clamp(Math.ceil((last + 1) / TPB), 1, 8);
+  let skipped = 0;
+  const sw = (P.swing / 100) * 3;
+  const put = (tr, n) => {
+    const stepT = TPB / tr.res;
+    let x = n.tick * k;
+    if (sw && Math.abs(((x - sw) % 12 + 12) % 12 - 6) < 0.6) x -= sw;   // undo swing on off-beat 16ths
+    const exact = x / stepT, near = Math.round(exact);
+    if (I[tr.inst].pitched) {
+      const t = near * stepT; if (t >= bars * TPB) return;
+      tr.notes.push({ t, p: n.p, len: Math.max(stepT, Math.round(n.len * k / stepT) * stepT), vel: n.vel });
+      return;
+    }
+    if (Math.abs(exact - near) > 0.2) {   // a hit between steps: part of a roll in the step before it
+      const t = Math.floor(exact) * stepT; if (t >= bars * TPB) return;
+      const host = tr.notes.find(y => y.t === t);
+      if (host) host.roll = Math.min(4, (host.roll || 1) + 1); else tr.notes.push({ t, vel: n.vel });
+      return;
+    }
+    const t = near * stepT; if (t >= bars * TPB) return;
+    const ex = tr.notes.find(y => y.t === t);
+    if (!ex) tr.notes.push({ t, vel: n.vel });
+  };
+  commit();
+  P.bars = Math.max(bars, target ? P.bars : 1);
+  if (target) {
+    target.notes = [];
+    all.forEach(n => put(target, n));
+    sortNotes(target);
+  } else {
+    if (mf.bpm) P.bpm = clamp(mf.bpm, 40, 240);
+    const map = GR.midiMap(P), touched = new Set();
+    const touch = tr => { if (!touched.has(tr.id)) { touched.add(tr.id); tr.notes = []; } return tr; };
+    const byNote = {}, byCh = {};
+    P.tracks.forEach(tr => { const m = map[tr.id]; if (!m) return; if (m.note != null) byNote[m.note] = tr; else byCh[m.ch] = tr; });
+    all.forEach(n => {
+      let tr = n.track && P.tracks.find(t => t.name.toLowerCase() === n.track.toLowerCase());
+      if (!tr) tr = byCh[n.ch] && n.ch !== 9 ? byCh[n.ch] : null;
+      if (!tr && (n.ch === 9 || byNote[n.p])) {
+        tr = byNote[n.p];
+        if (!tr) {
+          const s = findSoundForGm(n.p);
+          if (s) { tr = GR.newTrack(s[0], s[1]); P.tracks.push(tr); byNote[n.p] = tr; }
+        }
+      }
+      if (!tr && n.ch !== 9) {
+        tr = P.tracks.find(t => I[t.inst].pitched);
+        if (!tr) { tr = GR.newTrack('b808', 'clean'); P.tracks.push(tr); }
+        byCh[n.ch] = tr;
+      }
+      if (!tr) { skipped++; return; }
+      put(touch(tr), n);
+    });
+    P.tracks.forEach(sortNotes);
+  }
+  changed(); settle(); closeSheet();
+  toast(`Imported ${fileName || 'MIDI'}${target ? ' into ' + target.name : ''} · ${bars} bar${bars > 1 ? 's' : ''}${skipped ? ` · ${skipped} notes had no matching drum` : ''}`, 3200);
+}
+function midiLabel(tr) {
+  const m = GR.midiMap(P)[tr.id]; if (!m) return '';
+  return m.note != null ? `note ${GR.noteName(m.note)} (${m.note}) on any channel` : `channel ${m.ch + 1}, notes at their pitch`;
+}
+
 function addSheet() {
   const cats = {};
   Object.values(I).forEach(x => { (cats[x.cat] = cats[x.cat] || []).push(x); });
   const html = Object.entries(cats).map(([cat, list]) => `<div class="sh-sec"><h4>${cat}</h4>${list.map(x => `<div class="inst"><b>${x.label}</b><div class="btns">${Object.entries(x.sounds).map(([k, v]) => `<button class="b sm" data-inst="${x.id}" data-s="${k}">${v[0]}</button>`).join('')}</div></div>`).join('')}</div>`).join('')
-    + `<div class="sh-sec"><h4>Your own sound</h4><div class="btns"><button class="b sm" data-file="fx">One-shot from a file</button><button class="b sm" data-file="keys">Playable instrument from a file</button></div>
-       <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">A playable file is treated as middle C and pitched across the piano roll. Files stay in this browser.</p></div>`;
+    + `<div class="sh-sec"><h4>Your own sample</h4><div class="btns"><button class="b sm" data-file="fx">Drum or one-shot from a file</button><button class="b sm" data-file="bass">Bass from a file</button></div>
+       <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">A bass sample is treated as C3 and pitched across the piano roll.</p></div>`;
   openSheet(`${P.tracks.length} tracks · add one`, html, sh => {
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -871,7 +1034,7 @@ function addSheet() {
         edit(() => P.tracks.push(t)); ui.group = t.group; ui.sel = t.id; ui.rollOpen = true; waves.clear();
         closeSheet(); changed(); audition(t); toast(`Added ${t.name}`);
       } else if (b.dataset.file) {
-        const t = GR.newTrack(b.dataset.file, null, { name: 'Sample' });
+        const t = GR.newTrack(b.dataset.file, null, { name: 'Sample', group: b.dataset.file === 'fx' ? 'drums' : 'audio' });
         pickSample(t, true);
       }
     });
@@ -889,8 +1052,10 @@ function menuSheet() {
     <div class="sh-sec"><h4>Export</h4><div class="btns">
       <button class="b sm" data-wav="1">WAV loop</button><button class="b sm" data-wav="2">WAV × 2</button><button class="b sm" data-wav="4">WAV × 4</button>
       <button class="b sm" data-act="stems">WAV stems</button><button class="b sm" data-act="midi">MIDI file</button></div>
+      <h4 style="margin-top:14px">MIDI in</h4><div class="btns"><button class="b sm" data-act="midiimport">Import MIDI file…</button></div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Drum notes go to the track with the same note (General MIDI numbers, or the names of tracks exported from here). Other channels go to the bass. You can also drop a .mid file on the page, or on one track.</p>
       <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">WAV files loop cleanly: reverb and echo tails wrap around to the start. MIDI has a track per instrument, drums on channel 10.</p></div>
-    <div class="sh-sec"><h4>Share</h4><div class="btns"><button class="b sm" data-act="link">Copy share link</button><button class="b sm" data-act="json">Project file</button><button class="b sm" data-act="import">Open project file…</button></div></div>
+    <div class="sh-sec"><h4>Share</h4><div class="btns">${HOST ? '' : '<button class="b sm" data-act="link">Copy share link</button>'}<button class="b sm" data-act="json">Project file</button><button class="b sm" data-act="import">Open project file…</button></div></div>
     <div class="sh-sec"><h4>History</h4><div class="btns"><button class="b sm" data-act="undo">Undo</button><button class="b sm" data-act="redo">Redo</button></div></div>
     <div class="sh-sec"><h4>Keyboard</h4><div class="keys-list">
       <kbd>Space</kbd><span>Play / stop</span><kbd>← →</kbd><span>Previous / next bar</span><kbd>↑ ↓</kbd><span>Select track</span>
@@ -919,9 +1084,10 @@ function menuSheet() {
           toast(store.set('groove-rack.saved', JSON.stringify(saved)) ? `Saved “${P.name}”` : 'This browser blocks saving'); menuSheet();
         }
         else if (a === 'midi') { download(GR.midi(P), fileName('mid')); toast('MIDI file ready'); }
+        else if (a === 'midiimport') importMidiFile(null);
         else if (a === 'stems') exportStems();
         else if (a === 'json') download(new Blob([snap()], { type: 'application/json' }), fileName('json'));
-        else if (a === 'import') $('#projIn').click();
+        else if (a === 'import') chooseFile('.json,application/json', '*.json').then(f => { if (!f) return; try { const data = JSON.parse(new TextDecoder().decode(f.buf)); commit(); load(data, true); closeSheet(); toast(`Opened ${f.name}`); } catch (err) { toast('That file is not a Groove Rack project'); } });
         else if (a === 'link') shareLink();
         else if (a === 'undo') undo();
         else if (a === 'redo') redo();
@@ -933,6 +1099,10 @@ function menuSheet() {
 /* ---------- files ---------- */
 const fileName = ext => `${(P.name || 'beat').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'beat'}_${P.bpm}bpm.${ext}`;
 function download(blob, name) {
+  if (HOST) {
+    blob.arrayBuffer().then(b => HOST.call('saveFile', name, bufToB64(b))).then(p => { if (p) toast('Saved ' + p); });
+    return;
+  }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 30000);
@@ -998,25 +1168,54 @@ const idb = {
   async get(k) { const db = await this.open(); return new Promise((res, rej) => { const r = db.transaction('samples').objectStore('samples').get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 };
 let sampleTarget = null;
-function pickSample(tr, isNew) { sampleTarget = { tr, isNew }; $('#fileIn').value = ''; $('#fileIn').click(); }
-async function onSampleFile(file) {
+function pickSample(tr, isNew) {
+  if (HOST) {
+    HOST.call('pickSample').then(r => { if (r && r.path) hostSample(tr, isNew, r); });
+    return;
+  }
+  sampleTarget = { tr, isNew }; $('#fileIn').value = ''; $('#fileIn').click();
+}
+function applySample(tr, isNew, id, fileName) {
+  const nm = fileName.replace(/\.[^.]+$/, '').slice(0, 20);
+  edit(() => {
+    tr.sample = id; tr.sampleName = nm;
+    if (isNew) { tr.name = nm.slice(0, 14) || 'Sample'; P.tracks.push(tr); }
+  });
+  if (isNew) { ui.group = tr.group; ui.sel = tr.id; }
+  waves.delete(tr.id); changed();
+  closeSheet(); audition(tr); toast(`${tr.name} now plays ${fileName}`);
+}
+// the plugin reads the file from disk; the page gets the audio only to draw it and bounce WAVs
+async function hostSampleBuffer(path) {
+  const r = await HOST.call('getSample', path);
+  if (!r || !r.frames) return null;
+  const pcm = new Int16Array(b64ToBuf(r.data)), buf = new AudioBuffer({ length: r.frames, numberOfChannels: r.channels, sampleRate: r.sampleRate });
+  for (let c = 0; c < r.channels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < r.frames; i++) d[i] = pcm[i * r.channels + c] / 32768; }
+  return buf;
+}
+async function hostSample(tr, isNew, r) {
+  const id = 'file:' + r.path;
+  try { const buf = await hostSampleBuffer(r.path); if (buf) GR.samples.set(id, buf); } catch (e) { console.warn(e); }
+  applySample(tr, isNew, id, r.name);
+}
+async function onSampleFile(file, target) {
+  if (target) sampleTarget = target;
   if (!file || !sampleTarget) return;
   const { tr, isNew } = sampleTarget; sampleTarget = null;
   try {
-    audio();
     const ab = await file.arrayBuffer();
+    if (HOST) {
+      const r = await HOST.call('storeSample', file.name, bufToB64(ab));
+      if (!r || !r.path) throw new Error('the plugin could not read it');
+      return hostSample(tr, isNew, r);
+    }
+    audio();
     const buf = await new Promise((res, rej) => ctx.decodeAudioData(ab.slice(0), res, rej));
     const id = 's' + Date.now().toString(36);
     GR.samples.set(id, buf);
     try { await idb.put(id, { name: file.name, data: ab }); } catch (e) { console.warn(e); }
-    const nm = file.name.replace(/\.[^.]+$/, '').slice(0, 20);
-    edit(() => {
-      tr.sample = id; tr.sampleName = nm;
-      if (isNew) { tr.name = nm.slice(0, 14) || 'Sample'; P.tracks.push(tr); }
-    });
-    if (isNew) { ui.group = tr.group; ui.sel = tr.id; waves.clear(); changed(); }
-    closeSheet(); audition(tr); toast(`Loaded ${file.name}`);
-  } catch (e) { console.error(e); toast('That file is not audio this browser can play'); }
+    applySample(tr, isNew, id, file.name);
+  } catch (e) { console.error(e); toast('That file is not audio Groove Rack can play'); }
 }
 let samplesP = Promise.resolve();
 function loadSamples() {
@@ -1024,6 +1223,12 @@ function loadSamples() {
     for (const tr of P.tracks) {
       if (!tr.sample || GR.samples.has(tr.sample)) continue;
       try {
+        if (tr.sample.startsWith('file:')) {
+          const buf = HOST ? await hostSampleBuffer(tr.sample.slice(5)) : null;
+          if (buf) GR.samples.set(tr.sample, buf);
+          else toast(`${tr.name} uses a file from the plugin. Here it plays its built-in sound.`);
+          continue;
+        }
         const rec = await idb.get(tr.sample);
         if (!rec) { toast(`The sound file for ${tr.name} is not in this browser. It plays its synth sound.`); continue; }
         audio();
@@ -1062,19 +1267,14 @@ function wire() {
     renderAll(); wavesSoon();
   });
   $('#menuBtn').addEventListener('click', menuSheet);
-  $('#muteBtn').addEventListener('click', () => { ui.muted = !ui.muted; if (mix) GR.updateMix(mix, P, ui.muted); renderRackHead(); });
+  $('#muteBtn').addEventListener('click', () => { ui.muted = !ui.muted; if (mix) GR.updateMix(mix, P, ui.muted); if (HOST) HOST.call('setMuted', ui.muted); renderRackHead(); });
   $('#barBtn').addEventListener('click', barSheet);
   $('#mixBtn').addEventListener('click', () => { ui.view = ui.view === 'mix' ? 'steps' : 'mix'; renderRackHead(); renderRack(); });
   $('#stepBtn').addEventListener('click', () => { ui.view = ui.view === 'steps' ? 'mix' : 'steps'; renderRackHead(); renderRack(); });
   $('#foldBtn').addEventListener('click', () => { ui.folded = !ui.folded; renderRackHead(); renderRoll(); });
   $('#bpmBtn').addEventListener('click', songSheet);
   $('#tracksBtn').addEventListener('click', addSheet);
-  $('#soundBtn').addEventListener('click', () => {
-    const tr = selTrack(); if (!tr) return addSheet();
-    const keys = Object.keys(I[tr.inst].sounds);
-    edit(() => { tr.sound = keys[(keys.indexOf(tr.sound) + 1) % keys.length]; tr.sample = null; tr.sampleName = null; });
-    audition(tr);
-  });
+  $('#soundBtn').addEventListener('click', () => { const tr = selTrack(); if (!tr) return addSheet(); soundSheet(tr); });
   $('#progress').addEventListener('click', e => { const b = e.target.closest('[data-bar]'); if (b) seek(+b.dataset.bar); });
 
   // master knob: drag up or down
@@ -1082,7 +1282,7 @@ function wire() {
   knob.addEventListener('pointerdown', e => {
     e.preventDefault(); const y0 = e.clientY, m0 = P.master; commit();
     try { knob.setPointerCapture(e.pointerId); } catch (err) {}
-    const mv = ev => { P.master = clamp(m0 - (ev.clientY - y0) / 160, 0, 1); if (mix) GR.updateMix(mix, P, ui.muted); renderRackHead(); hud(`master ${Math.round(P.master * 100)}%`); };
+    const mv = ev => { P.master = clamp(m0 - (ev.clientY - y0) / 160, 0, 1); if (mix) GR.updateMix(mix, P, ui.muted); syncHost(); renderRackHead(); hud(`master ${Math.round(P.master * 100)}%`); };
     const up = () => { knob.removeEventListener('pointermove', mv); knob.removeEventListener('pointerup', up); knob.removeEventListener('pointercancel', up); hud(null); settle(); autosave(); };
     knob.addEventListener('pointermove', mv); knob.addEventListener('pointerup', up); knob.addEventListener('pointercancel', up);
   });
@@ -1123,6 +1323,30 @@ function wire() {
   roll.addEventListener('contextmenu', e => { if (e.target.closest('#rcanvas')) e.preventDefault(); });
 
   $('#fileIn').addEventListener('change', e => onSampleFile(e.target.files[0]));
+  $('#anyIn').addEventListener('change', async e => {
+    const f = e.target.files[0], res = pickRes; pickRes = null;
+    if (res) res(f ? { name: f.name, buf: await f.arrayBuffer() } : null);
+  });
+  // drop a sample on a track to replace its sound; drop a .mid on a track or anywhere to import it
+  let dropRow = null;
+  document.addEventListener('dragover', e => {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+    const row = e.target.closest && e.target.closest('.row');
+    if (row !== dropRow) { document.querySelectorAll('.row.drop').forEach(r => r.classList.remove('drop')); dropRow = row; if (row) document.querySelectorAll(`.row[data-id="${row.dataset.id}"]`).forEach(r => r.classList.add('drop')); }
+  });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) { document.querySelectorAll('.row.drop').forEach(r => r.classList.remove('drop')); dropRow = null; } });
+  document.addEventListener('drop', async e => {
+    e.preventDefault();
+    document.querySelectorAll('.row.drop').forEach(r => r.classList.remove('drop')); dropRow = null;
+    const f = e.dataTransfer && e.dataTransfer.files[0]; if (!f) return;
+    const row = e.target.closest && e.target.closest('.row'), tr = row ? track(row.dataset.id) : null;
+    if (/\.midi?$/i.test(f.name)) { importMidi(await f.arrayBuffer(), tr, f.name); return; }
+    if (/\.json$/i.test(f.name)) { try { const data = JSON.parse(await f.text()); commit(); load(data, true); toast(`Opened ${f.name}`); } catch (err) { toast('That file is not a Groove Rack project'); } return; }
+    const target = tr || selTrack();
+    if (!target) { onSampleFile(f, { tr: GR.newTrack('fx', null, { name: 'Sample', group: 'drums' }), isNew: true }); return; }
+    onSampleFile(f, { tr: target, isNew: false });
+  });
   $('#projIn').addEventListener('change', async e => {
     const f = e.target.files[0]; if (!f) return;
     try { const data = JSON.parse(await f.text()); commit(); load(data, true); closeSheet(); toast(`Opened ${f.name}`); }
@@ -1161,9 +1385,21 @@ function wire() {
 /* ---------- start ---------- */
 async function init() {
   let start = null;
+  if (HOST) {
+    document.documentElement.classList.add('in-plugin');
+    HOST.on('state', s => {
+      const was = S.playing;
+      H.playing = !!s.playing; H.tick = s.tick || 0; H.at = performance.now(); H.bpm = s.bpm || 0; H.levels = s.levels || {}; H.host = !!s.host;
+      S.playing = H.playing;
+      if (was !== S.playing) { renderTransport(); renderProgress(); }
+      const shown = H.bpm ? Math.round(H.bpm * 10) / 10 : P.bpm;
+      const el = $('#bpmVal'); if (el && el.textContent != String(shown)) el.textContent = shown;
+    });
+    try { const saved = await HOST.call('getProject'); if (saved) start = JSON.parse(saved); } catch (e) { start = null; }
+  }
   const m = /#p=([\w-]+)/.exec(location.hash);
   if (m) { try { start = JSON.parse(await unb64url(m[1])); history.replaceState(null, '', location.pathname + location.search); } catch (e) { console.warn(e); } }
-  if (!start) { try { start = JSON.parse(store.get('groove-rack.current') || 'null'); } catch (e) { start = null; } }
+  if (!start && !HOST) { try { start = JSON.parse(store.get('groove-rack.current') || 'null'); } catch (e) { start = null; } }
   if (!start || !start.tracks) start = GR.buildPreset(GR.PRESETS[0]);
   load(start);
   if (m && start) toast('Opened shared beat · press play');
@@ -1171,5 +1407,5 @@ async function init() {
   requestAnimationFrame(frame);
 }
 init();
-GR.app = { get P() { return P; }, ui, play, stop, load, seek };
+GR.app = { get P() { return P; }, ui, play, stop, load, seek, importMidi };
 })();
