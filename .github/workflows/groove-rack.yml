@@ -10,6 +10,11 @@ on:
   pull_request:
     paths: ["groove-rack/**", ".github/workflows/groove-rack.yml"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a release with this tag, e.g. groove-rack-v0.2.0 (leave empty to only build)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -86,8 +91,10 @@ jobs:
           name: GrooveRack-${{ matrix.name }}
           path: groove-rack/plugin/dist/GrooveRack-${{ matrix.name }}.zip
 
+  # Runs for a pushed groove-rack-v* tag, or for "Run workflow" with a release tag filled in
+  # (then the tag is created here, on the commit that was built).
   release:
-    if: startsWith(github.ref, 'refs/tags/groove-rack-v')
+    if: startsWith(github.ref, 'refs/tags/groove-rack-v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'groove-rack-v'))
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -98,6 +105,25 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --title "Groove Rack ${GITHUB_REF_NAME#groove-rack-v}" --notes \
-            "Download the zip for your computer, unzip it and follow INSTALL.md inside. VST3 works in most DAWs; macOS also gets an Audio Unit for Logic and GarageBand. Each zip also has a standalone app."
+          version="${TAG#groove-rack-v}"
+          cat > notes.md <<EOF
+          **Groove Rack $version**, the GR-16 drum and bass groove machine, as a plugin for your DAW.
+
+          | Your computer | Download | Inside |
+          |---|---|---|
+          | Windows 10 / 11 | **GrooveRack-Windows.zip** | VST3 + standalone app |
+          | macOS 10.15 or later (Intel and Apple Silicon) | **GrooveRack-macOS.zip** | VST3, Audio Unit (Logic, GarageBand) + standalone app |
+          | Linux | **GrooveRack-Linux.zip** | VST3 + standalone app |
+
+          Unzip it and follow **INSTALL.md** inside. In short: on Windows copy \`Groove Rack.vst3\` to \`C:\\Program Files\\Common Files\\VST3\\\`; on macOS copy the VST3 to \`~/Library/Audio/Plug-Ins/VST3/\` and the component to \`~/Library/Audio/Plug-Ins/Components/\`, then run the one Terminal command in INSTALL.md (these builds are not notarized by Apple). Rescan plugins in your DAW and load **Groove Rack** as an instrument.
+
+          **What it does:** 15 genre starters, a GENERATE key and a dice on every channel that write new drum and bass patterns in the genre's style, your own samples on any channel, tempo locked to your DAW, MIDI out of the pattern, DAW notes play the channels, and a strip to drag the loop into your DAW as MIDI.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Groove Rack $version" --notes-file notes.md --latest
+          fi

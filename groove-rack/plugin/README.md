@@ -29,3 +29,7 @@ It plays the default beat through the engine the way a DAW would (8 bars at 150 
 ```
 node groove-rack/plugin/tools/render-kit.js      # needs Playwright with Chromium
 ```
+
+## Release
+
+GitHub Actions builds every change. To publish a release with the downloads, either push a tag such as `groove-rack-v0.3.0`, or open **Actions → groove rack plugin → Run workflow** and fill in **release_tag**: the workflow builds Windows, macOS and Linux, creates the tag on that commit and publishes the release with the three zips and install notes.
