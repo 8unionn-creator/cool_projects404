@@ -2,7 +2,8 @@
 
 using namespace juce;
 
-static const Colour bg (0xff221816), panel (0xff2e2321), cream (0xfff2e5d3), gold (0xffe8b84a), muted (0xff988a83);
+// the GR-16 palette from the web UI
+static const Colour bg (0xff0b0e17), panel (0xff12151d), cream (0xfff3f4f6), gold (0xff49e8d0), muted (0xff7c818d);
 
 //==============================================================================
 MidiDragStrip::MidiDragStrip (GrooveRackProcessor& p) : proc (p)
@@ -16,6 +17,14 @@ void MidiDragStrip::paint (Graphics& g)
     g.fillAll (panel);
     g.setColour (Colours::white.withAlpha (0.08f));
     g.fillRect (0, 0, getWidth(), 1);
+    // a dashed outline like the DRAG MIDI pad in the UI
+    Path outline;
+    outline.addRoundedRectangle (getLocalBounds().toFloat().reduced (6.0f, 5.0f), 7.0f);
+    Path dashed;
+    const float dashes[] = { 5.0f, 4.0f };
+    PathStrokeType (1.5f).createDashedStroke (dashed, outline, dashes, 2);
+    g.setColour (gold.withAlpha (0.45f));
+    g.fillPath (dashed);
     auto r = getLocalBounds().reduced (14, 0);
     Path arrow;   // a small down-right arrow in gold
     const float cy = (float) getHeight() * 0.5f, x = (float) r.getX();
@@ -24,8 +33,8 @@ void MidiDragStrip::paint (Graphics& g)
     g.setColour (gold);
     g.strokePath (arrow, PathStrokeType (2.0f, PathStrokeType::curved, PathStrokeType::rounded));
     g.setColour (cream);
-    g.setFont (FontOptions (14.0f, Font::bold));
-    g.drawText ("Drag MIDI into your DAW", r.withTrimmedLeft (24), Justification::centredLeft);
+    g.setFont (FontOptions (13.0f, Font::bold));
+    g.drawText ("DRAG MIDI into your DAW", r.withTrimmedLeft (24), Justification::centredLeft);
     g.setColour (muted);
     g.setFont (FontOptions (12.5f));
     g.drawText ("drums on channel 10, bass on its own channel", r, Justification::centredRight);
@@ -65,8 +74,8 @@ GrooveRackEditor::GrooveRackEditor (GrooveRackProcessor& p)
     addAndMakeVisible (web);
     addAndMakeVisible (strip);
     setResizable (true, true);
-    setResizeLimits (400, 560, 1800, 2200);
-    setSize (720, 940);
+    setResizeLimits (420, 560, 2000, 2200);
+    setSize (1220, 800);
     reloadPage();
     startTimerHz (30);
 }
