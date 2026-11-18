@@ -78,7 +78,7 @@ jobs:
           else
             cp "$art/Standalone/Groove Rack" "$out/"
           fi
-          cp ../plugin/INSTALL.md "$out/"
+          cp INSTALL.md "$out/"
           cd dist && cmake -E tar cf "GrooveRack-${{ matrix.name }}.zip" --format=zip "GrooveRack-${{ matrix.name }}"
 
       - uses: actions/upload-artifact@v4

@@ -2,6 +2,7 @@
 #include "BinaryData.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace gr
 {
