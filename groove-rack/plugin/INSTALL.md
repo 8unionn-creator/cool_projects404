@@ -27,7 +27,8 @@ Copy `Groove Rack.vst3` to `~/.vst3/`. It needs `libwebkit2gtk-4.1` (installed o
 
 ## Using it in a DAW
 
-- **Tempo and play** follow your DAW. When the DAW is stopped, the play button in the plugin plays the loop on its own.
+- **Tempo and position** follow your DAW: change the tempo there and the groove, its echo and your exports follow. The loop lines up with your DAW's bars (in 4/4). When the DAW is stopped, the play button in the plugin plays the loop on its own at the DAW's tempo.
+- **New patterns:** tap the 🎲 on a track for a new pattern in the genre's style, or hold it for the groove generator (genre, Simple/Medium/Busy, whole loop or one bar, or the whole groove at once).
 - **Your own sounds:** tap the sound name at the top (for example *bounce kick*), or drop a WAV, AIFF, MP3 or FLAC file onto a track.
 - **MIDI out:** the plugin sends the pattern as MIDI, so you can record it onto a MIDI track. Or drag the **Drag MIDI into your DAW** strip at the bottom onto a track to drop the whole loop as a MIDI clip, then edit it in your DAW's piano roll.
 - **MIDI in:** notes from your DAW play the tracks, so you can program grooves in your DAW instead:

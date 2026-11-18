@@ -85,7 +85,7 @@ button { cursor: pointer; }
 
 /* rack grid */
 .rack-body { padding: 12px clamp(10px, 2.6vw, 16px) 6px; }
-.grid { display: grid; grid-template-columns: var(--namew) 13px minmax(0, 1fr); column-gap: clamp(5px, 1.4vw, 10px); row-gap: 10px; position: relative; }
+.grid { display: grid; grid-template-columns: var(--namew) 13px minmax(0, 1fr) 30px; column-gap: clamp(5px, 1.4vw, 10px); row-gap: 10px; position: relative; }
 .row { display: contents; }
 .ncell { position: relative; min-width: 0; }
 .tname {
@@ -104,6 +104,13 @@ button { cursor: pointer; }
 .row.sel .led::before, .led.on::before { background: var(--green); box-shadow: 0 0 6px #86e07ccc; }
 .row.muted .led::before { background: transparent; box-shadow: inset 0 0 0 1.6px var(--red); }
 .row.muted .tname { color: var(--dim); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.dice { width: 30px; height: 46px; border: 0; padding: 0; border-radius: 10px; background: none; color: var(--dim); display: grid; place-items: center; touch-action: manipulation; }
+.dice:hover, .row.sel .dice { color: var(--gold); }
+.dice svg { width: 20px; height: 20px; }
+.dice.spin svg { animation: spin .35s ease-out; }
+@keyframes spin { from { transform: rotate(-200deg) scale(.7); } }
+@media (prefers-reduced-motion: reduce) { .dice.spin svg { animation: none; } }
+.pl .dice { height: 40px; }
 .row.drop .tname, .row.drop .lane { box-shadow: inset 0 0 0 2px var(--gold); }
 .row.solo .tname { box-shadow: inset 0 0 0 1.5px var(--gold), 0 2px 4px #0005; }
 .meter { display: flex; gap: 3px; height: 46px; }
@@ -249,7 +256,9 @@ select.txt { padding: 8px 10px; }
   .rtools .seg button { padding: 4px 7px; }
   .mix { gap: 5px; padding: 0 6px; }
   .mix label span { display: none; }
-  .meter, .lane { height: 42px; }
+  .meter, .lane, .dice { height: 42px; }
+  .grid { grid-template-columns: var(--namew) 11px minmax(0, 1fr) 26px; }
+  .dice { width: 26px; }
   .ctl { grid-template-columns: 76px minmax(0, 1fr) 48px; }
 }
 </style>
@@ -288,7 +297,7 @@ select.txt { padding: 8px 10px; }
     <div class="pl-body"><div class="grid" id="plGrid"></div></div>
   </section>
 
-  <p class="hint"><b>Tap</b> an empty step to add a hit. <b>Drag up or down</b> on a hit for velocity, <b>sideways</b> to paint. <b>Hold</b> a hit for rolls and options. Tap a track name to select it, tap again for its settings. Tap the <b>sound name</b> at the top, or <b>drop a file</b> on a track, to use your own sample. <b>Space</b> plays.</p>
+  <p class="hint"><b>Tap</b> an empty step to add a hit. <b>Drag up or down</b> on a hit for velocity, <b>sideways</b> to paint. <b>Hold</b> a hit for rolls and options. Tap a track name to select it, tap again for its settings. Tap the <b>sound name</b> at the top, or <b>drop a file</b> on a track, to use your own sample. Tap <b>🎲</b> for a new pattern in the genre's style, hold it for the groove generator. <b>Space</b> plays.</p>
 </main>
 
 <input type="file" id="fileIn" accept="audio/*" class="vis" tabindex="-1" aria-hidden="true">
@@ -297,6 +306,7 @@ select.txt { padding: 8px 10px; }
 
 <script src="engine.js"></script>
 <script src="presets.js"></script>
+<script src="groove.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

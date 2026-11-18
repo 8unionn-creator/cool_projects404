@@ -225,5 +225,6 @@ void GrooveRackEditor::timerCallback()
         { "host", proc.engine.uiHost.load() },
         { "tick", proc.engine.uiTick.load() },
         { "bpm", proc.engine.uiBpm.load() },
+        { "daw", proc.engine.uiDawTempo.load() },
         { "levels", var (levels.get()) } }));
 }

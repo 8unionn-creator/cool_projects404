@@ -77,6 +77,7 @@ A groove maker for drums and bass. The channel rack shows one bar of steps for t
 **What it does**
 - **Channel rack:** tap a step to add a hit, drag up or down for velocity, drag sideways to paint or erase, hold a hit for rolls (2, 3 or 4 hits in a step) and ghost notes. Each track can use 12, 16, 24 or 32 steps per bar, so triplet hats and 6/8 grooves work as well as straight 16ths
 - **Bass piano roll** for 808s, synth bass and log drums: drag to set length, move notes, key and scale highlight, 808 slides
+- **Groove generator:** the 🎲 on every track writes a new pattern in the genre's style: real kick, backbeat, hat and percussion vocabularies per genre, varied each time (Simple, Medium or Busy), with a fill in the last bar and hat rolls where the genre has them. The bass locks to your kick or plays the genre's bass rhythm over a chord progression in your key. *Generate the whole groove* builds every track together
 - **15 genre starters**, each a full drums-and-bass groove: Bounce, Afrobeats, Amapiano, Afro House, Trap, Drill, Pop, House, Reggaeton, Dancehall, Boom Bap, R&B, Lo-fi, Jersey Club and Drum & Bass
 - **Built-in sounds:** kicks, snares, claps, snaps, rims, hats, open hats, cymbals, toms, shakers, congas and talking drum, agogo and cowbell, woodblocks, 808s, bass, log drums and FX hits (squeak, reload, shot, air horn, scratch and more)
 - **Your own samples:** tap the sound name at the top, or drop an audio file onto any track, to replace its sound
@@ -84,8 +85,8 @@ A groove maker for drums and bass. The channel rack shows one bar of steps for t
 - **Mixer:** volume, pan, pitch, length, tone, reverb and echo per track, mute and solo, hi-hats that choke each other
 - **Export:** WAV (the loop ×1, ×2 or ×4, tails wrapped so it loops cleanly), WAV stems, MIDI
 - Undo and redo, saved projects, project files and share links
-- Shortcuts: `Space` play/stop · `←` `→` bar · `↑` `↓` track · `G` switch rack · `M` mute · `S` solo · `Ctrl Z` undo
+- Shortcuts: `Space` play/stop · `←` `→` bar · `↑` `↓` track · `R` new pattern · `Shift R` new groove · `G` switch rack · `M` mute · `S` solo · `Ctrl Z` undo
 
 **In the browser:** open `groove-rack/index.html`. Nothing to install.
 
-**As a plugin:** download the zip for your computer from the [releases](https://github.com/8unionn-creator/cool_projects404/releases) (or from the latest *groove rack plugin* run under Actions) and follow `INSTALL.md` inside. The plugin uses the same interface, plays a sampled version of the same kit in sync with your DAW, and saves everything in your session. [Build it yourself →](groove-rack/plugin/README.md)
+**As a plugin:** download the zip for your computer from the [releases](https://github.com/8unionn-creator/cool_projects404/releases) (or from the latest *groove rack plugin* run under Actions) and follow `INSTALL.md` inside. The plugin uses the same interface, plays a sampled version of the same kit locked to your DAW's tempo and timeline, and saves everything in your session. [Build it yourself →](groove-rack/plugin/README.md)

@@ -208,7 +208,7 @@ GR.newTrack = function (inst, sound, x) {
   return t;
 };
 GR.buildPreset = function (pr) {
-  const P = { v: 1, name: pr.name + ' beat', bpm: pr.bpm, swing: pr.swing, bars: pr.bars, key: pr.key, scale: pr.scale, master: 0.8, tracks: [] };
+  const P = { v: 1, name: pr.name + ' beat', genre: pr.id, bpm: pr.bpm, swing: pr.swing, bars: pr.bars, key: pr.key, scale: pr.scale, master: 0.8, tracks: [] };
   pr.tracks.forEach(d => {
     const x = Object.assign({}, d); delete x.drum; delete x.mel;
     const t = GR.newTrack(d.inst, d.sound, x);

@@ -47,6 +47,7 @@ juce_add_binary_data(GrooveRackData SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../index.html
     ${CMAKE_CURRENT_SOURCE_DIR}/../engine.js
     ${CMAKE_CURRENT_SOURCE_DIR}/../presets.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/../groove.js
     ${CMAKE_CURRENT_SOURCE_DIR}/../app.js
     ${CMAKE_CURRENT_SOURCE_DIR}/kit/default-project.json
     ${GR_KIT})

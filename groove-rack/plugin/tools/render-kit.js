@@ -1,6 +1,7 @@
 // Renders every built-in Groove Rack sound to plugin/kit/<inst>_<sound>.wav (44.1 kHz mono, 16-bit)
 // and the default project to plugin/kit/default-project.json, using the web app's own synth engine.
 // Run from the repo:  node groove-rack/plugin/tools/render-kit.js   (needs Playwright + Chromium)
+// Add --project-only to rewrite only default-project.json.
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path'), http = require('http');
 const root = path.resolve(__dirname, '../..'), out = path.resolve(__dirname, '../kit');
@@ -12,8 +13,10 @@ const server = http.createServer((req, res) => {
   const b = await chromium.launch(), p = await b.newPage();
   await p.goto(`http://localhost:${server.address().port}/index.html`);
   await p.waitForFunction(() => window.GR && GR.app);
-  const result = await p.evaluate(async () => {
+  const projectOnly = process.argv.includes('--project-only');
+  const result = await p.evaluate(async (projectOnly) => {
     const SR = 44100, files = {};
+    if (projectOnly) return { files, project: JSON.stringify(GR.pluginProject(GR.buildPreset(GR.PRESETS[0]))) };
     for (const inst of Object.values(GR.INST)) {
       for (const sound of Object.keys(inst.sounds)) {
         const secs = inst.pitched ? 3.2 : 3;
@@ -35,9 +38,9 @@ const server = http.createServer((req, res) => {
     }
     const P = GR.buildPreset(GR.PRESETS[0]);
     return { files, project: JSON.stringify(GR.pluginProject(P)) };
-  });
+  }, projectOnly);
   fs.mkdirSync(out, { recursive: true });
-  for (const f of fs.readdirSync(out)) if (f.endsWith('.wav')) fs.unlinkSync(path.join(out, f));
+  if (!projectOnly) for (const f of fs.readdirSync(out)) if (f.endsWith('.wav')) fs.unlinkSync(path.join(out, f));
   let total = 0;
   for (const [name, b64] of Object.entries(result.files)) {
     const pcm = Buffer.from(b64, 'base64'), h = Buffer.alloc(44);

@@ -569,6 +569,7 @@ void Engine::process (AudioBuffer<float>& out, MidiBuffer& midi, const Transport
     uiPlaying.store (playing);
     uiHost.store (tp.hostPlaying);
     uiBpm.store (bpm);
+    uiDawTempo.store (tp.hasBpm && tp.bpm > 0);
 
     // note-offs for the MIDI we send out
     for (auto it = offs.begin(); it != offs.end();)

@@ -91,7 +91,7 @@ public:
 
     // read by the editor
     std::atomic<double> uiTick { 0.0 }, uiBpm { 0.0 };
-    std::atomic<bool> uiPlaying { false }, uiHost { false };
+    std::atomic<bool> uiPlaying { false }, uiHost { false }, uiDawTempo { false };
     std::array<std::atomic<float>, maxTracks> peak {}, rms {};
 
 private:

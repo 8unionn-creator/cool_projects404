@@ -2,6 +2,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "../Source/Engine.h"
 #include "BinaryData.h"
+#include <set>
 
 using namespace juce;
 
@@ -68,6 +69,35 @@ int main (int argc, char** argv)
     check (noteOns == expected, "MIDI out sends every hit (" + String (noteOns) + " of " + String (expected) + ")");
     check (noteOffs >= noteOns - 8, "MIDI out closes its notes (" + String (noteOffs) + " offs)");
     check (perNote.count (10 * 128 + 36) && perNote.count (2 * 128 + 30), "kick on channel 10 note 36 and 808 on channel 2");
+
+    // tempo sync: the DAW at 100 BPM (the project says 150) puts every kick on the DAW's grid
+    {
+        gr::Engine e2; e2.prepare (sr, block); e2.setPattern (pattern);
+        const double dawBpm = 100.0, startPpq = 7.25;   // starts mid-loop, as when you press play in the middle of a song
+        std::vector<double> kickBeats;
+        for (int pos = 0; pos < (int) (sr * 12); pos += block)
+        {
+            AudioBuffer<float> b (2, block); MidiBuffer midi;
+            gr::Engine::Transport tp; tp.hostPlaying = true; tp.hasBpm = true; tp.bpm = dawBpm;
+            tp.ppq = startPpq + (double) pos / sr * dawBpm / 60.0;
+            e2.process (b, midi, tp);
+            for (const auto m : midi)
+                if (m.getMessage().isNoteOn() && m.getMessage().getNoteNumber() == 36)
+                    kickBeats.push_back (startPpq + (pos + m.samplePosition) / sr * dawBpm / 60.0);
+        }
+        // where the default beat's kicks should land, in quarter notes of the DAW's timeline
+        std::set<double> want;
+        for (auto& t : pattern->tracks) if (t.midiNote == 36) for (auto& no : t.notes) want.insert (no.t / 24.0);
+        int onGrid = 0;
+        for (double kb : kickBeats)
+        {
+            const double inLoop = std::fmod (kb, pattern->loopTicks() / 24.0);
+            for (double w : want) if (std::abs (inLoop - w) < 1.5 / sr * dawBpm / 60.0) { ++onGrid; break; }
+        }
+        check (kickBeats.size() > 10 && onGrid == (int) kickBeats.size(),
+               "at the DAW's 100 BPM every kick lands on its beat (" + String (onGrid) + " of " + String ((int) kickBeats.size()) + " within a sample)");
+        check (std::abs (e2.uiBpm.load() - dawBpm) < 1e-9 && e2.uiDawTempo.load(), "the plugin reports the DAW's tempo to the UI");
+    }
 
     // MIDI in: a note on the kick's note plays it while the DAW is stopped
     {
