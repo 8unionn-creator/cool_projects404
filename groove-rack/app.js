@@ -243,7 +243,7 @@ const two = n => String(n).padStart(2, '0');
 const SCALE_SHORT = { minor: 'm', major: '', dorian: ' dor', phrygian: ' phr', 'harmonic minor': ' hm', mixolydian: ' mix', 'minor pentatonic': 'm pent', 'major pentatonic': ' pent', chromatic: ' chr' };
 const keyLabel = () => GR.NOTE_NAMES[P.key] + (SCALE_SHORT[P.scale] != null ? SCALE_SHORT[P.scale] : '');
 
-function renderAll() { renderOled(); renderTransport(); renderDensity(); renderDeck(); renderRoll(); renderFoot(); }
+function renderAll() { renderOled(); renderTransport(); renderDensity(); renderDeck(); renderChan(); renderRoll(); renderFoot(); }
 function renderOled() {
   $('#oledGenre').textContent = GR.GROOVES[genreOf()].name.toUpperCase();
   $('#oledTempo').textContent = (+P.bpm).toFixed(2);
@@ -306,11 +306,162 @@ function renderDeck() {
   lastStep = -1;
 }
 function renderFoot() {
-  const bars = $('#bars');
-  bars.innerHTML = Array.from({ length: 8 }, (_, i) => `<button class="bar-pad${i === ui.bar ? ' active' : ''}${i >= P.bars ? ' beyond' : ''}" data-bar="${i}" title="${i < P.bars ? 'Bar ' + (i + 1) : 'Make the loop ' + (i + 1) + ' bars'}">${i + 1}</button>`).join('');
+  renderBars();
   setKnob('swing', P.swing / 100, Math.round(P.swing) + '%');
   setKnob('master', P.master, Math.round(P.master * 100) + '%');
   $('#midiPadText').innerHTML = HOST ? '<strong>SAVE MIDI</strong> · or drag from the strip below' : '<strong>DRAG MIDI</strong> into your DAW';
+}
+// eight bar tiles, each a little map of its hits: drum channels as rows, the bass as the bottom row
+function barMap(b) {
+  const rows = drumTracks().slice(0, 6), bass = bassTracks()[0], b0 = b * TPB;
+  const cells = [];
+  rows.forEach(tr => {
+    const line = new Array(16).fill('');
+    tr.notes.forEach(n => { if (n.t >= b0 && n.t < b0 + TPB) { const c = Math.floor((n.t - b0) / 6); line[c] = n.vel < 0.5 && line[c] !== 'h' ? 'g' : 'h'; } });
+    line.forEach((v, i) => cells.push(v || (i % 4 === 0 ? 'beat' : '')));
+  });
+  if (bass) {
+    const line = new Array(16).fill('');
+    bass.notes.forEach(n => {
+      const a = Math.max(n.t, b0), e = Math.min(n.t + (n.len || 6), b0 + TPB);
+      for (let t = a; t < e; t += 6) line[Math.floor((t - b0) / 6)] = 'b';
+    });
+    line.forEach((v, i) => cells.push(v || (i % 4 === 0 ? 'beat' : '')));
+  }
+  return cells.map(c => `<i${c ? ` class="${c}"` : ''}></i>`).join('');
+}
+function renderBars() {
+  $('#bars').innerHTML = Array.from({ length: 8 }, (_, i) => i < P.bars
+    ? `<button class="bar-tile${i === ui.bar ? ' active' : ''}" data-bar="${i}" aria-label="Bar ${i + 1}" title="Show bar ${i + 1}"><span class="bt-top">${two(i + 1)}<small>PLAY</small></span><span class="bt-map" style="--rows:${Math.max(1, Math.min(6, drumTracks().length) + (bassTracks().length ? 1 : 0))}">${barMap(i)}</span></button>`
+    : `<button class="bar-tile beyond" data-bar="${i}" title="Make the loop ${i + 1} bars: the new bars repeat the first ones"><b>+</b>BAR ${i + 1}</button>`).join('');
+  $('#psLoop').textContent = `LOOP · ${two(P.bars)} BAR${P.bars > 1 ? 'S' : ''}`;
+  $('#followBtn').classList.toggle('on', ui.follow);
+  $('#followBtn').setAttribute('aria-pressed', ui.follow);
+}
+
+/* ---------- the selected channel: sound screen and knobs ---------- */
+const CP = [
+  { k: 'vol', label: 'VOL', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => Math.round(v * 100) + '%', def: 0.8, mix: true },
+  { k: 'pan', label: 'PAN', to: v => (v + 1) / 2, from: n => Math.round((n * 2 - 1) * 50) / 50, fmt: v => (Math.abs(v) < 0.02 ? 'C' : (v < 0 ? 'L' : 'R') + Math.round(Math.abs(v) * 100)), def: 0, mix: true },
+  { k: 'pitch', label: 'PITCH', to: v => (v + 24) / 48, from: n => Math.round(n * 48 - 24), fmt: v => (v > 0 ? '+' : '') + v + ' st', def: 0 },
+  { k: 'decay', label: 'LENGTH', to: v => (v - 0.3) / 1.7, from: n => Math.round((0.3 + n * 1.7) * 20) / 20, fmt: v => v.toFixed(2) + '×', def: 1 },
+  { k: 'tone', label: 'TONE', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => (v >= 0.99 ? 'OPEN' : Math.round(v * 100) + '%'), def: 1, mix: true },
+  { k: 'rev', label: 'REVERB', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => Math.round(v * 100) + '%', def: 0, mix: true },
+  { k: 'echo', label: 'ECHO', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => Math.round(v * 100) + '%', def: 0, mix: true }
+];
+function knobVisual(el, norm) {
+  const deg = clamp(norm, 0, 1) * 270;
+  el.style.setProperty('--ring-deg', deg + 'deg');
+  const ind = el.querySelector('.enc-ind'); if (ind) ind.style.transform = `rotate(${-135 + deg}deg)`;
+}
+function renderChan() {
+  const box = $('#chanPanel'), tr = selTrack();
+  if (!tr) { box.innerHTML = ''; return; }
+  const inst = I[tr.inst], map = GR.midiMap(P)[tr.id] || {}, n = P.tracks.indexOf(tr);
+  const midi = map.note != null ? `MIDI NOTE ${map.note}` : `MIDI CH ${(map.ch || 0) + 1}`;
+  const knobs = CP.map(c => {
+    const v = tr[c.k], label = c.k === 'decay' && inst.pitched ? 'RELEASE' : c.label;
+    return `<div class="cp-knob" data-k="${c.k}"><button class="enc-knob sm" aria-label="${label}" aria-valuetext="${c.fmt(v)}" title="Drag or scroll · double-click resets" style="--ring-deg:${clamp(c.to(v), 0, 1) * 270}deg"><span class="enc-cap"><span class="enc-ind" style="transform:rotate(${-135 + clamp(c.to(v), 0, 1) * 270}deg)"></span></span></button><span class="foot-label">${label}</span><span class="knob-val">${c.fmt(v)}</span></div>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="oled-bezel cp-screen"><div class="oled-screen cp-oled">
+      <div class="cp-top"><span>CH ${two(n + 1)} · <b>${esc(tr.name.toUpperCase())}</b></span><span>${midi} · ${tr.res} STEPS</span></div>
+      <div class="cp-name"><button class="silicone-btn cp-arrow" data-cp="prev" aria-label="Previous sound" title="Previous built-in sound">◀</button><span class="val" title="${esc(GR.soundLabel(tr))}">${esc(GR.soundLabel(tr))}</span><button class="silicone-btn cp-arrow" data-cp="next" aria-label="Next sound" title="Next built-in sound">▶</button></div>
+      <canvas class="cp-wave" id="cpWave" title="Tap to hear it" aria-label="Waveform of ${esc(GR.soundLabel(tr))}"></canvas>
+      <div class="cp-actions">
+        <button class="silicone-btn tool-btn" data-cp="load">${tr.sample ? 'REPLACE SAMPLE' : 'LOAD SAMPLE…'}</button>
+        <button class="silicone-btn tool-btn" data-cp="sounds">ALL SOUNDS</button>
+        ${tr.sample ? '<button class="silicone-btn tool-btn" data-cp="builtin">BUILT-IN</button>' : ''}
+      </div>
+    </div></div>
+    <div class="cp-knobs">${knobs}</div>
+    <div class="cp-side">
+      <div class="seg" role="group" aria-label="Steps per bar">${[12, 16, 24, 32].map(r => `<button data-res="${r}" class="${r === tr.res ? 'on' : ''}" title="${RES_LABEL[r]}">${r}</button>`).join('')}</div>
+      <div class="row"><button class="ms-btn${tr.mute ? ' mute-on' : ''}" data-cp="mute" aria-pressed="${tr.mute}">MUTE</button><button class="ms-btn${tr.solo ? ' solo-on' : ''}" data-cp="solo" aria-pressed="${tr.solo}">SOLO</button></div>
+      <div class="row"><button class="silicone-btn tool-btn" data-cp="dice">${DICE} NEW</button><button class="silicone-btn tool-btn" data-cp="more">MORE…</button></div>
+      <div class="cp-hint">${esc(tr.name)} · ${inst.pitched ? 'bass' : 'drums'}${tr.sample ? ' · your sample' : ''}</div>
+    </div>`;
+  drawChanWave(tr);
+}
+// the sound's waveform: the user's sample, or one hit of the synth rendered offline
+const cpWaves = new Map();
+async function drawChanWave(tr) {
+  const cv = $('#cpWave'); if (!cv) return;
+  const sig = JSON.stringify([tr.inst, tr.sound, tr.sample, !!GR.samples.get(tr.sample), tr.pitch, tr.decay]);
+  let peaks = cpWaves.get(sig);
+  if (!peaks) {
+    try {
+      let d;
+      const buf = tr.sample && GR.samples.get(tr.sample);
+      if (buf) d = buf.getChannelData(0);
+      else {
+        const sr = 22050, ctx = new OfflineAudioContext(1, sr * 1.4, sr);
+        GR.voice(ctx, ctx.destination, 0, tr, { vel: 1, p: defaultPitch(tr), dur: 0.7, from: null });
+        d = (await ctx.startRendering()).getChannelData(0);
+      }
+      let end = d.length; while (end > 1 && Math.abs(d[end - 1]) < 0.002) end--;
+      const N = 180, per = Math.max(1, end / N); let mx = 0;
+      peaks = new Float32Array(N);
+      for (let i = 0; i < N; i++) { let m = 0; for (let j = Math.floor(i * per); j < Math.floor((i + 1) * per); j++) m = Math.max(m, Math.abs(d[j] || 0)); peaks[i] = m; mx = Math.max(mx, m); }
+      for (let i = 0; i < N; i++) peaks[i] /= Math.max(mx, 0.05);
+      cpWaves.set(sig, peaks);
+    } catch (e) { return; }
+  }
+  if (selTrack() !== tr || !cv.isConnected) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = cv.clientHeight; if (!W) return;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, Hh);
+  const mid = Hh / 2;
+  g.fillStyle = '#ffaa2b22'; g.fillRect(0, mid - 0.5, W, 1);
+  g.fillStyle = '#ffaa2b'; g.shadowColor = '#ffaa2b'; g.shadowBlur = 6;
+  const step = W / peaks.length;
+  for (let i = 0; i < peaks.length; i++) { const h = Math.max(0.6, peaks[i] * (Hh * 0.44)); g.fillRect(i * step, mid - h, Math.max(1, step * 0.62), h * 2); }
+}
+function onChanClick(e) {
+  const tr = selTrack(); if (!tr) return;
+  const b = e.target.closest('[data-cp], [data-res], #cpWave'); if (!b) return;
+  if (b.id === 'cpWave') { audition(tr); return; }
+  if (b.dataset.res) { edit(() => { tr.res = +b.dataset.res; }); return; }
+  const a = b.dataset.cp, keys = Object.keys(I[tr.inst].sounds);
+  if (a === 'prev' || a === 'next') {
+    const i = tr.sample ? (a === 'next' ? -1 : 0) : keys.indexOf(tr.sound);
+    edit(() => { tr.sound = keys[(i + (a === 'next' ? 1 : -1) + keys.length) % keys.length]; tr.sample = null; tr.sampleName = null; });
+    audition(tr);
+  } else if (a === 'load') pickSample(tr);
+  else if (a === 'sounds') soundSheet(tr);
+  else if (a === 'builtin') { edit(() => { tr.sample = null; tr.sampleName = null; }); audition(tr); }
+  else if (a === 'mute') edit(() => { tr.mute = !tr.mute; });
+  else if (a === 'solo') edit(() => { tr.solo = !tr.solo; });
+  else if (a === 'dice') newPattern(tr);
+  else if (a === 'more') channelSheet(tr);
+}
+// the panel's knobs, by delegation (the panel is redrawn on every change)
+function chanKnob(el) {
+  const k = el.closest('.cp-knob').dataset.k, c = CP.find(x => x.k === k);
+  return {
+    c,
+    get: () => clamp(c.to(selTrack()[k]), 0, 1),
+    set: n => {
+      const tr = selTrack(); tr[k] = c.from(clamp(n, 0, 1));
+      knobVisual(el, c.to(tr[k]));
+      const val = el.parentNode.querySelector('.knob-val'); if (val) val.textContent = c.fmt(tr[k]);
+      if (mix) GR.updateMix(mix, P, ui.muted);
+      syncHost();
+    }
+  };
+}
+function onChanKnobDown(e) {
+  const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+  e.preventDefault();
+  const kn = chanKnob(el), y0 = e.clientY, v0 = kn.get(); commit();
+  try { el.setPointerCapture(e.pointerId); } catch (err) {}
+  const mv = ev => kn.set(v0 + (y0 - ev.clientY) / 140);
+  const up = () => {
+    el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+    changed(); settle();
+    if (!kn.c.mix) audition(selTrack());
+  };
+  el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
 }
 function setKnob(id, norm, text) {
   const deg = clamp(norm, 0, 1) * 270;
@@ -324,7 +475,7 @@ function refreshBar() {
   drumTracks().forEach(tr => { const el = $(`[data-pads="${tr.id}"]`); if (el) el.innerHTML = padsInner(tr); });
   bassTracks().forEach(tr => { const el = $(`[data-lane="${tr.id}"] .bass-notes`); if (el) el.innerHTML = bassInner(tr); });
   $('#oledBar').textContent = `${two(ui.bar + 1)} / ${two(P.bars)}`;
-  document.querySelectorAll('.bar-pad').forEach((b, i) => b.classList.toggle('active', i === ui.bar));
+  document.querySelectorAll('.bar-tile').forEach((b, i) => b.classList.toggle('active', i === ui.bar));
   if (!$('#roll').hidden) { const t = $('#roll .ptitle span'); const tr = selTrack(); if (t && tr) t.textContent = `· ${tr.name} · bar ${ui.bar + 1}`; drawRollNotes(); }
   lastStep = -1;
 }
@@ -332,6 +483,7 @@ function light(tr) {  // cheap update of one channel during a drag
   S.map = null;
   const pads = $(`[data-pads="${tr.id}"]`); if (pads) pads.innerHTML = padsInner(tr);
   const lane = $(`[data-lane="${tr.id}"] .bass-notes`); if (lane) lane.innerHTML = bassInner(tr);
+  const tile = $(`.bar-tile[data-bar="${ui.bar}"] .bt-map`); if (tile) tile.innerHTML = barMap(ui.bar);
   if (!$('#roll').hidden) drawRollNotes();
 }
 
@@ -428,12 +580,12 @@ function frame() {
   if (p != null) {
     const bar = Math.floor(p / TPB);
     if (ui.follow && bar !== ui.bar && !dragging) { ui.bar = bar; refreshBar(); }
-    document.querySelectorAll('.bar-pad').forEach((b, i) => b.classList.toggle('playing', i === bar));
+    document.querySelectorAll('.bar-tile').forEach((b, i) => b.classList.toggle('playing', i === bar && i < P.bars));
     const st = Math.floor((p % TPB) / 6);
     if (st !== lastStep && bar === ui.bar) { lastStep = st; showStep(p % TPB); }
   } else if (lastStep !== -2) {
     lastStep = -2; showStep(null);
-    document.querySelectorAll('.bar-pad.playing').forEach(b => b.classList.remove('playing'));
+    document.querySelectorAll('.bar-tile.playing').forEach(b => b.classList.remove('playing'));
   }
   if (!mix && !HOST) return;
   document.querySelectorAll('[data-meter]').forEach(m => {
@@ -461,7 +613,7 @@ function select(id, openRoll) {
   ui.sel = id;
   if (openRoll != null) ui.rollOpen = openRoll;
   document.querySelectorAll('.deck-row[data-id]').forEach(r => r.classList.toggle('sel', r.dataset.id === id));
-  renderRoll();
+  renderChan(); renderRoll();
 }
 const nextState = n => (!n ? 'full' : n.vel >= 0.5 ? 'ghost' : 'off');
 function setStepState(tr, s, state) {
@@ -567,7 +719,7 @@ function onDeckClick(e) {
   if (act === 'dice') newPattern(tr);
   else if (act === 'mute') { edit(() => { tr.mute = !tr.mute; }); toast(tr.mute ? `${tr.name} muted` : `${tr.name} on`); }
   else if (act === 'solo') edit(() => { tr.solo = !tr.solo; });
-  else if (act === 'sound') { select(tr.id); soundSheet(tr); }
+  else if (act === 'sound') { select(tr.id); audition(tr); }
   else if (act === 'name') {
     const pitched = I[tr.inst].pitched;
     if (pitched) select(tr.id, !(ui.rollOpen && ui.sel === tr.id)); else select(tr.id);
@@ -1369,6 +1521,35 @@ function wire() {
     const i = +b.dataset.bar;
     if (i >= P.bars) { edit(() => extendLoop(i + 1)); toast(`Loop is now ${P.bars} bars: the new bars repeat the first ones`); }
     seek(i);
+  });
+  $('.ps-tools').addEventListener('click', e => {
+    const b = e.target.closest('[data-tool]'); if (!b) return;
+    const t = b.dataset.tool;
+    if (t === 'copy') {
+      if (P.bars < 2) { toast('Make the loop longer first: tap a + bar'); return; }
+      const to = (ui.bar + 1) % P.bars;
+      edit(() => P.tracks.forEach(tr => copyBar(tr, ui.bar, [to]))); toast(`Bar ${ui.bar + 1} copied onto bar ${to + 1}`); seek(to);
+    } else if (t === 'clear') { edit(() => P.tracks.forEach(tr => clearBar(tr, ui.bar))); toast(`Bar ${ui.bar + 1} cleared`); }
+    else if (t === 'double') {
+      if (P.bars > 4) { toast('The loop can be at most 8 bars'); return; }
+      edit(() => extendLoop(P.bars * 2)); toast(`Loop is now ${P.bars} bars`);
+    } else if (t === 'follow') { ui.follow = !ui.follow; renderBars(); toast(ui.follow ? 'The pads follow the playing bar' : 'The pads stay on the bar you pick'); }
+  });
+  const cp = $('#chanPanel');
+  cp.addEventListener('click', onChanClick);
+  cp.addEventListener('pointerdown', onChanKnobDown);
+  cp.addEventListener('wheel', e => {
+    const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+    e.preventDefault(); const kn = chanKnob(el); commit(); kn.set(kn.get() + (e.deltaY < 0 ? 0.03 : -0.03)); changed(); settle();
+  }, { passive: false });
+  cp.addEventListener('dblclick', e => {
+    const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+    const kn = chanKnob(el); commit(); kn.set(kn.c.to(kn.c.def)); changed(); settle();
+  });
+  cp.addEventListener('keydown', e => {
+    const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+    const d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 0.03 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -0.03 : 0;
+    if (d) { e.preventDefault(); e.stopPropagation(); const kn = chanKnob(el); commit(); kn.set(kn.get() + d); changed(); settle(); }
   });
   knob($('#swingKnob'), () => P.swing / 100, v => { P.swing = Math.round(v * 100); S.map = null; setKnob('swing', P.swing / 100, P.swing + '%'); renderOled(); syncHost(); }, 0);
   knob($('#masterKnob'), () => P.master, v => { P.master = Math.round(v * 100) / 100; setKnob('master', P.master, Math.round(P.master * 100) + '%'); if (mix) GR.updateMix(mix, P, ui.muted); syncHost(); }, 0.8);
