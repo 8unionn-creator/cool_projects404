@@ -8,6 +8,7 @@ Things I build to sharpen my skills and make my own work easier.
 | [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
 | [💿 Spin Room](spin-room/) | A record player and CD player that spin to your beats, made to screen-record for TikTok | HTML, CSS, JS, Web Audio |
 | [🎛️ Stencil](stencil/) | Arrangement stencils for Logic Pro and FL Studio: 20 MIDI song structures for trap, R&B, Afrobeats and rap, with visual maps. A drag-and-drop plugin is planned | MIDI, Python, JUCE (planned) |
+| [🥁 Groove Rack](groove-rack/) | A drum and bass groove maker: channel rack, bass piano roll, your own samples, MIDI in and out, 15 genre starters from Afrobeats and Amapiano to trap, drill and pop. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, C++, JUCE |
 
 ## ⏪ Rewind — [`rewind/`](rewind/)
 
@@ -66,3 +67,26 @@ A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable
 Song structures you drop into Logic Pro or FL Studio and fill with your own sounds. 20 MIDI stencils (five each for trap, R&B, Afrobeats and rap) carry the tempo, section markers and a placeholder for every instrument, and a PDF shows each one as a map with its energy curve. The plugin that will let you drag sections into the timeline is designed but not built yet. [Read more →](stencil/README.md)
 
 ![Stencil arrangement map](stencil/docs/map-01.png)
+
+## 🥁 Groove Rack — [`groove-rack/`](groove-rack/index.html)
+
+![groove rack CI](https://github.com/8unionn-creator/cool_projects404/actions/workflows/groove-rack.yml/badge.svg)
+
+A groove maker for drums and bass. The channel rack shows one bar of steps for the drums, the playlist under it shows the other tracks as waveforms across the whole loop, and a piano roll opens for the bass, 808 or log drum. It runs in a browser and as a **VST3 / Audio Unit plugin** for any DAW.
+
+**What it does**
+- **Channel rack:** tap a step to add a hit, drag up or down for velocity, drag sideways to paint or erase, hold a hit for rolls (2, 3 or 4 hits in a step) and ghost notes. Each track can use 12, 16, 24 or 32 steps per bar, so triplet hats and 6/8 grooves work as well as straight 16ths
+- **Bass piano roll** for 808s, synth bass and log drums: drag to set length, move notes, key and scale highlight, 808 slides
+- **Groove generator:** the 🎲 on every track writes a new pattern in the genre's style: real kick, backbeat, hat and percussion vocabularies per genre, varied each time (Simple, Medium or Busy), with a fill in the last bar and hat rolls where the genre has them. The bass locks to your kick or plays the genre's bass rhythm over a chord progression in your key. *Generate the whole groove* builds every track together
+- **15 genre starters**, each a full drums-and-bass groove: Bounce, Afrobeats, Amapiano, Afro House, Trap, Drill, Pop, House, Reggaeton, Dancehall, Boom Bap, R&B, Lo-fi, Jersey Club and Drum & Bass
+- **Built-in sounds:** kicks, snares, claps, snaps, rims, hats, open hats, cymbals, toms, shakers, congas and talking drum, agogo and cowbell, woodblocks, 808s, bass, log drums and FX hits (squeak, reload, shot, air horn, scratch and more)
+- **Your own samples:** tap the sound name at the top, or drop an audio file onto any track, to replace its sound
+- **MIDI:** import a MIDI file into the whole kit or one track, export the loop or one track as MIDI. In the plugin, the pattern plays out as MIDI, DAW notes play the tracks, and a strip lets you drag the loop into your DAW as a MIDI clip
+- **Mixer:** volume, pan, pitch, length, tone, reverb and echo per track, mute and solo, hi-hats that choke each other
+- **Export:** WAV (the loop ×1, ×2 or ×4, tails wrapped so it loops cleanly), WAV stems, MIDI
+- Undo and redo, saved projects, project files and share links
+- Shortcuts: `Space` play/stop · `←` `→` bar · `↑` `↓` track · `R` new pattern · `Shift R` new groove · `G` switch rack · `M` mute · `S` solo · `Ctrl Z` undo
+
+**In the browser:** open `groove-rack/index.html`. Nothing to install.
+
+**As a plugin:** download the zip for your computer from the [releases](https://github.com/8unionn-creator/cool_projects404/releases) (or from the latest *groove rack plugin* run under Actions) and follow `INSTALL.md` inside. The plugin uses the same interface, plays a sampled version of the same kit locked to your DAW's tempo and timeline, and saves everything in your session. [Build it yourself →](groove-rack/plugin/README.md)
