@@ -101,6 +101,21 @@ jobs:
           cp INSTALL.md "$out/"
           cd dist && cmake -E tar cf "GrooveRack-${{ matrix.name }}.zip" --format=zip "GrooveRack-${{ matrix.name }}"
 
+      - name: Audio Unit validation (what Logic runs before it lists a plugin)
+        if: runner.os == 'macOS'
+        timeout-minutes: 6
+        run: |
+          # unzip the download the way Finder does, so this checks exactly what people install
+          rm -rf "$RUNNER_TEMP/gr" && mkdir -p "$RUNNER_TEMP/gr" && ditto -x -k dist/GrooveRack-macOS.zip "$RUNNER_TEMP/gr"
+          ls -l "$RUNNER_TEMP/gr/GrooveRack-macOS/Groove Rack.component/Contents/MacOS"
+          codesign -dv "$RUNNER_TEMP/gr/GrooveRack-macOS/Groove Rack.component" 2>&1 | head -5
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$RUNNER_TEMP/gr/GrooveRack-macOS/Groove Rack.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          auval -a | grep -i "Grvr" || echo "Groove Rack is not registered as an Audio Unit"
+          auval -v aumu Grvr Cp44
+
       - uses: actions/upload-artifact@v4
         with:
           name: GrooveRack-${{ matrix.name }}
