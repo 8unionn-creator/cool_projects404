@@ -9,6 +9,7 @@ Things I build to sharpen my skills and make my own work easier.
 | [💿 Spin Room](spin-room/) | A record player and CD player that spin to your beats, made to screen-record for TikTok | HTML, CSS, JS, Web Audio |
 | [🎛️ Stencil](stencil/) | Arrangement stencils for Logic Pro and FL Studio: 20 MIDI song structures for trap, R&B, Afrobeats and rap, with visual maps. A drag-and-drop plugin is planned | MIDI, Python, JUCE (planned) |
 | [🥁 Groove Rack](groove-rack/) | A drum and bass groove maker: channel rack, a piano roll on every channel with a chord lane, your own samples, MIDI in and out, 15 genre starters from Afrobeats and Amapiano to trap, drill and pop. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, C++, JUCE |
+| [🛫 Liftoff](liftoff/) | A transition effect that builds into every drop: your sound becomes the riser, the last beat cuts or tape-stops, and a reverse reverb made from the drop's own first hit lands exactly on it. Locked to your DAW's bars. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, AudioWorklet, C++, JUCE |
 
 ## ⏪ Rewind — [`rewind/`](rewind/)
 
@@ -99,3 +100,19 @@ A groove maker for drums and bass, built as the **GR-16**: a hardware-style mach
 **In the browser:** open `groove-rack/index.html`. Nothing to install.
 
 **As a plugin:** download the zip for your computer from the [releases](https://github.com/8unionn-creator/cool_projects404/releases) (or from the latest *groove rack plugin* run under Actions) and follow `INSTALL.md` inside. The plugin uses the same interface, plays a sampled version of the same kit locked to your DAW's tempo and timeline, and saves everything in your session. [Build it yourself →](groove-rack/plugin/README.md)
+
+## 🛫 Liftoff — [`liftoff/`](liftoff/index.html)
+
+![liftoff CI](https://github.com/8unionn-creator/cool_projects404/actions/workflows/liftoff.yml/badge.svg)
+
+Riser, reverse reverb and pre-drop cut in one effect, locked to your bars. Put it on a beat, a vocal or the master and it builds into every drop:
+
+- **Rise:** your own sound becomes the riser. It pitches up (to +24 semitones), a resonant high-pass sweeps up, a gate speeds up from 1/4 to 1/32 notes, it washes into reverb and widens, and a white-noise riser sweeps along underneath
+- **Backverb:** a real-time reverse reverb that ends exactly on the sound it came from (it reports its length as latency, so the DAW lines it up). In DROP mode it swells from the drop's own first hit, out of the silence before it
+- **Drop:** the last 1/16 to 1/2 note before the drop cuts, tape-stops, filter-dives or stutters, and a sub boom with a crack hits on the one
+- **Timing:** AUTO builds at the end of every 4/8/16/32 bar phrase, with a T-minus countdown. MANUAL lets you ride or automate BUILD. TRIGGER starts a build from a MIDI note or LAUNCH. One CURVE shapes the whole build
+- 10 presets (Festival Build, Trap Pre-Drop, Vocal Backverb, Afro Swell, Tape Stop Drop, Reverse Into Drop…), and **Export transition** in the browser renders the build and the drop from any loop as a WAV
+
+**In the browser:** open `liftoff/index.html`, drop in a loop and set its BPM. **As a plugin:** download the installer from the [releases](https://github.com/8unionn-creator/cool_projects404/releases). [Read more →](liftoff/README.md)
+
+![Liftoff](liftoff/docs/liftoff.png)

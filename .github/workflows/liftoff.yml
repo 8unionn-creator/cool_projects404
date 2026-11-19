@@ -1,0 +1,200 @@
+name: liftoff plugin
+
+# Builds the Liftoff plugin (VST3, AU on macOS, and a standalone app) for Windows, macOS and Linux, and tests it:
+# the JS core, the C++ engine, that both make the same sound, and the built VST3 loaded in a host.
+# Push a tag such as liftoff-v0.1.0 (or Run workflow with a release tag) to publish a GitHub release.
+on:
+  push:
+    paths: ["liftoff/**", ".github/workflows/liftoff.yml"]
+    tags: ["liftoff-v*"]
+  pull_request:
+    paths: ["liftoff/**", ".github/workflows/liftoff.yml"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a release with this tag, e.g. liftoff-v0.1.0 (leave empty to only build)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  core:
+    name: DSP core tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: The build, riser, gap, impact and backverb behave
+        run: node liftoff/tests/core-test.js
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-latest
+            name: macOS
+          - os: ubuntu-24.04
+            name: Linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: liftoff/plugin
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          sudo apt-get $apt update
+          sudo apt-get $apt install -y --no-install-recommends libasound2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libwebkit2gtk-4.1-dev libgtk-3-dev
+
+      - name: WebView2 SDK
+        if: runner.os == 'Windows'
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory "$RUNNER_TEMP/webview2"
+
+      - name: Configure
+        run: |
+          args=(-DCMAKE_BUILD_TYPE=Release -DLF_TESTS=ON)
+          if [ "$RUNNER_OS" = "macOS" ]; then args+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"); fi
+          if [ "$RUNNER_OS" = "Windows" ]; then args+=("-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$RUNNER_TEMP/webview2"); fi
+          cmake -B build "${args[@]}"
+
+      - name: Build
+        run: |
+          targets=(Liftoff_VST3 Liftoff_Standalone LiftoffEngineTest LiftoffHostTest)
+          if [ "$RUNNER_OS" = "macOS" ]; then targets+=(Liftoff_AU); fi
+          for t in "${targets[@]}"; do cmake --build build --config Release --parallel 4 --target "$t"; done
+
+      - name: Engine test, and the C++ engine sounds the same as dsp.js
+        run: |
+          exe=build/LiftoffEngineTest_artefacts/Release/LiftoffEngineTest
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          "$exe" --dump "$RUNNER_TEMP/core.raw"
+          node ../tests/parity.js "$RUNNER_TEMP/core.raw"
+
+      - name: The VST3 in a host
+        run: |
+          exe=build/LiftoffHostTest_artefacts/Release/LiftoffHostTest
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          "$exe" build/Liftoff_artefacts/Release/VST3/Liftoff.vst3
+
+      - name: Package
+        run: |
+          out="$PWD/dist/Liftoff-${{ matrix.name }}"
+          mkdir -p "$out"
+          art=build/Liftoff_artefacts/Release
+          cp -R "$art/VST3/Liftoff.vst3" "$out/"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            cp -R "$art/AU/Liftoff.component" "$art/Standalone/Liftoff.app" "$out/"
+            for b in "$out/Liftoff.vst3" "$out/Liftoff.component" "$out/Liftoff.app"; do codesign --force --deep -s - "$b"; done
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            cp "$art/Standalone/Liftoff.exe" "$out/"
+          else
+            cp "$art/Standalone/Liftoff" "$out/"
+          fi
+          cp INSTALL.md "$out/"
+          cd dist && cmake -E tar cf "Liftoff-${{ matrix.name }}.zip" --format=zip "Liftoff-${{ matrix.name }}"
+
+      - name: Installer
+        if: runner.os != 'Linux'
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          ver=$(sed -n 's/^project(Liftoff VERSION \(.*\))/\1/p' CMakeLists.txt)
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            bash installer/macos/make-pkg.sh "$PWD/dist/Liftoff-macOS" "$ver" "$PWD/dist/Liftoff-macOS-Installer.pkg"
+          else
+            iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+            [ -f "$iscc" ] || choco install innosetup -y --no-progress
+            "$iscc" /DAppVer="$ver" installer/windows/Liftoff.iss
+          fi
+
+      # install the way people do, then check it: macOS runs the Audio Unit validation Logic runs before it lists a plugin
+      - name: Install and check
+        if: runner.os != 'Linux'
+        timeout-minutes: 8
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            sudo installer -pkg dist/Liftoff-macOS-Installer.pkg -target /
+            ls -d "/Library/Audio/Plug-Ins/Components/Liftoff.component" "/Library/Audio/Plug-Ins/VST3/Liftoff.vst3" "/Applications/Liftoff.app"
+            sleep 2
+            auval -a | grep -i "Lftf" || echo "Liftoff is not registered as an Audio Unit"
+            auval -v aumf Lftf Cp44
+          else
+            ./dist/Liftoff-Windows-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+            sleep 5
+            ls "/c/Program Files/Common Files/VST3/Liftoff.vst3/Contents/x86_64-win/Liftoff.vst3"
+            ls "/c/Program Files/Liftoff/Liftoff.exe"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Liftoff-${{ matrix.name }}
+          path: |
+            liftoff/plugin/dist/Liftoff-${{ matrix.name }}.zip
+            liftoff/plugin/dist/Liftoff-${{ matrix.name }}-*.pkg
+            liftoff/plugin/dist/Liftoff-${{ matrix.name }}-*.exe
+
+  # Runs for a pushed liftoff-v* tag, or for "Run workflow" with a release tag filled in (the tag is then created on the built commit).
+  # Windows and macOS are required; Linux is added when it built.
+  release:
+    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/liftoff-v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'liftoff-v'))) }}
+    needs: [core, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          for need in Liftoff-Windows.zip Liftoff-macOS.zip Liftoff-Windows-Setup.exe Liftoff-macOS-Installer.pkg; do
+            [ -f "dist/$need" ] || { echo "$need is missing, so there is no release." >&2; exit 1; }
+          done
+          version="${TAG#liftoff-v}"
+          LINUX_ROW=""
+          [ -f dist/Liftoff-Linux.zip ] && LINUX_ROW="| Linux | | Liftoff-Linux.zip: VST3 and the app |"
+          cat > notes.md <<EOF
+          **Liftoff $version**: riser, reverse reverb and pre-drop cut in one effect, locked to your bars.
+
+          | Your computer | Installer (recommended) | Or the files to copy yourself |
+          |---|---|---|
+          | macOS 10.15 or later (Intel and Apple Silicon) | **Liftoff-macOS-Installer.pkg**: Audio Unit (Logic, GarageBand), VST3 and the app | Liftoff-macOS.zip |
+          | Windows 10 / 11 | **Liftoff-Windows-Setup.exe**: VST3 and the app | Liftoff-Windows.zip |
+          $LINUX_ROW
+
+          **Install:** open the installer and click through it, then open your DAW. In Logic: an Audio FX slot → Audio Units → cool_projects404 → Liftoff. Other DAWs: rescan plugins and put Liftoff on a track, a bus or the master.
+
+          These builds are not signed with a paid Apple or Microsoft certificate, so the first time you open the installer:
+          - **Mac:** if macOS says it cannot check the installer, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+          - **Windows:** if SmartScreen says it protected your PC, click **More info → Run anyway**.
+
+          **What it does:** follows your DAW's bars and builds into every drop: the sound pitches up, thins out, gets stuttered, washed and widened with a noise riser on top; the last beat cuts, tape-stops, filter-dives or stutters; a reverse swell made from the drop's own first hit rises out of the gap and lands exactly on it; and a sub boom hits on the one. Auto (every phrase), Manual (ride BUILD) or Trigger (a MIDI note or LAUNCH) timing, 10 presets.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Liftoff $version" --notes-file notes.md --latest
+          fi
