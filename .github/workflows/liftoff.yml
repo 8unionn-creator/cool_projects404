@@ -69,7 +69,9 @@ jobs:
           for mirror in "" http://azure.archive.ubuntu.com/ubuntu/ http://mirrors.edge.kernel.org/ubuntu/; do
             if [ -n "$mirror" ]; then
               echo "Switching to $mirror"
-              sudo sed -i -E "s#https?://[^ ]*(archive|security)\.ubuntu\.com/ubuntu/?#$mirror#g" /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+              # runner images point apt at mirror+file:/etc/apt/apt-mirrors.txt: replace that as well as plain mirror URLs
+              sudo sed -i -E "s#mirror\+file:/etc/apt/apt-mirrors\.txt|https?://[^ ]*(archive|security)\.ubuntu\.com/ubuntu/?#$mirror#g" /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+              grep -h "^URIs:\|^deb " /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null | sort -u
             fi
             if sudo timeout 420 apt-get $apt update && sudo timeout 420 apt-get $apt install -y --no-install-recommends $pkgs; then
               exit 0
