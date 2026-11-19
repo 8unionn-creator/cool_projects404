@@ -31,6 +31,8 @@ jobs:
           node-version: 20
       - name: The build, riser, gap, impact and backverb behave
         run: node liftoff/tests/core-test.js
+      - name: A sample becomes a transition
+        run: node liftoff/tests/transition-test.js
 
   build:
     strategy:
@@ -201,7 +203,7 @@ jobs:
           - **Mac:** if macOS says it cannot check the installer, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
           - **Windows:** if SmartScreen says it protected your PC, click **More info → Run anyway**.
 
-          **What it does:** follows your DAW's bars and builds into every drop: the sound pitches up, thins out, gets stuttered, washed and widened with a noise riser on top; the last beat cuts, tape-stops, filter-dives or stutters; a reverse swell made from the drop's own first hit rises out of the gap and lands exactly on it; and a sub boom hits on the one. Auto (every phrase), Manual (ride BUILD) or Trigger (a MIDI note or LAUNCH) timing, 10 presets.
+          **What it does:** load a sample or record one straight from your track, and Liftoff turns it into a transition: your sound becomes the riser (pitch, filter, stutter, wash, noise, width; a one-shot becomes a roll), the last beat cuts, tape-stops, filter-dives or stutters, a reverse swell made from the drop's own first hit rises out of the gap, and a sub boom hits on the one. Preview it through your DAW, then drag the WAV into your session. LIVE mode still builds into every drop on your DAW's bars. 10 presets.
           EOF
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"

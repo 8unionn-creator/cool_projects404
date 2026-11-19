@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Liftoff VERSION 0.1.0)
+project(Liftoff VERSION 0.2.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,7 +46,7 @@ juce_add_binary_data(LiftoffData SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../index.html
     ${CMAKE_CURRENT_SOURCE_DIR}/../params.js
     ${CMAKE_CURRENT_SOURCE_DIR}/../dsp.js
-    ${CMAKE_CURRENT_SOURCE_DIR}/../worklet.js
+    ${CMAKE_CURRENT_SOURCE_DIR}/../transition.js
     ${CMAKE_CURRENT_SOURCE_DIR}/../app.js)
 
 target_sources(Liftoff PRIVATE
@@ -66,6 +66,7 @@ target_link_libraries(Liftoff
     PRIVATE
         LiftoffData
         juce::juce_audio_utils
+        juce::juce_audio_formats
         juce::juce_dsp
         juce::juce_gui_extra
     PUBLIC
