@@ -42,7 +42,7 @@ const RES_LABEL = { 12: '1/8 triplet', 16: '1/16', 24: '1/16 triplet', 32: '1/32
 
 /* ---------- state ---------- */
 let P = null;
-const ui = { gen: { complexity: 1, scope: 'all' }, sel: null, bar: 0, follow: true, rollOpen: false, chord: 0, scaleOnly: false, metro: false, muted: false };
+const ui = { gen: { complexity: 1, scope: 'all' }, queued: null, queuedFrom: -1, sel: null, bar: 0, follow: true, rollOpen: false, chord: 0, scaleOnly: false, metro: false, muted: false };
 const hist = { undo: [], redo: [] };
 const snap = () => JSON.stringify(P);
 function commit() { hist.undo.push(snap()); if (hist.undo.length > 200) hist.undo.shift(); hist.redo.length = 0; }
@@ -78,13 +78,13 @@ function audition(tr, note) {
 }
 
 /* ---------- transport ---------- */
-const S = { playing: false, nextTick: 0, nextTime: 0, aTick: 0, aTime: 0, timer: 0, st: null, map: null };
+const S = { playing: false, nextTick: 0, nextTime: 0, aTick: 0, aTime: 0, timer: 0, st: null, map: null, pend: null, landing: null };
 function tickMap() { if (!S.map) S.map = GR.buildTickMap(P); return S.map; }
 function play() {
   if (HOST) { HOST.call('setPlaying', true); S.playing = true; H.playing = true; H.tick = 0; H.at = performance.now(); renderTransport(); return; }
   resume();
   S.st = GR.newState(); S.playing = true;
-  S.nextTick = 0; S.nextTime = ctx.currentTime + 0.08; S.aTick = 0; S.aTime = S.nextTime;
+  S.nextTick = 0; S.nextTime = ctx.currentTime + 0.08; S.aTick = 0; S.aTime = S.nextTime; S.pend = null; ui.queued = null;
   clearInterval(S.timer); S.timer = setInterval(sched, 25); sched();
   renderTransport();
 }
@@ -98,13 +98,15 @@ function stop() {
   renderTransport();
 }
 function toggle() { S.playing ? stop() : play(); }
+// Pick a bar. While the loop plays, playback moves there on the next bar line, so the groove never stumbles.
 function seek(bar) {
   ui.bar = clamp(bar, 0, P.bars - 1);
-  if (HOST) { if (S.playing) HOST.call('seek', ui.bar); }
-  else if (S.playing) {
-    S.nextTick = ui.bar * TPB; S.nextTime = ctx.currentTime + 0.03; S.aTick = S.nextTick; S.aTime = S.nextTime;
-  }
-  refreshBar();
+  const p = pos();
+  if (S.playing && !(HOST && H.host)) {
+    ui.queued = ui.bar; ui.queuedFrom = p == null ? -1 : Math.floor(p / TPB);
+    if (HOST) HOST.call('seek', ui.bar);
+  } else ui.queued = null;
+  refreshBar(); renderBars();
 }
 function sched() {
   if (!S.playing) return;
@@ -113,10 +115,15 @@ function sched() {
     const skip = Math.ceil((now - S.nextTime) / td); S.nextTick += skip; S.nextTime += skip * td; S.aTick = S.nextTick; S.aTime = S.nextTime;
   }
   while (S.nextTime < horizon) {
+    if (ui.queued != null && S.nextTick % TPB === 0) {   // a bar line: jump to the bar that was picked
+      const target = ui.queued * TPB, cur = S.nextTick % loopT;
+      S.nextTick += target - cur; S.landing = ui.queued; ui.queued = null;
+      S.pend = { tick: S.nextTick, time: S.nextTime };
+    }
     const tick = S.nextTick % loopT, ev = map.get(tick);
     if (ev) {
       const t = S.nextTime + GR.swing(P, tick, td);
-      ev.forEach(([tr, n]) => { const s = mix.strips[tr.id]; if (s) GR.playEvent(ctx, s.in, S.st, tr, n, t, td); });
+      ev.forEach(([tr, n]) => { const s = mix.strips[tr.id]; if (s) GR.playEvent(ctx, s.in, S.st, tr, n, t + GR.nudge(n) * td, td); });
     }
     if (ui.metro && tick % 24 === 0) metroClick(S.nextTime, tick % TPB === 0);
     S.nextTick++; S.nextTime += td;
@@ -137,6 +144,7 @@ function pos() {
     return ((p % loopT) + loopT) % loopT;
   }
   if (!S.playing || !ctx) return null;
+  if (S.pend && ctx.currentTime - (ctx.outputLatency || 0) >= S.pend.time) { S.aTick = S.pend.tick; S.aTime = S.pend.time; S.pend = null; }
   const td = GR.tickDur(P), loopT = P.bars * TPB;
   const p = S.aTick + (ctx.currentTime - (ctx.outputLatency || 0) - S.aTime) / td;
   return ((p % loopT) + loopT) % loopT;
@@ -168,8 +176,14 @@ function changed() {
   renderAll();
 }
 function autosave() { store.set('groove-rack.current', snap()); }
+// loops are 4 or 8 bars; anything else is filled out to the next one by repeating what is there
+const MIN_BARS = 4, MAX_BARS = 8;
+const snapBars = n => (n <= MIN_BARS ? MIN_BARS : MAX_BARS);
 function load(project, keepHistory) {
   P = sanitize(project);
+  if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
+  if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
+  takeTaste(P.taste);
   if (!keepHistory) { hist.undo.length = 0; hist.redo.length = 0; }
   if (!track(ui.sel)) ui.sel = (P.tracks[0] || {}).id || null;
   ui.bar = clamp(ui.bar, 0, P.bars - 1);
@@ -180,12 +194,19 @@ function sanitize(p) {
   p = Object.assign(GR.emptyProject(), { tracks: [] }, p);
   p.bpm = clamp(+p.bpm || 120, 40, 240); p.bars = clamp(p.bars | 0 || 4, 1, 8); p.swing = clamp(+p.swing || 0, 0, 100);
   p.master = clamp(p.master == null ? 0.8 : +p.master, 0, 1); p.key = clamp(p.key | 0, 0, 11);
+  p.chords = Array.isArray(p.chords) ? p.chords.slice(0, 8).map(c => (c && isFinite(c.r) ? { r: ((c.r | 0) % 12 + 12) % 12, q: String(c.q || '') } : null)) : null;
   if (!GR.SCALES[p.scale]) p.scale = 'minor';
+  p.style = typeof p.style === 'string' ? p.style : ''; p.chordLock = !!p.chordLock;
+  if (!(p.taste && typeof p.taste === 'object')) delete p.taste;
   p.tracks = (p.tracks || []).filter(t => t && I[t.inst]).map(t => {
     const n = GR.newTrack(t.inst, t.sound, t);
     if (!I[n.inst].sounds[n.sound]) n.sound = I[n.inst].def;
     if (![12, 16, 24, 32].includes(n.res)) n.res = 16;
-    n.notes = (t.notes || []).filter(x => x && isFinite(x.t)).map(x => Object.assign({}, x));
+    n.notes = (t.notes || []).filter(x => x && isFinite(x.t)).map(x => {
+      const y = Object.assign({}, x);
+      if (y.nudge != null) { y.nudge = clamp(+y.nudge || 0, -1.5, 1.5); if (Math.abs(y.nudge) < 0.02) delete y.nudge; }
+      return y;
+    });
     return n;
   });
   return p;
@@ -243,9 +264,16 @@ const two = n => String(n).padStart(2, '0');
 const SCALE_SHORT = { minor: 'm', major: '', dorian: ' dor', phrygian: ' phr', 'harmonic minor': ' hm', mixolydian: ' mix', 'minor pentatonic': 'm pent', 'major pentatonic': ' pent', chromatic: ' chr' };
 const keyLabel = () => GR.NOTE_NAMES[P.key] + (SCALE_SHORT[P.scale] != null ? SCALE_SHORT[P.scale] : '');
 
-function renderAll() { renderOled(); renderTransport(); renderDensity(); renderDeck(); renderRoll(); renderFoot(); }
+function renderAll() { renderOled(); renderTransport(); renderDensity(); renderDeck(); renderChan(); renderRoll(); renderFoot(); }
+function renderStyleTag() {
+  const t = $('#styleTag'); if (!t) return;
+  const [lo, hi] = GR.styleBpm(genreOf(), P.style), L = learnedLoops();
+  t.textContent = `${styleLabel().toUpperCase()} · ${lo}–${hi} BPM${L ? ` · ${L} LEARNED` : ''}`;
+}
 function renderOled() {
   $('#oledGenre').textContent = GR.GROOVES[genreOf()].name.toUpperCase();
+  $('#oledGenreLbl').textContent = 'GENRE · ' + styleOf().name.toUpperCase();
+  renderStyleTag();
   $('#oledTempo').textContent = (+P.bpm).toFixed(2);
   const daw = !!(HOST && H.daw);
   $('#syncTag').textContent = daw ? 'DAW SYNC' : 'INTERNAL';
@@ -306,11 +334,191 @@ function renderDeck() {
   lastStep = -1;
 }
 function renderFoot() {
-  const bars = $('#bars');
-  bars.innerHTML = Array.from({ length: 8 }, (_, i) => `<button class="bar-pad${i === ui.bar ? ' active' : ''}${i >= P.bars ? ' beyond' : ''}" data-bar="${i}" title="${i < P.bars ? 'Bar ' + (i + 1) : 'Make the loop ' + (i + 1) + ' bars'}">${i + 1}</button>`).join('');
+  renderBars();
   setKnob('swing', P.swing / 100, Math.round(P.swing) + '%');
   setKnob('master', P.master, Math.round(P.master * 100) + '%');
   $('#midiPadText').innerHTML = HOST ? '<strong>SAVE MIDI</strong> · or drag from the strip below' : '<strong>DRAG MIDI</strong> into your DAW';
+}
+// eight bar tiles, each a little map of its hits: drum channels as rows, the bass as the bottom row
+function barMap(b) {
+  const rows = drumTracks().slice(0, 6), bass = bassTracks()[0], b0 = b * TPB;
+  const cells = [];
+  rows.forEach(tr => {
+    const line = new Array(16).fill('');
+    tr.notes.forEach(n => { if (n.t >= b0 && n.t < b0 + TPB) { const c = Math.floor((n.t - b0) / 6); line[c] = n.vel < 0.5 && line[c] !== 'h' ? 'g' : 'h'; } });
+    line.forEach((v, i) => cells.push(v || (i % 4 === 0 ? 'beat' : '')));
+  });
+  if (bass) {
+    const line = new Array(16).fill('');
+    bass.notes.forEach(n => {
+      const a = Math.max(n.t, b0), e = Math.min(n.t + (n.len || 6), b0 + TPB);
+      for (let t = a; t < e; t += 6) line[Math.floor((t - b0) / 6)] = 'b';
+    });
+    line.forEach((v, i) => cells.push(v || (i % 4 === 0 ? 'beat' : '')));
+  }
+  return cells.map(c => `<i${c ? ` class="${c}"` : ''}></i>`).join('');
+}
+function renderBars() {
+  const rows = Math.max(1, Math.min(6, drumTracks().length) + (bassTracks().length ? 1 : 0));
+  const segs = Array.from({ length: 8 }, (_, i) => i < P.bars
+    ? `<button class="bar-tile${i === ui.bar ? ' active' : ''}${i === ui.queued || i === S.landing ? ' queued' : ''}" data-bar="${i}" aria-label="Bar ${i + 1}" title="${S.playing ? 'Play bar ' + (i + 1) + ' from the next bar line' : 'Show bar ' + (i + 1)}"><span class="bt-top">${two(i + 1)}<small>${i === ui.queued || i === S.landing ? 'NEXT' : 'PLAY'}</small></span><span class="bt-map" style="--rows:${rows}">${barMap(i)}</span></button>`
+    : `<button class="bar-tile beyond" data-bar="${i}" aria-label="Make the loop 8 bars" title="Make the loop 8 bars: bars 5–8 repeat 1–4"><b>+</b></button>`).join('');
+  $('#bars').innerHTML = `<div class="loop-bracket" id="loopBracket" style="--n:${P.bars}"><span class="lb-label">LOOP 1–${P.bars}</span><span class="lb-handle" id="loopHandle" role="slider" tabindex="0" aria-label="Loop length in bars" aria-valuemin="4" aria-valuemax="8" aria-valuenow="${P.bars}" title="Drag to switch the loop between 4 and 8 bars (or use the arrow keys)"></span></div><div class="lane" id="lane">${segs}<i class="lane-head" id="laneHead" hidden></i></div>`;
+  $('#psLoop').textContent = `LOOP · ${two(P.bars)} BAR${P.bars > 1 ? 'S' : ''}`;
+  $('#followBtn').classList.toggle('on', ui.follow);
+  $('#followBtn').setAttribute('aria-pressed', ui.follow);
+  document.querySelectorAll('.loop-seg [data-tool]').forEach(b => { const on = b.dataset.tool === 'len' + P.bars; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+}
+function setLoopLength(n) {
+  n = snapBars(n); if (n === P.bars) return;
+  const grow = n > P.bars;
+  edit(() => { if (grow) extendLoop(n); else P.bars = n; });
+  toast(grow ? `Loop is now ${n} bars: bars 5–8 repeat 1–4` : `Loop is now ${n} bars. Bars 5–8 are kept for when you go back to 8`);
+}
+function onLoopHandleDown(e) {
+  const hd = e.target.closest('#loopHandle'); if (!hd) return;
+  e.preventDefault(); e.stopPropagation();
+  const lane = $('#lane').getBoundingClientRect(), br = $('#loopBracket');
+  let n = P.bars;
+  br.classList.add('drag');
+  try { hd.setPointerCapture(e.pointerId); } catch (err) {}
+  const mv = ev => {
+    n = (ev.clientX - lane.left) / lane.width * 8 >= 6 ? MAX_BARS : MIN_BARS;
+    br.style.setProperty('--n', n); br.querySelector('.lb-label').textContent = `LOOP 1–${n}`;
+  };
+  const up = () => { hd.removeEventListener('pointermove', mv); hd.removeEventListener('pointerup', up); hd.removeEventListener('pointercancel', up); br.classList.remove('drag'); if (n !== P.bars) setLoopLength(n); };
+  hd.addEventListener('pointermove', mv); hd.addEventListener('pointerup', up); hd.addEventListener('pointercancel', up);
+}
+
+/* ---------- the selected channel: sound screen and knobs ---------- */
+const CP = [
+  { k: 'vol', label: 'VOL', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => Math.round(v * 100) + '%', def: 0.8, mix: true },
+  { k: 'pan', label: 'PAN', to: v => (v + 1) / 2, from: n => Math.round((n * 2 - 1) * 50) / 50, fmt: v => (Math.abs(v) < 0.02 ? 'C' : (v < 0 ? 'L' : 'R') + Math.round(Math.abs(v) * 100)), def: 0, mix: true },
+  { k: 'pitch', label: 'PITCH', to: v => (v + 24) / 48, from: n => Math.round(n * 48 - 24), fmt: v => (v > 0 ? '+' : '') + v + ' st', def: 0 },
+  { k: 'decay', label: 'LENGTH', to: v => (v - 0.3) / 1.7, from: n => Math.round((0.3 + n * 1.7) * 20) / 20, fmt: v => v.toFixed(2) + '×', def: 1 },
+  { k: 'tone', label: 'TONE', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => (v >= 0.99 ? 'OPEN' : Math.round(v * 100) + '%'), def: 1, mix: true },
+  { k: 'rev', label: 'REVERB', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => Math.round(v * 100) + '%', def: 0, mix: true },
+  { k: 'echo', label: 'ECHO', to: v => v, from: n => Math.round(n * 100) / 100, fmt: v => Math.round(v * 100) + '%', def: 0, mix: true }
+];
+function knobVisual(el, norm) {
+  const deg = clamp(norm, 0, 1) * 270;
+  el.style.setProperty('--ring-deg', deg + 'deg');
+  const ind = el.querySelector('.enc-ind'); if (ind) ind.style.transform = `rotate(${-135 + deg}deg)`;
+}
+function renderChan() {
+  const box = $('#chanPanel'), tr = selTrack();
+  if (!tr) { box.innerHTML = ''; return; }
+  const inst = I[tr.inst], map = GR.midiMap(P)[tr.id] || {}, n = P.tracks.indexOf(tr);
+  const midi = map.note != null ? `MIDI NOTE ${map.note}` : `MIDI CH ${(map.ch || 0) + 1}`;
+  const knobs = CP.map(c => {
+    const v = tr[c.k], label = c.k === 'decay' && inst.pitched ? 'RELEASE' : c.label;
+    return `<div class="cp-knob" data-k="${c.k}"><button class="enc-knob sm" aria-label="${label}" aria-valuetext="${c.fmt(v)}" title="Drag or scroll · double-click resets" style="--ring-deg:${clamp(c.to(v), 0, 1) * 270}deg"><span class="enc-cap"><span class="enc-ind" style="transform:rotate(${-135 + clamp(c.to(v), 0, 1) * 270}deg)"></span></span></button><span class="foot-label">${label}</span><span class="knob-val">${c.fmt(v)}</span></div>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="oled-bezel cp-screen"><div class="oled-screen cp-oled">
+      <div class="cp-top"><span>CH ${two(n + 1)} · <b>${esc(tr.name.toUpperCase())}</b></span><span>${midi} · ${tr.res} STEPS</span></div>
+      <div class="cp-name"><button class="silicone-btn cp-arrow" data-cp="prev" aria-label="Previous sound" title="Previous built-in sound">◀</button><span class="val" title="${esc(GR.soundLabel(tr))}">${esc(GR.soundLabel(tr))}</span><button class="silicone-btn cp-arrow" data-cp="next" aria-label="Next sound" title="Next built-in sound">▶</button></div>
+      <canvas class="cp-wave" id="cpWave" title="Tap to hear it" aria-label="Waveform of ${esc(GR.soundLabel(tr))}"></canvas>
+      <div class="cp-actions">
+        <button class="silicone-btn tool-btn" data-cp="load">${tr.sample ? 'REPLACE SAMPLE' : 'LOAD SAMPLE…'}</button>
+        <button class="silicone-btn tool-btn" data-cp="sounds">ALL SOUNDS</button>
+        ${tr.sample ? '<button class="silicone-btn tool-btn" data-cp="builtin">BUILT-IN</button>' : ''}
+      </div>
+    </div></div>
+    <div class="cp-knobs">${knobs}</div>
+    <div class="cp-side">
+      <div class="seg" role="group" aria-label="Steps per bar">${[12, 16, 24, 32].map(r => `<button data-res="${r}" class="${r === tr.res ? 'on' : ''}" title="${RES_LABEL[r]}">${r}</button>`).join('')}</div>
+      <div class="row"><button class="ms-btn${tr.mute ? ' mute-on' : ''}" data-cp="mute" aria-pressed="${tr.mute}">MUTE</button><button class="ms-btn${tr.solo ? ' solo-on' : ''}" data-cp="solo" aria-pressed="${tr.solo}">SOLO</button></div>
+      <div class="row"><button class="silicone-btn tool-btn${ui.rollOpen ? ' on' : ''}" data-cp="roll" aria-pressed="${ui.rollOpen}" title="Open ${esc(tr.name)} in the piano roll (P)">PIANO ROLL</button></div>
+      <div class="row"><button class="silicone-btn tool-btn" data-cp="dice">${DICE} NEW</button><button class="silicone-btn tool-btn" data-cp="more">MORE…</button></div>
+      <div class="cp-hint">${esc(tr.name)} · ${inst.pitched ? 'bass' : 'drums'}${tr.sample ? ' · your sample' : ''}</div>
+    </div>`;
+  drawChanWave(tr);
+}
+// the sound's waveform: the user's sample, or one hit of the synth rendered offline
+const cpWaves = new Map();
+async function drawChanWave(tr) {
+  const cv = $('#cpWave'); if (!cv) return;
+  const sig = JSON.stringify([tr.inst, tr.sound, tr.sample, !!GR.samples.get(tr.sample), tr.pitch, tr.decay]);
+  let peaks = cpWaves.get(sig);
+  if (!peaks) {
+    try {
+      let d;
+      const buf = tr.sample && GR.samples.get(tr.sample);
+      if (buf) d = buf.getChannelData(0);
+      else {
+        const sr = 22050, ctx = new OfflineAudioContext(1, sr * 1.4, sr);
+        GR.voice(ctx, ctx.destination, 0, tr, { vel: 1, p: defaultPitch(tr), dur: 0.7, from: null });
+        d = (await ctx.startRendering()).getChannelData(0);
+      }
+      let end = d.length; while (end > 1 && Math.abs(d[end - 1]) < 0.002) end--;
+      const N = 180, per = Math.max(1, end / N); let mx = 0;
+      peaks = new Float32Array(N);
+      for (let i = 0; i < N; i++) { let m = 0; for (let j = Math.floor(i * per); j < Math.floor((i + 1) * per); j++) m = Math.max(m, Math.abs(d[j] || 0)); peaks[i] = m; mx = Math.max(mx, m); }
+      for (let i = 0; i < N; i++) peaks[i] /= Math.max(mx, 0.05);
+      cpWaves.set(sig, peaks);
+    } catch (e) { return; }
+  }
+  if (selTrack() !== tr || !cv.isConnected) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, Hh = cv.clientHeight; if (!W) return;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, Hh);
+  const mid = Hh / 2;
+  g.fillStyle = '#ffaa2b22'; g.fillRect(0, mid - 0.5, W, 1);
+  g.fillStyle = '#ffaa2b'; g.shadowColor = '#ffaa2b'; g.shadowBlur = 6;
+  const step = W / peaks.length;
+  for (let i = 0; i < peaks.length; i++) { const h = Math.max(0.6, peaks[i] * (Hh * 0.44)); g.fillRect(i * step, mid - h, Math.max(1, step * 0.62), h * 2); }
+}
+function onChanClick(e) {
+  const tr = selTrack(); if (!tr) return;
+  const b = e.target.closest('[data-cp], [data-res], #cpWave'); if (!b) return;
+  if (b.id === 'cpWave') { audition(tr); return; }
+  if (b.dataset.res) { edit(() => { tr.res = +b.dataset.res; }); return; }
+  const a = b.dataset.cp, keys = Object.keys(I[tr.inst].sounds);
+  if (a === 'prev' || a === 'next') {
+    const i = tr.sample ? (a === 'next' ? -1 : 0) : keys.indexOf(tr.sound);
+    edit(() => { tr.sound = keys[(i + (a === 'next' ? 1 : -1) + keys.length) % keys.length]; tr.sample = null; tr.sampleName = null; });
+    audition(tr);
+  } else if (a === 'load') pickSample(tr);
+  else if (a === 'sounds') soundSheet(tr);
+  else if (a === 'builtin') { edit(() => { tr.sample = null; tr.sampleName = null; }); audition(tr); }
+  else if (a === 'mute') edit(() => { tr.mute = !tr.mute; });
+  else if (a === 'solo') edit(() => { tr.solo = !tr.solo; });
+  else if (a === 'dice') newPattern(tr);
+  else if (a === 'more') channelSheet(tr);
+  else if (a === 'roll') toggleRoll();
+}
+function toggleRoll() {
+  ui.rollOpen = !ui.rollOpen; renderRoll(); renderChan();
+  if (ui.rollOpen) { const r = $('#roll'); if (r && r.scrollIntoView) r.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+}
+// the panel's knobs, by delegation (the panel is redrawn on every change)
+function chanKnob(el) {
+  const k = el.closest('.cp-knob').dataset.k, c = CP.find(x => x.k === k);
+  return {
+    c,
+    get: () => clamp(c.to(selTrack()[k]), 0, 1),
+    set: n => {
+      const tr = selTrack(); tr[k] = c.from(clamp(n, 0, 1));
+      knobVisual(el, c.to(tr[k]));
+      const val = el.parentNode.querySelector('.knob-val'); if (val) val.textContent = c.fmt(tr[k]);
+      if (mix) GR.updateMix(mix, P, ui.muted);
+      syncHost();
+    }
+  };
+}
+function onChanKnobDown(e) {
+  const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+  e.preventDefault();
+  const kn = chanKnob(el), y0 = e.clientY, v0 = kn.get(); commit();
+  try { el.setPointerCapture(e.pointerId); } catch (err) {}
+  const mv = ev => kn.set(v0 + (y0 - ev.clientY) / 140);
+  const up = () => {
+    el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+    changed(); settle();
+    if (!kn.c.mix) audition(selTrack());
+  };
+  el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
 }
 function setKnob(id, norm, text) {
   const deg = clamp(norm, 0, 1) * 270;
@@ -324,82 +532,106 @@ function refreshBar() {
   drumTracks().forEach(tr => { const el = $(`[data-pads="${tr.id}"]`); if (el) el.innerHTML = padsInner(tr); });
   bassTracks().forEach(tr => { const el = $(`[data-lane="${tr.id}"] .bass-notes`); if (el) el.innerHTML = bassInner(tr); });
   $('#oledBar').textContent = `${two(ui.bar + 1)} / ${two(P.bars)}`;
-  document.querySelectorAll('.bar-pad').forEach((b, i) => b.classList.toggle('active', i === ui.bar));
-  if (!$('#roll').hidden) { const t = $('#roll .ptitle span'); const tr = selTrack(); if (t && tr) t.textContent = `· ${tr.name} · bar ${ui.bar + 1}`; drawRollNotes(); }
+  document.querySelectorAll('.bar-tile').forEach((b, i) => b.classList.toggle('active', i === ui.bar));
+  document.querySelectorAll('#roll .pr-bar').forEach((x, i) => x.classList.toggle('on', i === ui.bar));
   lastStep = -1;
 }
 function light(tr) {  // cheap update of one channel during a drag
   S.map = null;
   const pads = $(`[data-pads="${tr.id}"]`); if (pads) pads.innerHTML = padsInner(tr);
   const lane = $(`[data-lane="${tr.id}"] .bass-notes`); if (lane) lane.innerHTML = bassInner(tr);
+  const tile = $(`.bar-tile[data-bar="${ui.bar}"] .bt-map`); if (tile) tile.innerHTML = barMap(ui.bar);
   if (!$('#roll').hidden) drawRollNotes();
 }
 
-/* ---------- piano roll ---------- */
-const ROWH = 20;
+/* ---------- piano roll: the whole loop, for every channel ----------
+   Bars across the top, a chord lane, a keyboard, the notes, and a velocity lane underneath.
+   Drum channels show their hits at C4 (the sound as it is); moving a hit up or down pitches it. */
+const ROWH = 13, KEYW = 58;
+const isPitched = tr => !!I[tr.inst].pitched;
+const notePitch = (tr, n) => (n.p != null ? n.p : (isPitched(tr) ? 48 : 60));
+const noteLen = (tr, n) => (isPitched(tr) ? (n.len || TPB / tr.res) : TPB / tr.res);
+function rollRange(tr) {
+  if (!isPitched(tr)) return [48, 72];
+  const lo = tr.low != null ? tr.low : 24;
+  return [lo, lo + 36];
+}
 function rollRows(tr) {
-  const rows = [];
-  for (let m = tr.low + 24; m >= tr.low; m--) if (!ui.scaleOnly || inScale(m)) rows.push(m);
+  const [lo, hi] = rollRange(tr), rows = [];
+  for (let m = hi; m >= lo; m--) if (!ui.scaleOnly || inScale(m) || (!isPitched(tr) && m === 60)) rows.push(m);
   return rows;
 }
 function renderRoll() {
   const box = $('#roll'), tr = selTrack();
-  const show = !!(tr && I[tr.inst].pitched && ui.rollOpen);
+  const show = !!(tr && ui.rollOpen);
   box.hidden = !show; if (!show) return;
-  const rows = rollRows(tr);
-  const keyName = GR.NOTE_NAMES[P.key] + ' ' + P.scale;
-  const prevScroll = box.querySelector('.rwrap') ? box.querySelector('.rwrap').scrollTop : null;
-  box.innerHTML = `<div class="phead">
-      <h2 class="ptitle">Piano roll <span>· ${esc(tr.name)} · bar ${ui.bar + 1}</span></h2>
+  const rows = rollRows(tr), L = P.bars, z = ui.rollZoom || 1;
+  const prev = $('#prScroll'), keep = prev && ui._rollFor === tr.id ? [prev.scrollLeft, prev.scrollTop] : null;
+  if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
+  const keys = rows.map(m => {
+    const pc = ((m % 12) + 12) % 12, blk = [1, 3, 6, 8, 10].includes(pc);
+    return `<button class="pk${blk ? ' blk' : ''}${pc === 0 ? ' c' : ''}" data-key="${m}" tabindex="-1" aria-label="Play ${GR.noteName(m)}">${pc === 0 ? GR.noteName(m) : ''}</button>`;
+  }).join('');
+  const bgs = rows.map(m => {
+    const pc = ((m % 12) + 12) % 12;
+    return `<div class="pr-rowbg${[1, 3, 6, 8, 10].includes(pc) ? ' blk' : ''}${(((m - P.key) % 12) + 12) % 12 === 0 ? ' root' : ''}${inScale(m) ? '' : ' out'}${!isPitched(tr) && m === 60 ? ' home' : ''}"></div>`;
+  }).join('');
+  const ruler = Array.from({ length: L }, (_, b) => `<button class="pr-bar${b === ui.bar ? ' on' : ''}" data-rbar="${b}" style="left:${b / L * 100}%;width:${100 / L}%" title="Go to bar ${b + 1}">${b + 1}</button>`).join('');
+  const chords = Array.from({ length: L }, (_, b) => {
+    const c = P.chords[b];
+    return `<button class="pr-chord${c ? '' : ' empty'}" data-cbar="${b}" style="left:${b / L * 100}%;width:${100 / L}%" title="Chord for bar ${b + 1}: the bass follows it"><span>${c ? esc(GR.chordName(c, P)) : '+ chord'}</span></button>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="phead">
+      <h2 class="ptitle">Piano roll <span>· ${esc(tr.name)} · ${isPitched(tr) ? GR.NOTE_NAMES[P.key] + ' ' + esc(P.scale) : 'move a hit up or down to pitch it'}</span></h2>
+      <button class="silicone-btn chip" data-act="song" title="Key and scale">${esc(keyLabel())}</button>
+      <button class="silicone-btn chip${ui.scaleOnly ? ' on' : ''}" data-act="scaleonly" aria-pressed="${ui.scaleOnly}">SCALE ONLY</button>
+      <div class="seg" role="group" aria-label="Zoom">${[1, 2, 4].map(v => `<button data-zoom="${v}" class="${v === z ? 'on' : ''}" title="${v === 1 ? 'Whole loop' : v + '× wider'}">${v === 1 ? 'FIT' : v + '×'}</button>`).join('')}</div>
       <button class="silicone-btn ib" data-act="closeroll" aria-label="Close piano roll">${ICON.x}</button>
     </div>
-    <div class="rtools">
-      <button class="silicone-btn chip" data-act="song" title="Key and scale">${esc(keyName)}</button>
-      <button class="silicone-btn chip" data-act="scaleonly" aria-pressed="${ui.scaleOnly}" style="${ui.scaleOnly ? 'color:var(--lime)' : ''}">scale only</button>
-      <span class="sp"></span>
-      <button class="silicone-btn ib" data-act="octdown" aria-label="Octave down" title="Octave down">▼</button>
-      <button class="silicone-btn ib" data-act="octup" aria-label="Octave up" title="Octave up">▲</button>
-    </div>
-    <div class="rwrap"><div class="rbody">
-      <div class="rkeys">${rows.map(m => { const pc = ((m % 12) + 12) % 12; const blk = [1, 3, 6, 8, 10].includes(pc); const root = pc === P.key;
-        return `<button data-key="${m}" class="${blk ? 'blk' : ''}${root ? ' root' : ''}" tabindex="-1">${GR.noteName(m)}</button>`; }).join('')}</div>
-      <div class="rcanvas" id="rcanvas" style="--res:${tr.res};height:${rows.length * ROWH}px">
-        ${rows.map(m => `<div class="rrow ${(((m - P.key) % 12) + 12) % 12 === 0 ? 'root' : inScale(m) ? 'ins' : 'out'}"></div>`).join('')}
-        <div id="rnotes"></div>
+    <div class="pr-scroll" id="prScroll">
+      <div class="pr-inner" id="prInner">
+        <div class="pr-row pr-top"><div class="pr-side pr-corner">BAR</div><div class="pr-lane pr-ruler">${ruler}<i class="pr-mark" id="prMark" hidden></i></div></div>
+        <div class="pr-row pr-chordrow"><div class="pr-side">CHORDS</div><div class="pr-lane">${chords}</div></div>
+        <div class="pr-row pr-mid"><div class="pr-side pr-keys">${keys}</div>
+          <div class="pr-lane pr-grid" id="rcanvas" style="--bars:${L};--res:${tr.res};height:${rows.length * ROWH}px">${bgs}<div class="pr-lines"></div><div id="rnotes"></div><i class="pr-head" id="rHead" hidden></i></div></div>
+        <div class="pr-row pr-velrow"><div class="pr-side">VEL</div><div class="pr-lane pr-vel" id="rvel" style="--bars:${L}"></div></div>
       </div>
-    </div></div>
+    </div>
     <div class="rhint" id="rhint"></div>`;
+  sizeRoll();
   drawRollNotes();
-  const wrap = box.querySelector('.rwrap');
-  if (prevScroll != null && ui._rollFor === tr.id) wrap.scrollTop = prevScroll;
+  const sc = $('#prScroll');
+  if (keep) { sc.scrollLeft = keep[0]; sc.scrollTop = keep[1]; }
   else {
-    const b0 = ui.bar * TPB, ns = tr.notes.filter(n => n.t >= b0 && n.t < b0 + TPB);
-    const top = ns.length ? Math.max(...ns.map(n => n.p)) : tr.low + 14;
-    const idx = rows.findIndex(m => m <= top);
-    wrap.scrollTop = Math.max(0, idx * ROWH - 40);
+    const ps = tr.notes.map(n => notePitch(tr, n)), mid = ps.length ? (Math.min(...ps) + Math.max(...ps)) / 2 : (isPitched(tr) ? rollRange(tr)[0] + 12 : 60);
+    const idx = rows.findIndex(m => m <= mid);
+    sc.scrollTop = Math.max(0, idx * ROWH - sc.clientHeight / 2 + 60);
   }
   ui._rollFor = tr.id;
 }
+function sizeRoll() {
+  const sc = $('#prScroll'), inner = $('#prInner'); if (!sc || !inner) return;
+  inner.style.width = Math.round(KEYW + (sc.clientWidth - KEYW) * (ui.rollZoom || 1)) + 'px';
+}
 function drawRollNotes() {
-  const tr = selTrack(), layer = $('#rnotes'); if (!tr || !layer) return;
-  const rows = rollRows(tr), b0 = ui.bar * TPB, b1 = b0 + TPB, stepT = TPB / tr.res;
-  let h = '', above = 0, below = 0, hidden = 0;
+  const tr = selTrack(), layer = $('#rnotes'), vel = $('#rvel'); if (!tr || !layer) return;
+  const rows = rollRows(tr), loopT = P.bars * TPB;
+  let h = '', v = '', hidden = 0;
   tr.notes.forEach(n => {
-    const len = n.len || stepT; if (n.t >= b1 || n.t + len <= b0) return;
-    const r = rows.indexOf(n.p);
-    if (r < 0) { if (n.p > tr.low + 24) above++; else if (n.p < tr.low) below++; else hidden++; return; }
-    const a = Math.max(n.t, b0), e = Math.min(n.t + len, b1);
-    h += `<div class="rnote${n.t < b0 ? ' cont' : ''}" style="top:${r * ROWH + 1}px;left:calc(${(a - b0) / TPB * 100}% + 1px);width:calc(${(e - a) / TPB * 100}% - 2px);--v:${n.vel}">${n.slide ? '↗' : ''}${GR.noteName(n.p)}</div>`;
+    if (n.t >= loopT) return;
+    const p = notePitch(tr, n), r = rows.indexOf(p), len = Math.min(noteLen(tr, n), loopT - n.t);
+    v += `<span class="vstalk${n.vel < 0.5 ? ' ghost' : ''}" style="left:${n.t / loopT * 100}%;height:${Math.round(6 + n.vel * 40)}px"></span>`;
+    if (r < 0) { hidden++; return; }
+    h += `<div class="rnote${n.vel < 0.5 ? ' ghost' : ''}${isPitched(tr) ? '' : ' hit'}${n.nudge ? ' off' : ''}" style="top:${r * ROWH + 1}px;left:${(n.t + GR.nudge(n)) / loopT * 100}%;width:calc(${len / loopT * 100}% - 1px);--v:${n.vel}">${n.slide ? '↗' : ''}${n.roll > 1 ? '×' + n.roll : ''}</div>`;
   });
-  layer.innerHTML = h;
+  layer.innerHTML = h; vel.innerHTML = v;
   const hint = $('#rhint');
-  if (hint) {
-    const bits = [];
-    if (above) bits.push(`${above} note${above > 1 ? 's' : ''} above — press ▲`);
-    if (below) bits.push(`${below} note${below > 1 ? 's' : ''} below — press ▼`);
-    if (hidden) bits.push(`${hidden} outside the scale — turn off “scale only”`);
-    hint.textContent = bits.length ? bits.join(' · ') : 'Tap to add a bass note and drag right to make it longer. Drag a note to move it, tap it to delete, hold it for velocity and slide.';
-  }
+  if (hint) hint.textContent = hidden
+    ? `${hidden} note${hidden > 1 ? 's are' : ' is'} outside the rows shown${ui.scaleOnly ? ': turn off SCALE ONLY' : ''}.`
+    : isPitched(tr)
+      ? 'Tap to add a note, drag right to make it longer. Drag a note to move it, its right edge to resize it, tap it to delete, hold it for slide and more. Drag the orange stalks to set velocity. Tap a chord to change it: the bass in that bar follows.'
+      : 'Each hit sits at C4, the sound as it is. Drag a hit up or down to pitch it, sideways to move it. Tap empty space to add a hit, tap a hit to delete it, hold it for rolls. Drag the orange stalks to set velocity.';
 }
 
 /* ---------- animation: playhead, pad flashes, meters, follow ---------- */
@@ -427,13 +659,21 @@ function frame() {
   const p = pos();
   if (p != null) {
     const bar = Math.floor(p / TPB);
-    if (ui.follow && bar !== ui.bar && !dragging) { ui.bar = bar; refreshBar(); }
-    document.querySelectorAll('.bar-pad').forEach((b, i) => b.classList.toggle('playing', i === bar));
+    if (HOST && ui.queued != null && bar !== ui.queuedFrom) ui.queued = null;
+    if (S.landing != null && bar === S.landing) S.landing = null;
+    if (ui.queued == null && S.landing == null && document.querySelector('.bar-tile.queued')) renderBars();
+    if (ui.follow && ui.queued == null && S.landing == null && bar !== ui.bar && !dragging) { ui.bar = bar; refreshBar(); }
+    const lh = $('#laneHead'); if (lh) { lh.hidden = false; lh.style.left = (p / (8 * TPB) * 100) + '%'; }
+    const rh = $('#rHead'), rm = $('#prMark'); if (rh) { const x = (p / (P.bars * TPB) * 100) + '%'; rh.hidden = false; rh.style.left = x; rm.hidden = false; rm.style.left = x; }
+    document.querySelectorAll('.bar-tile').forEach((b, i) => b.classList.toggle('playing', i === bar && i < P.bars));
     const st = Math.floor((p % TPB) / 6);
     if (st !== lastStep && bar === ui.bar) { lastStep = st; showStep(p % TPB); }
   } else if (lastStep !== -2) {
     lastStep = -2; showStep(null);
-    document.querySelectorAll('.bar-pad.playing').forEach(b => b.classList.remove('playing'));
+    const lh = $('#laneHead'); if (lh) lh.hidden = true;
+    const rh = $('#rHead'), rm = $('#prMark'); if (rh) { rh.hidden = true; rm.hidden = true; }
+    if (ui.queued != null || S.landing != null) { ui.queued = null; S.landing = null; renderBars(); }
+    document.querySelectorAll('.bar-tile.playing').forEach(b => b.classList.remove('playing'));
   }
   if (!mix && !HOST) return;
   document.querySelectorAll('[data-meter]').forEach(m => {
@@ -461,7 +701,7 @@ function select(id, openRoll) {
   ui.sel = id;
   if (openRoll != null) ui.rollOpen = openRoll;
   document.querySelectorAll('.deck-row[data-id]').forEach(r => r.classList.toggle('sel', r.dataset.id === id));
-  renderRoll();
+  renderChan(); renderRoll();
 }
 const nextState = n => (!n ? 'full' : n.vel >= 0.5 ? 'ghost' : 'off');
 function setStepState(tr, s, state) {
@@ -567,7 +807,7 @@ function onDeckClick(e) {
   if (act === 'dice') newPattern(tr);
   else if (act === 'mute') { edit(() => { tr.mute = !tr.mute; }); toast(tr.mute ? `${tr.name} muted` : `${tr.name} on`); }
   else if (act === 'solo') edit(() => { tr.solo = !tr.solo; });
-  else if (act === 'sound') { select(tr.id); soundSheet(tr); }
+  else if (act === 'sound') { select(tr.id); audition(tr); }
   else if (act === 'name') {
     const pitched = I[tr.inst].pitched;
     if (pitched) select(tr.id, !(ui.rollOpen && ui.sel === tr.id)); else select(tr.id);
@@ -593,6 +833,7 @@ function knob(el, get, set, reset) {
 function transposeBy(d) {
   P.key = (P.key + d + 12) % 12;
   P.tracks.forEach(t => { if (I[t.inst].pitched) t.notes.forEach(n => { n.p = clamp(n.p + d, 0, 127); }); });
+  if (Array.isArray(P.chords)) P.chords.forEach(c => { if (c) c.r = ((c.r + d) % 12 + 12) % 12; });
 }
 // make the loop longer by repeating what is there: each new bar copies the bar it lines up with
 function extendLoop(to) {
@@ -606,58 +847,63 @@ function extendLoop(to) {
     }
     t.notes = t.notes.concat(add); sortNotes(t);
   });
+  if (Array.isArray(P.chords)) for (let b = L; b < to; b++) P.chords[b] = P.chords[b % L] ? Object.assign({}, P.chords[b % L]) : null;
   P.bars = to;
 }
 
 /* ---------- piano roll interactions ---------- */
 function onRollDown(e) {
+  if (e.target.closest('#rvel')) return onVelDown(e);
   const cv = e.target.closest('#rcanvas'); if (!cv) return;
   const tr = selTrack(); if (!tr) return;
   e.preventDefault();
-  const rows = rollRows(tr), rect = cv.getBoundingClientRect(), stepT = TPB / tr.res, b0 = ui.bar * TPB;
-  const colAt = x => clamp(Math.floor((x - rect.left) / rect.width * tr.res), 0, tr.res - 1);
+  const pitched = isPitched(tr), rows = rollRows(tr), rect = cv.getBoundingClientRect(), stepT = TPB / tr.res, loopT = P.bars * TPB, nSteps = P.bars * tr.res;
+  const colAt = x => clamp(Math.floor((x - rect.left) / rect.width * nSteps), 0, nSteps - 1);
   const rowAt = y => clamp(Math.floor((y - rect.top) / ROWH), 0, rows.length - 1);
-  const c0 = colAt(e.clientX), r0 = rowAt(e.clientY), p0 = rows[r0], tick0 = b0 + c0 * stepT;
-  const hit = tr.notes.find(n => n.p === p0 && n.t <= tick0 && tick0 < n.t + (n.len || stepT) && n.t + (n.len || stepT) > b0);
+  const c0 = colAt(e.clientX), r0 = rowAt(e.clientY), p0 = rows[r0], tick0 = c0 * stepT;
+  const hit = tr.notes.find(n => n.t < loopT && notePitch(tr, n) === p0 && n.t <= tick0 && tick0 < n.t + noteLen(tr, n));
   if (e.button === 2) { if (hit) noteSheet(tr, hit); return; }
   commit(); dragging = true;
-  let mode, group, moved = false;
+  const setP = (n, p) => { if (pitched || p !== 60) n.p = p; else delete n.p; };
+  let mode, note = hit, moved = false;
   if (hit) {
-    const endX = rect.left + (Math.min(hit.t + hit.len, b0 + TPB) - b0) / TPB * rect.width;
-    mode = e.clientX > endX - Math.min(12, rect.width / tr.res * 0.45) ? 'resize' : 'move';
-    group = [hit];
+    const endX = rect.left + (hit.t + noteLen(tr, hit)) / loopT * rect.width;
+    mode = pitched && e.clientX > endX - Math.min(10, rect.width / nSteps * 0.45) ? 'resize' : 'move';
+  } else if (!pitched) {
+    // drums keep one hit per step: an empty row at a step that has a hit re-pitches that hit
+    const same = tr.notes.find(n => n.t >= tick0 && n.t < tick0 + stepT);
+    if (same) { note = same; setP(same, p0); mode = 'move'; moved = true; }
+    else { note = addNote(tr, tick0, { vel: 0.9 }); setP(note, p0); mode = 'new'; }
+    audition(tr, note);
   } else {
-    mode = 'new';
-    group = [addNote(tr, tick0, { p: p0, len: tr.lastLen || stepT * 2, vel: 0.85 })];
-    audition(tr, group[0]);
-    drawRollNotes();
+    note = addNote(tr, tick0, { p: p0, len: tr.lastLen || stepT * 2, vel: 0.85 }); mode = 'new';
+    audition(tr, note);
   }
-  const orig = group.map(n => ({ t: n.t, p: n.p, len: n.len }));
-  const lp = setTimeout(() => { if (!moved && hit) { mode = 'menu'; finish(); noteSheet(tr, hit); } }, 480);
+  light(tr);
+  const orig = { t: note.t, p: notePitch(tr, note), len: note.len }, ri0 = rows.indexOf(orig.p);
+  const lp = setTimeout(() => { if (!moved && hit) { mode = 'menu'; finish(); settle(); noteSheet(tr, hit); } }, 480);
   try { cv.setPointerCapture(e.pointerId); } catch (err) {}
-  let lastP = p0;
+  let lastP = orig.p;
   const move = ev => {
     const c = colAt(ev.clientX), r = rowAt(ev.clientY);
-    if (!moved && (c !== c0 || r !== r0 || Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 8)) { moved = true; clearTimeout(lp); }
+    if (!moved && (c !== c0 || r !== r0)) { moved = true; clearTimeout(lp); }
     if (!moved) return;
-    if (mode === 'resize' || mode === 'new') {
-      group.forEach((n, i) => { n.len = Math.max(stepT, (c - Math.floor((orig[i].t - b0) / stepT) + 1) * stepT); });
-    } else if (mode === 'move') {
-      const dc = c - c0, dr = r - r0;
-      group.forEach((n, i) => {
-        n.t = clamp(orig[i].t + dc * stepT, 0, P.bars * TPB - stepT);
-        const ri = rows.indexOf(orig[i].p); n.p = ri >= 0 ? rows[clamp(ri + dr, 0, rows.length - 1)] : orig[i].p;
-      });
-      if (group[0].p !== lastP) { lastP = group[0].p; audition(tr, group[0]); }
+    if (mode === 'resize' || (mode === 'new' && pitched)) {
+      note.len = Math.max(stepT, (c - Math.floor(orig.t / stepT) + 1) * stepT);
+    } else if (mode === 'move' || mode === 'new') {
+      note.t = clamp(orig.t + (c - c0) * stepT, 0, loopT - stepT);
+      if (ri0 >= 0) setP(note, rows[clamp(ri0 + (r - r0), 0, rows.length - 1)]);
+      const np = notePitch(tr, note); if (np !== lastP) { lastP = np; audition(tr, note); }
     }
-    drawRollNotes(); light(tr);
+    light(tr);
   };
   const up = () => {
     clearTimeout(lp);
-    if (mode === 'move' && !moved) removeNote(tr, hit);
-    if (mode !== 'menu' && group[0] && tr.notes.includes(group[0])) { tr.lastLen = group[0].len; tr.lastP = group[0].p; }
-    sortNotes(tr);
-    finish(); changed(); settle();
+    if (mode === 'move' && !moved && hit) removeNote(tr, hit);
+    if (!pitched && tr.notes.includes(note)) tr.notes = tr.notes.filter(n => n === note || Math.floor(n.t / stepT) !== Math.floor(note.t / stepT));
+    if (pitched && mode !== 'menu' && tr.notes.includes(note)) { tr.lastLen = note.len; tr.lastP = note.p; }
+    sortNotes(tr); finish();
+    if (mode !== 'menu') { changed(); settle(); }
   };
   function finish() {
     dragging = false;
@@ -665,21 +911,125 @@ function onRollDown(e) {
   }
   cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 }
+// velocity lane: drag the stalks up or down; sweep across to shape several
+function onVelDown(e) {
+  const lane = e.target.closest('#rvel'), tr = selTrack(); if (!lane || !tr) return;
+  e.preventDefault();
+  const rect = lane.getBoundingClientRect(), loopT = P.bars * TPB, stepT = TPB / tr.res, nSteps = P.bars * tr.res;
+  commit(); dragging = true;
+  const setAt = (x, y) => {
+    const col = clamp(Math.floor((x - rect.left) / rect.width * nSteps), 0, nSteps - 1);
+    const v = clamp(Math.round((1 - (y - rect.top - 6) / (rect.height - 12)) * 100) / 100, 0.05, 1);
+    let any = false;
+    tr.notes.forEach(n => { if (n.t < loopT && Math.floor(n.t / stepT) === col) { n.vel = v; any = true; } });
+    if (any) { light(tr); hud(`velocity ${Math.round(v * 100)}%`); }
+  };
+  setAt(e.clientX, e.clientY);
+  try { lane.setPointerCapture(e.pointerId); } catch (err) {}
+  const move = ev => setAt(ev.clientX, ev.clientY);
+  const up = () => {
+    dragging = false; hud(null);
+    lane.removeEventListener('pointermove', move); lane.removeEventListener('pointerup', up); lane.removeEventListener('pointercancel', up);
+    changed(); settle();
+  };
+  lane.addEventListener('pointermove', move); lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up);
+}
 function onRollClick(e) {
-  const b = e.target.closest('[data-act],[data-key]'); if (!b) return;
+  const b = e.target.closest('[data-act],[data-key],[data-zoom],[data-cbar],[data-rbar]'); if (!b) return;
   const tr = selTrack(); if (!tr) return;
   if (b.dataset.key) { audition(tr, { p: +b.dataset.key, vel: 0.85 }); return; }
+  if (b.dataset.zoom) { ui.rollZoom = +b.dataset.zoom; document.querySelectorAll('#roll [data-zoom]').forEach(x => x.classList.toggle('on', x === b)); sizeRoll(); return; }
+  if (b.dataset.cbar) { chordSheet(+b.dataset.cbar); return; }
+  if (b.dataset.rbar) { seek(+b.dataset.rbar); return; }
   const a = b.dataset.act;
-  if (a === 'closeroll') { ui.rollOpen = false; renderRoll(); }
-  else if (a === 'octup') { tr.low = Math.min(96, tr.low + 12); ui._rollFor = null; renderRoll(); autosave(); }
-  else if (a === 'octdown') { tr.low = Math.max(0, tr.low - 12); ui._rollFor = null; renderRoll(); autosave(); }
+  if (a === 'closeroll') { ui.rollOpen = false; renderRoll(); renderChan(); }
   else if (a === 'scaleonly') { ui.scaleOnly = !ui.scaleOnly; ui._rollFor = null; renderRoll(); }
   else if (a === 'song') songSheet();
+}
+// pick the chord for a bar; the bass in that bar moves with it
+function chordSheet(bar) {
+  const { triads, sevenths } = GR.diatonicChords(P), cur = P.chords && P.chords[bar];
+  const btn = (c, i, set) => `<button class="b sm${cur && cur.r === c.r && cur.q === c.q ? ' on' : ''}" data-set="${set}" data-ci="${i}"><span style="opacity:.55;font-family:var(--mono);font-size:9.5px">${c.roman}</span>&nbsp; ${esc(GR.chordName(c, P))}</button>`;
+  openSheet(`Bar ${bar + 1} chord`, `
+    <div class="sh-sec"><h4>In ${GR.NOTE_NAMES[P.key]} ${esc(P.scale)}</h4><div class="btns">${triads.map((c, i) => btn(c, i, 't')).join('')}</div></div>
+    ${sevenths.length ? `<div class="sh-sec"><h4>Sevenths</h4><div class="btns">${sevenths.map((c, i) => btn(c, i, 's')).join('')}</div></div>` : ''}
+    <div class="sh-sec"><div class="btns"><button class="b sm" data-clear>No chord</button><button class="b sm" data-all>Use for every bar</button>${P.chordLock ? '<button class="b sm" data-unlock>Let the style pick chords again</button>' : ''}</div>
+      <p class="hint" style="margin:8px 0 0">The bass notes in this bar move to the new chord. The dice and GENERATE keep your chords and follow them.</p></div>`, sh => {
+    sh.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.ci != null) { applyChord(bar, Object.assign({}, (b.dataset.set === 's' ? sevenths : triads)[+b.dataset.ci])); closeSheet(); }
+      else if (b.dataset.clear != null) { edit(() => { P.chords[bar] = null; P.chordLock = true; }); closeSheet(); }
+      else if (b.dataset.unlock != null) { edit(() => { P.chordLock = false; }); closeSheet(); toast('GENERATE picks new chords from the style again'); }
+      else if (b.dataset.all != null && cur) { commit(); for (let i = 0; i < P.bars; i++) shiftChord(i, cur); changed(); settle(); closeSheet(); toast(`Every bar is ${GR.chordName(cur, P)}`); }
+    });
+  });
+}
+function shiftChord(bar, c) {
+  if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
+  const old = P.chords[bar] || GR.inferChords(P)[bar];
+  P.chords[bar] = { r: c.r, q: c.q }; P.chordLock = true;
+  if (!old) return;
+  const d = (((c.r - old.r) % 12) + 18) % 12 - 6;
+  if (d) P.tracks.forEach(t => { if (isPitched(t)) t.notes.forEach(n => { if (Math.floor(n.t / TPB) === bar) n.p = clamp(n.p + d, 0, 127); }); });
+}
+function applyChord(bar, c) {
+  edit(() => shiftChord(bar, c));
+  const tr = bassTracks()[0]; if (tr) audition(tr, { p: (() => { let r = c.r; while (r < 28) r += 12; return r; })(), vel: 0.85 });
+  toast(`Bar ${bar + 1}: ${GR.chordName(c, P)} · the bass moved with it`);
 }
 
 /* ---------- groove generator ---------- */
 const genreOf = () => (GR.GROOVES[P.genre] ? P.genre : 'trap');
-function genOpts() { return { genre: genreOf(), complexity: ui.gen.complexity, bar: ui.gen.scope === 'bar' ? ui.bar : null }; }
+const styleOf = () => GR.styleOf(genreOf(), P.style);
+const styleLabel = () => `${GR.GROOVES[genreOf()].name} · ${styleOf().name}`;
+function genOpts() { return { genre: genreOf(), style: styleOf().id, complexity: ui.gen.complexity, bar: ui.gen.scope === 'bar' ? ui.bar : null }; }
+const dawTempo = () => !!(HOST && H.daw);
+// a genre or style change brings the tempo into the style's range (the DAW keeps its own)
+function setStyle(genre, id) {
+  P.genre = genre; P.style = GR.styleOf(genre, id).id;
+  const [lo, hi] = GR.styleBpm(genre, P.style);
+  if (!dawTempo() && (P.bpm < lo || P.bpm > hi)) { P.bpm = Math.round((lo + hi) / 2); S.map = null; }
+}
+function styleTempoNote() {
+  const [lo, hi] = GR.styleBpm(genreOf(), P.style), ok = P.bpm >= lo - 0.5 && P.bpm <= hi + 0.5;
+  return `${styleOf().name} sits at ${lo}–${hi} BPM${ok ? '' : ` · you are at ${Math.round(P.bpm)}${dawTempo() ? ' (your DAW sets the tempo)' : ''}`}`;
+}
+/* what you taught the generator: learned loops and liked patterns, kept in this browser and in the project */
+function takeTaste(t) {
+  if (!t) return;
+  Object.entries(t.learn || {}).forEach(([k, v]) => { if (v && (!GR.LEARN[k] || (v.n || 0) > (GR.LEARN[k].n || 0))) GR.LEARN[k] = v; });
+  Object.entries(t.weights || {}).forEach(([k, v]) => { if (GR.WEIGHTS[k] == null && isFinite(v)) GR.WEIGHTS[k] = +v; });
+}
+function saveTaste() {
+  store.set('groove-rack.learn', JSON.stringify(GR.LEARN)); store.set('groove-rack.weights', JSON.stringify(GR.WEIGHTS));
+  P.taste = { learn: JSON.parse(JSON.stringify(GR.LEARN)), weights: Object.assign({}, GR.WEIGHTS) };
+}
+const learnedLoops = () => { const L = GR.LEARN[genreOf() + ':' + styleOf().id]; return L ? L.n : 0; };
+const pickKeys = () => Object.values(GR.lastPicks).filter(Boolean);
+function likeGroove() {
+  edit(() => { GR.rate(pickKeys(), true); GR.learnProject(P, genreOf(), styleOf().id); saveTaste(); });
+  toast(`Liked · ${styleLabel()} will lean towards this groove (${learnedLoops()} learned)`);
+  renderStyleTag();
+}
+function skipGroove() {
+  GR.rate(pickKeys(), false); saveTaste();
+  newGroove(true);
+  toast(`Skipped · less of that one in ${styleLabel()}`);
+}
+async function learnMidiFiles() {
+  const f = await chooseFile('.mid,.midi,audio/midi', '*.mid;*.midi');
+  if (!f) return;
+  let mf; try { mf = GR.parseMidi(f.buf); } catch (e) { toast('That file is not a MIDI file Groove Rack can read'); return; }
+  const T = JSON.parse(JSON.stringify(P));
+  const r = readMidi(T, mf, null);
+  if (!r) { toast('That MIDI file has no notes'); return; }
+  const got = GR.learnProject(T, genreOf(), styleOf().id);
+  if (!got) { toast('No drums or bass Groove Rack could read in that file'); return; }
+  edit(() => saveTaste());
+  toast(`Learned ${f.name} · ${styleLabel()} now knows ${got.n} loop${got.n > 1 ? 's' : ''}. Press GENERATE`, 3600);
+  if (sheetEl) grooveSheet(selTrack());
+  renderStyleTag();
+}
 function spinDice(id) {
   document.querySelectorAll(`.deck-row[data-id="${id}"] .dice-btn`).forEach(d => { d.classList.remove('spin'); void d.offsetWidth; d.classList.add('spin'); });
 }
@@ -687,29 +1037,52 @@ function newPattern(tr, scope) {
   const o = genOpts(); if (scope) o.bar = scope === 'bar' ? ui.bar : null;
   edit(() => GR.generateTrack(P, tr, o));
   spinDice(tr.id);
-  toast(`New ${tr.name} pattern · ${GR.GROOVES[o.genre].name}${o.bar != null ? ' · bar ' + (o.bar + 1) : ''}`);
+  toast(`New ${tr.name} pattern · ${styleLabel()}${o.bar != null ? ' · bar ' + (o.bar + 1) : ''}`);
 }
-function newGroove() {
+function newGroove(quiet) {
   const o = genOpts();
   edit(() => GR.generateAll(P, o));
   P.tracks.forEach(t => spinDice(t.id));
-  toast(`New ${GR.GROOVES[o.genre].name} groove${o.bar != null ? ' for bar ' + (o.bar + 1) : ''}${o.bar == null ? ' · swing ' + P.swing + '%' : ''}`);
+  if (!quiet) toast(`New ${styleLabel()} groove${o.bar != null ? ' for bar ' + (o.bar + 1) : ''}${o.bar == null ? ' · swing ' + P.swing + '% · ' + P.chords.map(c => GR.chordName(c, P)).join(' ') : ''}`, 2600);
 }
 function grooveSheet(tr) {
+  const styleBtns = () => GR.stylesOf(genreOf()).map(s => `<button class="b sm${s.id === styleOf().id ? ' on' : ''}" data-style="${s.id}">${esc(s.name)} <i class="bpmr">${s.bpm[0]}–${s.bpm[1]}</i></button>`).join('');
+  const L = learnedLoops();
   const sh = openSheet('Groove generator', `
-    <div class="sh-sec"><h4>Genre</h4><select class="txt" id="g_genre" aria-label="Genre">${GR.GENRES.map(k => `<option value="${k}"${k === genreOf() ? ' selected' : ''}>${GR.GROOVES[k].name}</option>`).join('')}</select>
-      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">New patterns use this genre's kicks, backbeats, hat feels, percussion and bass rhythms. The bass follows your kick or the genre's bass line, in ${GR.NOTE_NAMES[P.key]} ${P.scale}.</p></div>
+    <div class="sh-sec"><h4>Genre</h4><select class="txt" id="g_genre" aria-label="Genre">${GR.GENRES.map(k => `<option value="${k}"${k === genreOf() ? ' selected' : ''}>${GR.GROOVES[k].name}</option>`).join('')}</select></div>
+    <div class="sh-sec"><h4>Style</h4><div class="btns" id="g_styles">${styleBtns()}</div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0" id="g_tempo"></p>
+      <div class="btns" style="margin-top:6px" id="g_fit"></div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Each style has its own kicks, backbeats, hats and percussion, its own feel (which parts push ahead or sit back, and how they accent), its own chord progressions and bass phrases. Loops play as phrases: the same idea, a variation in bar 3, a fill at the end.</p></div>
+    <div class="sh-sec"><h4>Chords</h4><div class="seg" role="group" aria-label="Chords">${[[0, 'The style picks them'], [1, 'Keep mine']].map(([k, l]) => `<button data-lock="${k}" class="${+!!P.chordLock === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Now: ${P.chords && P.chords.some(Boolean) ? P.chords.map(c => (c ? GR.chordName(c, P) : '–')).join(' · ') : 'none yet'}. Pick a chord in the piano roll's chord lane and GENERATE keeps your chords.</p></div>
     <div class="sh-sec"><h4>Busyness</h4><div class="seg" role="group" aria-label="Busyness">${['Simple', 'Medium', 'Busy'].map((l, i) => `<button data-cx="${i}" class="${ui.gen.complexity === i ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="sh-sec"><h4>Change</h4><div class="seg" role="group" aria-label="Which bars">${[['all', 'Whole loop'], ['bar', 'Bar ' + (ui.bar + 1) + ' only']].map(([k, l]) => `<button data-scope="${k}" class="${ui.gen.scope === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="sh-sec"><h4>Teach ${esc(styleLabel())}</h4><div class="btns">
+      <button class="b sm" data-learn>Learn from a MIDI loop…</button><button class="b sm" data-like>👍 Like this groove</button><button class="b sm" data-skip>👎 Skip it</button>${L ? `<button class="b sm warn" data-forget>Forget ${L} learned loop${L > 1 ? 's' : ''}</button>` : ''}</div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Drop in drum or bass MIDI loops you like for this style: the generator learns how often each part hits on each step and mixes that with its own patterns. 👍 learns the groove you have now and picks its patterns more often; 👎 makes a new one and picks those less. It is remembered in this browser and saved with the project.</p></div>
     <div class="sh-sec"><div class="btns">
       ${tr ? `<button class="b gold" data-go="track">${ICON.dice.replace('<svg', '<svg width="16" height="16" style="vertical-align:-3px;margin-right:4px"')}New ${esc(tr.name)} pattern</button>` : ''}
       <button class="b${tr ? '' : ' gold'}" data-go="all">Generate the whole groove</button></div>
       <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Every result can be undone. The 🎲 on each track makes a new pattern for that track alone. Shortcuts: <b>R</b> for the selected track, <b>Shift R</b> for the whole groove.</p></div>`, sh => {
-    sh.querySelector('#g_genre').addEventListener('change', e => edit(() => { P.genre = e.target.value; }));
+    const tempo = () => {
+      sh.querySelector('#g_tempo').textContent = styleTempoNote();
+      const [lo, hi] = GR.styleBpm(genreOf(), P.style), out = P.bpm < lo - 0.5 || P.bpm > hi + 0.5;
+      sh.querySelector('#g_fit').innerHTML = out && !dawTempo() ? `<button class="b sm" data-fit>Set ${Math.round((lo + hi) / 2)} BPM</button>` : '';
+    };
+    tempo();
+    sh.querySelector('#g_genre').addEventListener('change', e => { edit(() => setStyle(e.target.value)); sh.querySelector('#g_styles').innerHTML = styleBtns(); tempo(); toast(`${styleLabel()} · ${Math.round(P.bpm)} BPM`); });
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.cx) { ui.gen.complexity = +b.dataset.cx; sh.querySelectorAll('[data-cx]').forEach(x => x.classList.toggle('on', x === b)); saveGen(); }
+      if (b.dataset.style) { edit(() => setStyle(genreOf(), b.dataset.style)); sh.querySelectorAll('[data-style]').forEach(x => x.classList.toggle('on', x === b)); tempo(); toast(`${styleLabel()} · ${Math.round(P.bpm)} BPM`); }
+      else if (b.dataset.fit != null) { const [lo, hi] = GR.styleBpm(genreOf(), P.style); edit(() => { P.bpm = Math.round((lo + hi) / 2); S.map = null; }); tempo(); }
+      else if (b.dataset.lock) { edit(() => { P.chordLock = b.dataset.lock === '1'; }); sh.querySelectorAll('[data-lock]').forEach(x => x.classList.toggle('on', x === b)); }
+      else if (b.dataset.cx) { ui.gen.complexity = +b.dataset.cx; sh.querySelectorAll('[data-cx]').forEach(x => x.classList.toggle('on', x === b)); saveGen(); renderDensity(); }
       else if (b.dataset.scope) { ui.gen.scope = b.dataset.scope; sh.querySelectorAll('[data-scope]').forEach(x => x.classList.toggle('on', x === b)); saveGen(); }
+      else if (b.dataset.learn != null) learnMidiFiles();
+      else if (b.dataset.like != null) { likeGroove(); closeSheet(); }
+      else if (b.dataset.skip != null) { skipGroove(); closeSheet(); }
+      else if (b.dataset.forget != null) { GR.forget(genreOf(), styleOf().id); edit(() => saveTaste()); toast(`${styleLabel()} forgot what it learned`); closeSheet(); renderStyleTag(); }
       else if (b.dataset.go === 'track') newPattern(tr);
       else if (b.dataset.go === 'all') newGroove();
     });
@@ -759,7 +1132,7 @@ function songSheet() {
       <button class="b sm" data-tr="-1">Transpose −1</button><button class="b sm" data-tr="1">Transpose +1</button></div>
       <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Key and scale light up the piano roll and steer chord mode. Transpose moves every melodic note and the key together.</p>
     </div>
-    <div class="sh-sec"><h4>Loop length</h4><div class="seg" role="group" aria-label="Bars">${[1, 2, 3, 4, 5, 6, 7, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <div class="sh-sec"><h4>Loop length</h4><div class="seg" role="group" aria-label="Bars">${[4, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div>
       <div class="btns" style="margin-top:8px"><button class="b sm" data-double>Double the loop</button></div></div>
     <div class="sh-sec"><h4>Playback</h4><div class="btns">
       <button class="b sm${ui.metro ? ' on' : ''}" data-metro>Metronome ${ui.metro ? 'on' : 'off'}</button>
@@ -785,7 +1158,7 @@ function songSheet() {
         edit(() => { P.key = (P.key + d + 12) % 12; P.tracks.forEach(t => { if (I[t.inst].pitched) t.notes.forEach(n => { n.p = clamp(n.p + d, 0, 127); }); }); });
         sh.querySelector('#s_key').value = P.key; toast('Key: ' + GR.NOTE_NAMES[P.key] + ' ' + P.scale);
       }
-      else if (b.dataset.bars) { edit(() => { P.bars = +b.dataset.bars; }); sh.querySelectorAll('[data-bars]').forEach(x => x.classList.toggle('on', +x.dataset.bars === P.bars)); }
+      else if (b.dataset.bars) { setLoopLength(+b.dataset.bars); sh.querySelectorAll('[data-bars]').forEach(x => x.classList.toggle('on', +x.dataset.bars === P.bars)); }
       else if (b.dataset.double != null) {
         if (P.bars > 4) return toast('The loop can be at most 8 bars');
         edit(() => { const L = P.bars * TPB; P.tracks.forEach(t => { t.notes = t.notes.filter(n => n.t < L); t.notes = t.notes.concat(t.notes.map(n => Object.assign({}, n, { t: n.t + L }))); }); P.bars *= 2; });
@@ -802,7 +1175,7 @@ function songSheet() {
 function barSheet() {
   const sh = openSheet('Bars', `
     <div class="big-bpm" style="font-size:30px"><button class="b" data-go="-1" aria-label="Previous bar">‹</button><span id="bLabel">bar ${ui.bar + 1} of ${P.bars}</span><button class="b" data-go="1" aria-label="Next bar">›</button></div>
-    <div class="sh-sec"><h4>Loop length</h4><div class="seg">${[1, 2, 3, 4, 5, 6, 7, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+    <div class="sh-sec"><h4>Loop length</h4><div class="seg">${[4, 8].map(n => `<button data-bars="${n}" class="${n === P.bars ? 'on' : ''}">${n}</button>`).join('')}</div></div>
     <div class="sh-sec"><h4>This bar, every track</h4><div class="btns">
       <button class="b sm" data-copy="next">Copy to next bar</button>
       <button class="b sm" data-copy="all">Copy to all bars</button>
@@ -812,7 +1185,7 @@ function barSheet() {
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.go) { seek((ui.bar + +b.dataset.go + P.bars) % P.bars); lab(); }
-      else if (b.dataset.bars) { edit(() => { P.bars = +b.dataset.bars; }); lab(); }
+      else if (b.dataset.bars) { setLoopLength(+b.dataset.bars); lab(); }
       else if (b.dataset.copy) {
         const targets = b.dataset.copy === 'next' ? [(ui.bar + 1) % P.bars] : Array.from({ length: P.bars }, (_, i) => i).filter(i => i !== ui.bar);
         edit(() => P.tracks.forEach(t => copyBar(t, ui.bar, targets)));
@@ -919,6 +1292,7 @@ function noteSheet(tr, n) {
   const inst = I[tr.inst];
   const sh = openSheet(`${tr.name} · ${inst.pitched ? GR.noteName(n.p) : 'step ' + (Math.floor((n.t % TPB) / (TPB / tr.res)) + 1)}`, `
     ${ctlRow('n_vel', 'Velocity', 0.05, 1, 0.01, n.vel)}
+    ${ctlRow('n_nudge', 'Timing', -1.5, 1.5, 0.05, n.nudge || 0)}
     ${!inst.pitched ? `<div class="sh-sec"><h4>Roll (hits inside the step)</h4><div class="seg">${[1, 2, 3, 4].map(r => `<button data-roll="${r}" class="${(n.roll || 1) === r ? 'on' : ''}">${r === 1 ? 'off' : r + '×'}</button>`).join('')}</div></div>` : `
     <div class="sh-sec"><h4>Pitch</h4><div class="btns"><button class="b sm" data-p="-12">−oct</button><button class="b sm" data-p="-1">−1</button><b id="nP" style="min-width:52px;text-align:center;align-self:center">${GR.noteName(n.p)}</b><button class="b sm" data-p="1">+1</button><button class="b sm" data-p="12">+oct</button></div></div>
     <div class="sh-sec"><h4>Length</h4><div class="btns"><button class="b sm" data-l="-1">shorter</button><b id="nL" style="min-width:64px;text-align:center;align-self:center"></b><button class="b sm" data-l="1">longer</button></div></div>
@@ -928,6 +1302,10 @@ function noteSheet(tr, n) {
     const lab = () => { const l = sh.querySelector('#nL'); if (l) l.textContent = `${+(n.len / stepT).toFixed(2)} step${n.len === stepT ? '' : 's'}`; const p = sh.querySelector('#nP'); if (p) p.textContent = GR.noteName(n.p); };
     lab();
     slider(sh, 'n_vel', v => { n.vel = v; }, pct);
+    slider(sh, 'n_nudge', v => { if (Math.abs(v) < 0.02) delete n.nudge; else n.nudge = v; }, v => {
+      const ms = Math.round(Math.abs(v) * GR.tickDur(P) * 1000);
+      return Math.abs(v) < 0.02 || !ms ? 'on the grid' : `${ms} ms ${v < 0 ? 'early' : 'late'}`;
+    });
     sh.querySelector('#n_vel').addEventListener('change', () => audition(tr, n));
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -988,13 +1366,25 @@ async function importMidiFile(target) {
 function importMidi(buf, target, fileName) {
   let mf;
   try { mf = GR.parseMidi(buf); } catch (e) { toast('That file is not a MIDI file Groove Rack can read'); return; }
+  commit();
+  const r = readMidi(P, mf, target);
+  if (!r) { hist.undo.pop(); toast('That MIDI file has no notes'); return; }
+  if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
+  if (!target) P.chords = GR.inferChords(P);
+  changed(); settle(); closeSheet();
+  toast(`Imported ${fileName || 'MIDI'}${target ? ' into ' + target.name : ''} · ${r.bars} bar${r.bars > 1 ? 's' : ''}${r.skipped ? ` · ${r.skipped} notes had no matching drum` : ''}`, 3200);
+}
+// read a parsed MIDI file into project T (into one track, or across its tracks by drum note and channel)
+function readMidi(T, mf, target) {
   const k = TPB / (mf.ppq * 4), all = [];
   mf.tracks.forEach(t => t.notes.forEach(n => all.push(Object.assign({ track: t.name }, n))));
-  if (!all.length) { toast('That MIDI file has no notes'); return; }
+  if (!all.length) return null;
   const last = Math.max(...all.map(n => n.tick * k));
   const bars = clamp(Math.ceil((last + 1) / TPB), 1, 8);
   let skipped = 0;
-  const sw = (P.swing / 100) * 3;
+  const sw = (T.swing / 100) * 3;
+  // a note's distance from its step, kept as its own timing when it is small (a played or humanized feel)
+  const feel = (x, t) => { const d = Math.round((x - t) * 100) / 100; return Math.abs(d) >= 0.05 && Math.abs(d) <= 1.5 ? d : 0; };
   const put = (tr, n) => {
     const stepT = TPB / tr.res;
     let x = n.tick * k;
@@ -1002,7 +1392,9 @@ function importMidi(buf, target, fileName) {
     const exact = x / stepT, near = Math.round(exact);
     if (I[tr.inst].pitched) {
       const t = near * stepT; if (t >= bars * TPB) return;
-      tr.notes.push({ t, p: n.p, len: Math.max(stepT, Math.round(n.len * k / stepT) * stepT), vel: n.vel });
+      const note = { t, p: n.p, len: Math.max(stepT, Math.round(n.len * k / stepT) * stepT), vel: n.vel }, d = feel(x, t);
+      if (d) note.nudge = d;
+      tr.notes.push(note);
       return;
     }
     if (Math.abs(exact - near) > 0.2) {   // a hit between steps: part of a roll in the step before it
@@ -1013,42 +1405,41 @@ function importMidi(buf, target, fileName) {
     }
     const t = near * stepT; if (t >= bars * TPB) return;
     const ex = tr.notes.find(y => y.t === t);
-    if (!ex) tr.notes.push({ t, vel: n.vel });
+    if (!ex) { const note = { t, vel: n.vel }, d = feel(x, t); if (d) note.nudge = d; tr.notes.push(note); }
   };
-  commit();
-  P.bars = Math.max(bars, target ? P.bars : 1);
+  T.bars = Math.max(bars, target ? T.bars : 1);
   if (target) {
     target.notes = [];
     all.forEach(n => put(target, n));
     sortNotes(target);
   } else {
-    if (mf.bpm) P.bpm = clamp(mf.bpm, 40, 240);
-    const map = GR.midiMap(P), touched = new Set();
+    if (mf.bpm) T.bpm = clamp(mf.bpm, 40, 240);
+    const map = GR.midiMap(T), touched = new Set();
     const touch = tr => { if (!touched.has(tr.id)) { touched.add(tr.id); tr.notes = []; } return tr; };
     const byNote = {}, byCh = {};
-    P.tracks.forEach(tr => { const m = map[tr.id]; if (!m) return; if (m.note != null) byNote[m.note] = tr; else byCh[m.ch] = tr; });
+    T.tracks.forEach(tr => { const m = map[tr.id]; if (!m) return; if (m.note != null) byNote[m.note] = tr; else byCh[m.ch] = tr; });
     all.forEach(n => {
-      let tr = n.track && P.tracks.find(t => t.name.toLowerCase() === n.track.toLowerCase());
+      let tr = n.track && T.tracks.find(t => t.name.toLowerCase() === n.track.toLowerCase());
       if (!tr) tr = byCh[n.ch] && n.ch !== 9 ? byCh[n.ch] : null;
       if (!tr && (n.ch === 9 || byNote[n.p])) {
         tr = byNote[n.p];
         if (!tr) {
           const s = findSoundForGm(n.p);
-          if (s) { tr = GR.newTrack(s[0], s[1]); P.tracks.push(tr); byNote[n.p] = tr; }
+          if (s) { tr = GR.newTrack(s[0], s[1]); T.tracks.push(tr); byNote[n.p] = tr; }
         }
       }
       if (!tr && n.ch !== 9) {
-        tr = P.tracks.find(t => I[t.inst].pitched);
-        if (!tr) { tr = GR.newTrack('b808', 'clean'); P.tracks.push(tr); }
+        tr = T.tracks.find(t => I[t.inst].pitched);
+        if (!tr) { tr = GR.newTrack('b808', 'clean'); T.tracks.push(tr); }
         byCh[n.ch] = tr;
       }
       if (!tr) { skipped++; return; }
       put(touch(tr), n);
     });
-    P.tracks.forEach(sortNotes);
+    T.tracks.forEach(sortNotes);
+    if (T !== P) T.tracks = T.tracks.filter(t => touched.has(t.id));   // learning: only the parts the file has
   }
-  changed(); settle(); closeSheet();
-  toast(`Imported ${fileName || 'MIDI'}${target ? ' into ' + target.name : ''} · ${bars} bar${bars > 1 ? 's' : ''}${skipped ? ` · ${skipped} notes had no matching drum` : ''}`, 3200);
+  return { bars, skipped };
 }
 function midiLabel(tr) {
   const m = GR.midiMap(P)[tr.id]; if (!m) return '';
@@ -1095,7 +1486,7 @@ function menuSheet() {
     <div class="sh-sec"><h4>History</h4><div class="btns"><button class="b sm" data-act="undo">Undo</button><button class="b sm" data-act="redo">Redo</button></div></div>
     <div class="sh-sec"><h4>Keyboard</h4><div class="keys-list">
       <kbd>Space</kbd><span>Play / stop</span><kbd>← →</kbd><span>Previous / next bar</span><kbd>↑ ↓</kbd><span>Select track</span>
-      <kbd>G</kbd><span>Switch Drums / Audio rack</span><kbd>R</kbd><span>New pattern for the selected track</span><kbd>Shift R</kbd><span>Generate the whole groove</span><kbd>M</kbd><span>Mute selected track</span><kbd>S</kbd><span>Solo selected track</span>
+      <kbd>G</kbd><span>Switch Drums / Audio rack</span><kbd>P</kbd><span>Piano roll for the selected channel</span><kbd>R</kbd><span>New pattern for the selected track</span><kbd>Shift R</kbd><span>Generate the whole groove</span><kbd>M</kbd><span>Mute selected track</span><kbd>S</kbd><span>Solo selected track</span>
       <kbd>Delete</kbd><span>Clear the bar on the selected track</span><kbd>Ctrl Z</kbd><span>Undo (Shift for redo)</span></div></div>`, sh => {
     const nm = sh.querySelector('#m_name');
     nm.addEventListener('change', () => edit(() => { P.name = nm.value.trim() || 'Untitled beat'; }));
@@ -1309,10 +1700,13 @@ function wire() {
   $('#genreBox').addEventListener('click', e => {
     if (holdT === -1) { holdT = 0; return; }
     const i = GR.GENRES.indexOf(genreOf());
-    edit(() => { P.genre = GR.GENRES[(i + (e.shiftKey ? GR.GENRES.length - 1 : 1)) % GR.GENRES.length]; });
-    toast(`Genre: ${GR.GROOVES[P.genre].name} · press GENERATE or a dice`);
+    edit(() => setStyle(GR.GENRES[(i + (e.shiftKey ? GR.GENRES.length - 1 : 1)) % GR.GENRES.length]));
+    toast(`${styleLabel()} · ${Math.round(P.bpm)} BPM · press GENERATE, hold for styles`);
   });
   $('#barBox').addEventListener('click', barSheet);
+  $('#styleBtn').addEventListener('click', () => grooveSheet(selTrack()));
+  $('#likeBtn').addEventListener('click', likeGroove);
+  $('#skipBtn').addEventListener('click', skipGroove);
   $('#keyBox').addEventListener('click', e => {
     if (e.shiftKey) { songSheet(); return; }
     edit(() => transposeBy(P.key === 11 ? -11 : 1));
@@ -1367,8 +1761,41 @@ function wire() {
   $('#bars').addEventListener('click', e => {
     const b = e.target.closest('[data-bar]'); if (!b) return;
     const i = +b.dataset.bar;
-    if (i >= P.bars) { edit(() => extendLoop(i + 1)); toast(`Loop is now ${P.bars} bars: the new bars repeat the first ones`); }
+    if (i >= P.bars) setLoopLength(MAX_BARS);
     seek(i);
+  });
+  $('#bars').addEventListener('pointerdown', onLoopHandleDown);
+  $('#bars').addEventListener('keydown', e => {
+    if (!e.target.closest('#loopHandle')) return;
+    const d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0;
+    if (d) { e.preventDefault(); e.stopPropagation(); setLoopLength(d > 0 ? MAX_BARS : MIN_BARS); const h2 = $('#loopHandle'); if (h2) h2.focus(); }
+  });
+  $('.ps-tools').addEventListener('click', e => {
+    const b = e.target.closest('[data-tool]'); if (!b) return;
+    const t = b.dataset.tool;
+    if (t === 'copy') {
+      if (P.bars < 2) { toast('Make the loop longer first: tap a + bar'); return; }
+      const to = (ui.bar + 1) % P.bars;
+      edit(() => P.tracks.forEach(tr => copyBar(tr, ui.bar, [to]))); toast(`Bar ${ui.bar + 1} copied onto bar ${to + 1}`); seek(to);
+    } else if (t === 'clear') { edit(() => P.tracks.forEach(tr => clearBar(tr, ui.bar))); toast(`Bar ${ui.bar + 1} cleared`); }
+    else if (t === 'len4') setLoopLength(MIN_BARS);
+    else if (t === 'len8') setLoopLength(MAX_BARS); else if (t === 'follow') { ui.follow = !ui.follow; renderBars(); toast(ui.follow ? 'The pads follow the playing bar' : 'The pads stay on the bar you pick'); }
+  });
+  const cp = $('#chanPanel');
+  cp.addEventListener('click', onChanClick);
+  cp.addEventListener('pointerdown', onChanKnobDown);
+  cp.addEventListener('wheel', e => {
+    const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+    e.preventDefault(); const kn = chanKnob(el); commit(); kn.set(kn.get() + (e.deltaY < 0 ? 0.03 : -0.03)); changed(); settle();
+  }, { passive: false });
+  cp.addEventListener('dblclick', e => {
+    const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+    const kn = chanKnob(el); commit(); kn.set(kn.c.to(kn.c.def)); changed(); settle();
+  });
+  cp.addEventListener('keydown', e => {
+    const el = e.target.closest('.cp-knob .enc-knob'); if (!el) return;
+    const d = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 0.03 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -0.03 : 0;
+    if (d) { e.preventDefault(); e.stopPropagation(); const kn = chanKnob(el); commit(); kn.set(kn.get() + d); changed(); settle(); }
   });
   knob($('#swingKnob'), () => P.swing / 100, v => { P.swing = Math.round(v * 100); S.map = null; setKnob('swing', P.swing / 100, P.swing + '%'); renderOled(); syncHost(); }, 0);
   knob($('#masterKnob'), () => P.master, v => { P.master = Math.round(v * 100) / 100; setKnob('master', P.master, Math.round(P.master * 100) + '%'); if (mix) GR.updateMix(mix, P, ui.muted); syncHost(); }, 0.8);
@@ -1386,6 +1813,7 @@ function wire() {
   roll.addEventListener('pointerdown', onRollDown);
   roll.addEventListener('click', onRollClick);
   roll.addEventListener('contextmenu', e => { if (e.target.closest('#rcanvas')) e.preventDefault(); });
+  window.addEventListener('resize', () => { if (!$('#roll').hidden) sizeRoll(); });
 
   $('#fileIn').addEventListener('change', e => onSampleFile(e.target.files[0]));
   $('#anyIn').addEventListener('change', async e => {
@@ -1432,6 +1860,7 @@ function wire() {
       select(all[clamp(i + (e.key === 'ArrowUp' ? -1 : 1), 0, all.length - 1)].id);
     }
     else if (e.key === 'R') newGroove();
+    else if ((e.key === 'p' || e.key === 'P') && tr) toggleRoll();
     else if (e.key === 'r' && tr) newPattern(tr);
     else if ((e.key === 'm' || e.key === 'M') && tr) { edit(() => { tr.mute = !tr.mute; }); toast(tr.mute ? `${tr.name} muted` : `${tr.name} on`); }
     else if ((e.key === 's' || e.key === 'S') && tr) { edit(() => { tr.solo = !tr.solo; }); toast(tr.solo ? `${tr.name} solo` : `${tr.name} solo off`); }
@@ -1444,6 +1873,7 @@ let holdT = 0, holdTimer = 0;
 /* ---------- start ---------- */
 async function init() {
   try { Object.assign(ui.gen, JSON.parse(store.get('groove-rack.gen') || '{}')); } catch (e) {}
+  try { Object.assign(GR.LEARN, JSON.parse(store.get('groove-rack.learn') || '{}')); Object.assign(GR.WEIGHTS, JSON.parse(store.get('groove-rack.weights') || '{}')); } catch (e) {}
   let start = null;
   if (HOST) {
     document.documentElement.classList.add('in-plugin');

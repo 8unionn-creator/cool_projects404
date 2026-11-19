@@ -75,7 +75,7 @@ GrooveRackEditor::GrooveRackEditor (GrooveRackProcessor& p)
     addAndMakeVisible (strip);
     setResizable (true, true);
     setResizeLimits (420, 560, 2000, 2200);
-    setSize (1220, 800);
+    setSize (1220, 920);
     reloadPage();
     startTimerHz (30);
 }

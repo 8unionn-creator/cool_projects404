@@ -24,6 +24,7 @@ using SamplePtr = std::shared_ptr<const Sample>;
 struct Note
 {
     double t = 0, len = 6;
+    double nudge = 0;   // ticks off the grid: + late, - early (the genre's feel)
     float vel = 0.9f;
     int p = 48, roll = 1;
     bool slide = false;
@@ -117,7 +118,8 @@ private:
     struct Mono { int p = -1; juce::int64 end = 0; int voice = -1; };
     struct Audition { int track, pitch; float vel; };
 
-    void schedule (const Pattern& P, double startTick, double tps, int n);
+    // pattern events for ticks in [startTick, endTick), placed from sample `base` of this block
+    void schedule (const Pattern& P, double startTick, double endTick, double tps, int base);
     void fire (const Pattern& P, const Event& e, juce::MidiBuffer& midi);
     void startVoice (const Pattern& P, const Event& e, int fromPitch);
     void choke (Voice& v);
@@ -146,6 +148,7 @@ private:
     std::array<Audition, 64> auditionQueue {};
 
     double internalTick = 0, expectedTick = -1;
+    int pendingSeek = -1;   // a bar to jump to on the next bar line
     bool wasPlaying = false;
     juce::int64 clock = 0, voiceAge = 0;
 };

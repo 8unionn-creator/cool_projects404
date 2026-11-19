@@ -122,9 +122,10 @@ PatternPtr parsePattern (const String& json, SampleBank& bank)
                     note.t = num (n, "t", 0.0);
                     note.len = num (n, "len", (double) TPB / tr.res);
                     note.vel = (float) jlimit (0.0, 1.0, num (n, "vel", 0.9));
-                    note.p = (int) num (n, "p", 48.0);
+                    note.p = (int) num (n, "p", tr.pitched ? 48.0 : 60.0);   // drums: 60 = the sound as it is
                     note.roll = jlimit (1, 8, (int) num (n, "roll", 1.0));
                     note.slide = (bool) n["slide"];
+                    note.nudge = jlimit (-2.0, 2.0, num (n, "nudge", 0.0));
                     tr.notes.push_back (note);
                 }
             }
@@ -139,9 +140,13 @@ PatternPtr parsePattern (const String& json, SampleBank& bank)
     for (int ti = 0; ti < (int) p->tracks.size(); ++ti)
         for (int ni = 0; ni < (int) p->tracks[(size_t) ti].notes.size(); ++ni)
         {
-            const int tick = roundToInt (p->tracks[(size_t) ti].notes[(size_t) ni].t);
-            if (tick >= 0 && tick < loopT)
-                p->ticks[(size_t) tick].push_back ({ ti, ni });
+            // a note sits in the tick it actually sounds in, so an early note is scheduled ahead of its grid line
+            const Note& no = p->tracks[(size_t) ti].notes[(size_t) ni];
+            const int grid = roundToInt (no.t);
+            if (grid < 0 || grid >= loopT)
+                continue;
+            const int tick = (int) std::floor (grid + no.nudge);
+            p->ticks[(size_t) (((tick % loopT) + loopT) % loopT)].push_back ({ ti, ni });
         }
     return p;
 }
@@ -208,20 +213,21 @@ void Engine::choke (Voice& v)
     v.relStep = 1.0f / (float) (0.014 * sr);
 }
 
-void Engine::schedule (const Pattern& P, double start, double tps, int n)
+void Engine::schedule (const Pattern& P, double start, double end, double tps, int base)
 {
     const int loopT = P.loopTicks();
-    const double end = start + n * tps;
     for (double k = std::ceil (start - 1e-7); k < end - 1e-7; k += 1.0)
     {
         const auto ki = (int64) std::llround (k);
         const int lt = (int) (((ki % loopT) + loopT) % loopT);
-        const double off = (k - start) / tps;
-        const double swing = (lt % 12 == 6) ? P.swing / 100.0 * 3.0 / tps : 0.0;
+        const double off = base + (k - start) / tps;
         for (const auto& [ti, ni] : P.ticks[(size_t) lt])
         {
             const Track& tr = P.tracks[(size_t) ti];
             const Note& no = tr.notes[(size_t) ni];
+            const int grid = roundToInt (no.t);
+            const double sounds = grid + no.nudge;
+            const double swing = ((grid % 12 == 6) ? P.swing / 100.0 * 3.0 : 0.0) / tps + (sounds - std::floor (sounds)) / tps;
             const double stepT = (double) TPB / tr.res;
             const int roll = jlimit (1, 8, no.roll);
             const double dur = (tr.pitched ? jmax (no.len, 1.0) : stepT) / tps;
@@ -270,7 +276,7 @@ void Engine::startVoice (const Pattern& P, const Event& e, int fromPitch)
     v.age = ++voiceAge;
 
     const double base = s.sampleRate / sr;
-    const double target = base * std::pow (2.0, (tr.pitch + (tr.pitched ? e.p - tr.root : 0)) / 12.0);
+    const double target = base * std::pow (2.0, (tr.pitch + (tr.pitched ? e.p - tr.root : e.p - 60)) / 12.0);
     v.rate = target;
     if (fromPitch >= 0 && tr.pitched)
     {
@@ -506,7 +512,7 @@ void Engine::process (AudioBuffer<float>& out, MidiBuffer& midi, const Transport
             continue;
         Event e;
         e.at = jlimit (0, n - 1, meta.samplePosition);
-        e.track = target; e.p = note; e.live = true;
+        e.track = target; e.p = pitched ? note : 60; e.live = true;
         if (msg.isNoteOn()) { e.vel = jmax (0.03f, msg.getFloatVelocity()); e.dur = pitched ? sr * 30.0 : 0.0; }
         else if (pitched) e.liveOff = true;
         else continue;
@@ -542,9 +548,14 @@ void Engine::process (AudioBuffer<float>& out, MidiBuffer& midi, const Transport
         }
         else
         {
-            if (! wasPlaying) internalTick = 0;
             const int sb = seekBar.exchange (-1);
-            if (sb >= 0) internalTick = sb * (double) TPB;
+            if (sb >= 0) pendingSeek = sb;
+            if (! wasPlaying)
+            {
+                // starting: begin at the picked bar, or at the top
+                internalTick = pendingSeek >= 0 ? pendingSeek * (double) TPB : 0.0;
+                pendingSeek = -1;
+            }
             start = internalTick;
         }
         const bool continuous = wasPlaying && std::abs (start - expectedTick) < 0.5;
@@ -555,11 +566,29 @@ void Engine::process (AudioBuffer<float>& out, MidiBuffer& midi, const Transport
             events.erase (std::remove_if (events.begin(), events.end(), [] (const Event& e) { return ! e.live; }), events.end());
             mono = {};
         }
-        schedule (P, start, tps, n);
-        expectedTick = start + n * tps;
+        const double end = start + n * tps;
+        double barLine = std::ceil (start / TPB - 1e-9) * TPB;
+        if (! tp.hostPlaying && pendingSeek >= 0 && barLine < end - 1e-9)
+        {
+            // a bar was picked while playing: finish this bar, then carry on from the picked one on the bar line
+            const int split = jlimit (0, n, (int) std::llround ((barLine - start) / tps));
+            schedule (P, start, barLine, tps, 0);
+            const double to = pendingSeek * (double) TPB;
+            pendingSeek = -1;
+            schedule (P, to, to + (n - split) * tps, tps, split);
+            mono = {};
+            expectedTick = to + (n - split) * tps;
+            uiTick.store (std::fmod (to, (double) loopT));
+        }
+        else
+        {
+            if (tp.hostPlaying) pendingSeek = -1;
+            schedule (P, start, end, tps, 0);
+            expectedTick = end;
+            uiTick.store (std::fmod (std::fmod (start, (double) loopT) + loopT, (double) loopT));
+        }
         if (! tp.hostPlaying)
             internalTick = expectedTick;
-        uiTick.store (std::fmod (std::fmod (start, (double) loopT) + loopT, (double) loopT));
     }
     else if (wasPlaying)
     {
