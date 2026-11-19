@@ -2,7 +2,23 @@
 
 Groove Rack is a drum and bass groove maker. It comes as a **VST3** (most DAWs), an **Audio Unit** on macOS (Logic, GarageBand), and a **standalone app**.
 
-## Windows
+## The easy way: the installers
+
+Download from the [releases page](https://github.com/8unionn-creator/cool_projects404/releases):
+
+- **Mac:** `GrooveRack-macOS-Installer.pkg`. Open it and click through. It puts the Audio Unit (Logic, GarageBand) and the VST3 in `/Library/Audio/Plug-Ins`, the app in Applications, and tells macOS about the new Audio Unit. Then open Logic and pick **AU Instruments → cool_projects404 → Groove Rack** on a Software Instrument track.
+- **Windows:** `GrooveRack-Windows-Setup.exe`. Run it and click through. It puts the VST3 in `C:\Program Files\Common Files\VST3` and the app in the Start menu. Rescan plugins in your DAW (FL Studio: *Options → Manage plugins → Find plugins*) and load **Groove Rack** as an instrument.
+
+These builds are not signed with a paid Apple or Microsoft certificate, so the first time:
+
+- **Mac:** if macOS says it cannot check the installer, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. On macOS 14 and older you can also right-click the installer and choose **Open**.
+- **Windows:** if SmartScreen says it protected your PC, click **More info → Run anyway**.
+
+To update, run the new installer: it replaces the old version.
+
+## By hand, from the zip
+
+### Windows
 
 1. Copy the `Groove Rack.vst3` folder to `C:\Program Files\Common Files\VST3\`.
 2. Rescan plugins in your DAW (FL Studio: *Options → Manage plugins → Find plugins*; Ableton: *Preferences → Plug-ins → Rescan*).
@@ -10,18 +26,19 @@ Groove Rack is a drum and bass groove maker. It comes as a **VST3** (most DAWs),
 
 The interface uses Microsoft Edge WebView2, which Windows 10 and 11 already include.
 
-## macOS
+### macOS
 
 1. Copy `Groove Rack.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and `Groove Rack.component` to `~/Library/Audio/Plug-Ins/Components/`.
 2. These builds are not notarized by Apple, so macOS blocks them at first. Open **Terminal** and run:
 
    ```
    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Groove Rack.vst3" ~/Library/Audio/Plug-Ins/Components/"Groove Rack.component"
+   killall -9 AudioComponentRegistrar
    ```
 
 3. Restart your DAW. In Logic, load it as *Software Instrument → AU Instruments → cool_projects404 → Groove Rack*.
 
-## Linux
+### Linux
 
 Copy `Groove Rack.vst3` to `~/.vst3/`. It needs `libwebkit2gtk-4.1` (installed on most desktops).
 

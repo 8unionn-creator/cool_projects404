@@ -101,10 +101,48 @@ jobs:
           cp INSTALL.md "$out/"
           cd dist && cmake -E tar cf "GrooveRack-${{ matrix.name }}.zip" --format=zip "GrooveRack-${{ matrix.name }}"
 
+      - name: Installer
+        if: runner.os != 'Linux'
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          ver=$(sed -n 's/^project(GrooveRack VERSION \(.*\))/\1/p' CMakeLists.txt)
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            bash installer/macos/make-pkg.sh "$PWD/dist/GrooveRack-macOS" "$ver" "$PWD/dist/GrooveRack-macOS-Installer.pkg"
+          else
+            iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+            [ -f "$iscc" ] || choco install innosetup -y --no-progress
+            "$iscc" /DAppVer="$ver" installer/windows/GrooveRack.iss
+          fi
+
+      # install the way people do, then check it: macOS runs the Audio Unit validation Logic runs before it lists a plugin
+      - name: Install and check
+        if: runner.os != 'Linux'
+        timeout-minutes: 8
+        env:
+          MSYS2_ARG_CONV_EXCL: "*"
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            sudo installer -pkg dist/GrooveRack-macOS-Installer.pkg -target /
+            ls -d "/Library/Audio/Plug-Ins/Components/Groove Rack.component" "/Library/Audio/Plug-Ins/VST3/Groove Rack.vst3" "/Applications/Groove Rack.app"
+            codesign -dv "/Library/Audio/Plug-Ins/Components/Groove Rack.component" 2>&1 | head -4
+            sleep 2
+            auval -a | grep -i "Grvr" || echo "Groove Rack is not registered as an Audio Unit"
+            auval -v aumu Grvr Cp44
+          else
+            ./dist/GrooveRack-Windows-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+            sleep 5
+            ls "/c/Program Files/Common Files/VST3/Groove Rack.vst3/Contents/x86_64-win/Groove Rack.vst3"
+            ls "/c/Program Files/Groove Rack/Groove Rack.exe"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: GrooveRack-${{ matrix.name }}
-          path: groove-rack/plugin/dist/GrooveRack-${{ matrix.name }}.zip
+          path: |
+            groove-rack/plugin/dist/GrooveRack-${{ matrix.name }}.zip
+            groove-rack/plugin/dist/GrooveRack-${{ matrix.name }}-*.pkg
+            groove-rack/plugin/dist/GrooveRack-${{ matrix.name }}-*.exe
 
   # Runs for a pushed groove-rack-v* tag, or for "Run workflow" with a release tag filled in
   # (then the tag is created here, on the commit that was built).
@@ -123,28 +161,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          for need in Windows macOS; do
-            [ -f "dist/GrooveRack-$need.zip" ] || { echo "The $need build is missing, so there is no release." >&2; exit 1; }
+          for need in GrooveRack-Windows.zip GrooveRack-macOS.zip GrooveRack-Windows-Setup.exe GrooveRack-macOS-Installer.pkg; do
+            [ -f "dist/$need" ] || { echo "$need is missing, so there is no release." >&2; exit 1; }
           done
           version="${TAG#groove-rack-v}"
           LINUX_ROW=""
-          [ -f dist/GrooveRack-Linux.zip ] && LINUX_ROW="| Linux | **GrooveRack-Linux.zip** | VST3 + standalone app |"
+          [ -f dist/GrooveRack-Linux.zip ] && LINUX_ROW="| Linux | | GrooveRack-Linux.zip: VST3 and the app |"
           cat > notes.md <<EOF
           **Groove Rack $version**, the GR-16 drum and bass groove machine, as a plugin for your DAW.
 
-          | Your computer | Download | Inside |
+          | Your computer | Installer (recommended) | Or the files to copy yourself |
           |---|---|---|
-          | Windows 10 / 11 | **GrooveRack-Windows.zip** | VST3 + standalone app |
-          | macOS 10.15 or later (Intel and Apple Silicon) | **GrooveRack-macOS.zip** | VST3, Audio Unit (Logic, GarageBand) + standalone app |
+          | macOS 10.15 or later (Intel and Apple Silicon) | **GrooveRack-macOS-Installer.pkg**: Audio Unit (Logic, GarageBand), VST3 and the app | GrooveRack-macOS.zip |
+          | Windows 10 / 11 | **GrooveRack-Windows-Setup.exe**: VST3 and the app | GrooveRack-Windows.zip |
           $LINUX_ROW
 
-          Unzip it and follow **INSTALL.md** inside. In short: on Windows copy \`Groove Rack.vst3\` to \`C:\\Program Files\\Common Files\\VST3\\\`; on macOS copy the VST3 to \`~/Library/Audio/Plug-Ins/VST3/\` and the component to \`~/Library/Audio/Plug-Ins/Components/\`, then run the one Terminal command in INSTALL.md (these builds are not notarized by Apple). Rescan plugins in your DAW and load **Groove Rack** as an instrument.
+          **Install:** open the installer and click through it, then open your DAW. In Logic: Software Instrument track → AU Instruments → cool_projects404 → Groove Rack. Other DAWs: rescan plugins and load Groove Rack as an instrument.
+
+          These builds are not signed with a paid Apple or Microsoft certificate, so the first time you open the installer:
+          - **Mac:** if macOS says it cannot check the installer, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** (on macOS 14 and older you can also right-click the installer and choose **Open**).
+          - **Windows:** if SmartScreen says it protected your PC, click **More info → Run anyway**.
 
           **What it does:** 15 genres with 44 styles (UK, NY and Chicago drill, log drum and private school Amapiano, dembow and perreo, UK garage, jungle and more), each with its own tempo, feel, chords and bass. GENERATE and a dice on every channel write new drum and bass patterns in the style; teach a style with your own MIDI loops, or 👍 / 👎 what it makes. A piano roll on every channel (whole loop, chord lane, velocity lane, pitch any drum hit), 4 or 8 bar loops that switch bars seamlessly, your own samples on any channel, tempo locked to your DAW, MIDI out of the pattern, DAW notes play the channels, and a strip to drag the loop into your DAW as MIDI.
           EOF
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" dist/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Groove Rack $version" --notes-file notes.md --latest
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Groove Rack $version" --notes-file notes.md --latest
           fi
