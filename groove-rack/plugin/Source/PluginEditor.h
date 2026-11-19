@@ -35,6 +35,7 @@ private:
     void choose (const juce::String& title, const juce::File& start, const juce::String& pattern, int browseFlags,
                  std::function<void (const juce::File&)> then);
 
+    static constexpr int stripHeight = 34;
     GrooveRackProcessor& proc;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::File lastDir;

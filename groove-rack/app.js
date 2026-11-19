@@ -184,6 +184,8 @@ function load(project, keepHistory) {
   if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
   if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
   takeTaste(P.taste);
+  ui.muted = !!P.muted;
+  if (HOST) HOST.call('setMuted', ui.muted);
   if (!keepHistory) { hist.undo.length = 0; hist.redo.length = 0; }
   if (!track(ui.sel)) ui.sel = (P.tracks[0] || {}).id || null;
   ui.bar = clamp(ui.bar, 0, P.bars - 1);
@@ -196,7 +198,7 @@ function sanitize(p) {
   p.master = clamp(p.master == null ? 0.8 : +p.master, 0, 1); p.key = clamp(p.key | 0, 0, 11);
   p.chords = Array.isArray(p.chords) ? p.chords.slice(0, 8).map(c => (c && isFinite(c.r) ? { r: ((c.r | 0) % 12 + 12) % 12, q: String(c.q || '') } : null)) : null;
   if (!GR.SCALES[p.scale]) p.scale = 'minor';
-  p.style = typeof p.style === 'string' ? p.style : ''; p.chordLock = !!p.chordLock;
+  p.style = typeof p.style === 'string' ? p.style : ''; p.chordLock = !!p.chordLock; p.muted = !!p.muted;
   if (!(p.taste && typeof p.taste === 'object')) delete p.taste;
   p.tracks = (p.tracks || []).filter(t => t && I[t.inst]).map(t => {
     const n = GR.newTrack(t.inst, t.sound, t);
@@ -220,6 +222,7 @@ function redo() {
   hist.undo.push(snap()); P = JSON.parse(hist.redo.pop()); afterHistory(); toast('Redone');
 }
 function afterHistory() {
+  P.muted = ui.muted;   // undo does not unmute
   if (!track(ui.sel)) ui.sel = (P.tracks[0] || {}).id || null;
   changed();
 }
@@ -256,6 +259,8 @@ function chordFrom(p, size) {
 
 /* ---------- rendering: the GR-16 machine ---------- */
 const DICE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.3" fill="currentColor"/></svg>';
+const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>';
+const SPEAKER_OFF_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M17 9l5 6M22 9l-5 6"/></svg>';
 const PLAY_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="#49e8d0" aria-hidden="true"><polygon points="6,4 20,12 6,20"/></svg>';
 const PAUSE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="#49e8d0" aria-hidden="true"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>';
 const drumTracks = () => P.tracks.filter(t => !I[t.inst].pitched);
@@ -286,13 +291,30 @@ function renderOled() {
   renderStatus();
 }
 function renderStatus() {
-  $('#oledStatus').textContent = S.playing ? `RUNNING · ${HOST && H.host ? 'DAW' : 'INTERNAL'}` : `READY · ${P.tracks.length} CH`;
+  $('#oledStatus').textContent = (ui.muted ? 'MUTED · ' : '') + (S.playing ? `RUNNING · ${HOST && H.host ? 'DAW' : 'INTERNAL'}` : `READY · ${P.tracks.length} CH`);
+}
+// master mute: the groove keeps playing (and stays in time with the DAW), silently. Saved with the project
+function setMuted(m) {
+  ui.muted = !!m; P.muted = ui.muted;
+  if (mix) GR.updateMix(mix, P, ui.muted);
+  if (HOST) HOST.call('setMuted', ui.muted);
+  syncHost();
+  renderTransport();
+  toast(ui.muted ? 'Groove Rack muted' : 'Groove Rack on');
 }
 function renderTransport() {
   const b = $('#playBtn');
   b.innerHTML = S.playing ? PAUSE_ICON : PLAY_ICON;
   b.classList.toggle('is-playing', S.playing);
   b.setAttribute('aria-label', S.playing ? 'Stop' : 'Play');
+  const m = $('#muteBtn');
+  if (m) {
+    m.innerHTML = ui.muted ? SPEAKER_OFF_ICON : SPEAKER_ICON;
+    m.classList.toggle('is-muted', ui.muted);
+    m.setAttribute('aria-pressed', ui.muted);
+    m.setAttribute('aria-label', ui.muted ? 'Unmute Groove Rack' : 'Mute Groove Rack');
+  }
+  document.documentElement.classList.toggle('is-muted', ui.muted);
   renderStatus();
 }
 function renderDensity() { document.querySelectorAll('.density-pill').forEach(p => p.classList.toggle('active', +p.dataset.cx === ui.gen.complexity)); }
@@ -693,6 +715,16 @@ function frame() {
     o.lit = lit;
     Array.from(m.children).forEach((seg, i) => { seg.className = i < lit ? (i >= 7 ? 'r' : i >= 5 ? 'a' : 'g') : ''; });
   });
+  const out = $('#outMeter');
+  if (out) {
+    let a = 0; P.tracks.forEach(t => { const o = lv[t.id]; if (o && o.a > a && !t.mute) a = o.a; });
+    if (ui.muted) a = 0;
+    const lit = Math.round(Math.min(1, a * (P.master / 0.8)) * 24);
+    if (out._lit !== lit) {
+      out._lit = lit;
+      Array.from(out.children).forEach((seg, i) => { seg.className = i < lit ? (i >= 21 ? 'r' : i >= 16 ? 'a' : 'g') : ''; });
+    }
+  }
 }
 
 /* ---------- deck interactions ---------- */
@@ -1486,7 +1518,7 @@ function menuSheet() {
     <div class="sh-sec"><h4>History</h4><div class="btns"><button class="b sm" data-act="undo">Undo</button><button class="b sm" data-act="redo">Redo</button></div></div>
     <div class="sh-sec"><h4>Keyboard</h4><div class="keys-list">
       <kbd>Space</kbd><span>Play / stop</span><kbd>← →</kbd><span>Previous / next bar</span><kbd>↑ ↓</kbd><span>Select track</span>
-      <kbd>G</kbd><span>Switch Drums / Audio rack</span><kbd>P</kbd><span>Piano roll for the selected channel</span><kbd>R</kbd><span>New pattern for the selected track</span><kbd>Shift R</kbd><span>Generate the whole groove</span><kbd>M</kbd><span>Mute selected track</span><kbd>S</kbd><span>Solo selected track</span>
+      <kbd>G</kbd><span>Switch Drums / Audio rack</span><kbd>P</kbd><span>Piano roll for the selected channel</span><kbd>Shift M</kbd><span>Mute Groove Rack</span><kbd>R</kbd><span>New pattern for the selected track</span><kbd>Shift R</kbd><span>Generate the whole groove</span><kbd>M</kbd><span>Mute selected track</span><kbd>S</kbd><span>Solo selected track</span>
       <kbd>Delete</kbd><span>Clear the bar on the selected track</span><kbd>Ctrl Z</kbd><span>Undo (Shift for redo)</span></div></div>`, sh => {
     const nm = sh.querySelector('#m_name');
     nm.addEventListener('change', () => edit(() => { P.name = nm.value.trim() || 'Untitled beat'; }));
@@ -1705,6 +1737,8 @@ function wire() {
   });
   $('#barBox').addEventListener('click', barSheet);
   $('#styleBtn').addEventListener('click', () => grooveSheet(selTrack()));
+  $('#muteBtn').addEventListener('click', () => setMuted(!ui.muted));
+  $('#outMeter').innerHTML = '<i></i>'.repeat(24);
   $('#likeBtn').addEventListener('click', likeGroove);
   $('#skipBtn').addEventListener('click', skipGroove);
   $('#keyBox').addEventListener('click', e => {
@@ -1862,7 +1896,8 @@ function wire() {
     else if (e.key === 'R') newGroove();
     else if ((e.key === 'p' || e.key === 'P') && tr) toggleRoll();
     else if (e.key === 'r' && tr) newPattern(tr);
-    else if ((e.key === 'm' || e.key === 'M') && tr) { edit(() => { tr.mute = !tr.mute; }); toast(tr.mute ? `${tr.name} muted` : `${tr.name} on`); }
+    else if (e.key === 'M') setMuted(!ui.muted);
+    else if (e.key === 'm' && tr) { edit(() => { tr.mute = !tr.mute; }); toast(tr.mute ? `${tr.name} muted` : `${tr.name} on`); }
     else if ((e.key === 's' || e.key === 'S') && tr) { edit(() => { tr.solo = !tr.solo; }); toast(tr.solo ? `${tr.name} solo` : `${tr.name} solo off`); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && tr) { e.preventDefault(); edit(() => clearBar(tr, ui.bar)); toast(`Cleared bar ${ui.bar + 1} of ${tr.name}`); }
   });
@@ -1877,6 +1912,10 @@ async function init() {
   let start = null;
   if (HOST) {
     document.documentElement.classList.add('in-plugin');
+    // the window is as tall as the machine: no empty space under it (it grows with the piano roll, and shrinks back)
+    let fitT = 0;
+    const fit = () => { const h = Math.ceil($('#app').getBoundingClientRect().height); if (h > 200 && Math.abs(h - window.innerHeight) > 2) HOST.call('fitHeight', h); };
+    if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fit, 90); }).observe($('#app'));
     HOST.on('state', s => {
       const was = S.playing;
       H.playing = !!s.playing; H.tick = s.tick || 0; H.at = performance.now(); H.bpm = s.bpm || 0; H.levels = s.levels || {}; H.host = !!s.host; H.daw = !!s.daw;

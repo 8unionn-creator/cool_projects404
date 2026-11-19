@@ -3,7 +3,7 @@
 using namespace juce;
 
 // the GR-16 palette from the web UI
-static const Colour bg (0xff0b0e17), panel (0xff12151d), cream (0xfff3f4f6), gold (0xff49e8d0), muted (0xff7c818d);
+static const Colour bg (0xff0c0e14), panel (0xff0c0e14), cream (0xfff3f4f6), gold (0xff49e8d0), muted (0xff7c818d);
 
 //==============================================================================
 MidiDragStrip::MidiDragStrip (GrooveRackProcessor& p) : proc (p)
@@ -74,8 +74,8 @@ GrooveRackEditor::GrooveRackEditor (GrooveRackProcessor& p)
     addAndMakeVisible (web);
     addAndMakeVisible (strip);
     setResizable (true, true);
-    setResizeLimits (420, 560, 2000, 2200);
-    setSize (1220, 920);
+    setResizeLimits (420, 400, 2600, 2400);
+    setSize (1180, 900);   // the page then fits the height to the machine
     reloadPage();
     startTimerHz (30);
 }
@@ -89,7 +89,7 @@ void GrooveRackEditor::paint (Graphics& g) { g.fillAll (bg); }
 void GrooveRackEditor::resized()
 {
     auto r = getLocalBounds();
-    strip.setBounds (r.removeFromBottom (36));
+    strip.setBounds (r.removeFromBottom (stripHeight));
     web.setBounds (r);
 }
 
@@ -145,6 +145,24 @@ WebBrowserComponent::Options GrooveRackEditor::makeOptions()
         })
         .withNativeFunction ("setPlaying", [this] (const Array<var>& a, Completion done) { proc.engine.internalPlay = a.size() > 0 && (bool) a[0]; done (var()); })
         .withNativeFunction ("seek", [this] (const Array<var>& a, Completion done) { if (a.size() > 0) proc.engine.seekBar = (int) a[0]; done (var()); })
+        .withNativeFunction ("fitHeight", [this] (const Array<var>& a, Completion done)
+        {
+            // the page asks for the machine's height: the window takes it, up to the screen's height
+            const int h = a.size() > 0 ? (int) a[0] : 0;
+            Component::SafePointer<GrooveRackEditor> safe (this);
+            MessageManager::callAsync ([safe, h]
+            {
+                if (safe == nullptr || h < 200)
+                    return;
+                int maxH = 2400;
+                if (auto* d = Desktop::getInstance().getDisplays().getDisplayForRect (safe->getScreenBounds()))
+                    maxH = d->userArea.getHeight() - 60;
+                const int want = jlimit (400, jmax (400, maxH), h + stripHeight);
+                if (std::abs (want - safe->getHeight()) > 2)
+                    safe->setSize (safe->getWidth(), want);
+            });
+            done (var());
+        })
         .withNativeFunction ("setMuted", [this] (const Array<var>& a, Completion done) { proc.engine.muted = a.size() > 0 && (bool) a[0]; done (var()); })
         .withNativeFunction ("audition", [this] (const Array<var>& a, Completion done)
         {

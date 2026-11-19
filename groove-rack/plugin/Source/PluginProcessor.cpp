@@ -60,6 +60,7 @@ void GrooveRackProcessor::setProjectJSON (const String& json)
 {
     projectJSON = json;
     engine.setPattern (gr::parsePattern (json, bank));
+    engine.muted = (bool) JSON::parse (json)["muted"];   // the MUTE button is saved with the session
 }
 
 String GrooveRackProcessor::getProjectJSON() const { return projectJSON; }
