@@ -41,8 +41,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .mono { font-family: var(--mono); }
 .vis { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-html.in-plugin body { padding: 10px; justify-content: flex-start; }
+/* in a DAW the machine is the whole window: no page, no frame, the window fits its height */
+html.in-plugin, html.in-plugin body { background: #0c0e14; }
+html.in-plugin body { padding: 0; gap: 0; min-height: 0; justify-content: flex-start; align-items: stretch; }
 html.in-plugin .foot-hint { display: none; }
+html.in-plugin .gr-chassis { max-width: none; border: 0; border-radius: 0; box-shadow: none; padding: 18px 20px 16px; }
+html.in-plugin .gr-chassis::before, html.in-plugin .gr-chassis::after { display: none; }
 
 /* ---------- chassis ---------- */
 .gr-chassis {
@@ -99,6 +103,9 @@ html.in-plugin .foot-hint { display: none; }
 .silicone-btn:hover, .bar-pad:hover, .dice-btn:hover { background: linear-gradient(180deg, #414958, #252a36); border-color: #566174; color: #fff; }
 .silicone-btn:active, .bar-pad:active, .ms-btn:active, .dice-btn:active { transform: translateY(2px); box-shadow: inset 0 3px 6px rgba(0,0,0,.75), 0 1px 0 #08090b; }
 .transport-btn { width: 48px; height: 48px; border-radius: 12px; }
+.mute-btn svg { width: 18px; height: 18px; }
+.mute-btn.is-muted { background: linear-gradient(180deg, #4a1717, #2a0f10); border-color: #ff5a4f; color: #ff8a80; box-shadow: 0 0 18px #ff4a3f55, inset 0 0 12px #ff4a3f33, 0 3px 0 #160707; }
+html.is-muted .oled-screen #oledStatus { color: #ff6a5f; }
 .transport-btn.is-playing { background: linear-gradient(180deg, #123b39, #102421); border-color: #50ffe1; box-shadow: 0 0 18px #3fffd444, inset 0 0 12px #3fffd422, 0 3px 0 #07110f; }
 .gen { display: flex; flex-direction: column; gap: 6px; width: 138px; }
 .generate-pad { width: 100%; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -153,7 +160,7 @@ html.in-plugin .foot-hint { display: none; }
   background: linear-gradient(145deg, #343947, #202430 55%, #141720);
   box-shadow: inset 0 1px #ffffff12, 0 3px 0 #08090d, 0 5px 7px #0007;
   transition: transform .05s ease, background .06s ease, border-color .06s ease, box-shadow .06s ease; }
-.step-pad.beat-group-alt { background: linear-gradient(145deg, #2b303b, #181c25); border-color: #353b49; }
+.step-pad.beat-group-alt { background: linear-gradient(145deg, #262a34, #14171f); border-color: #30353f; }
 .step-pad:hover { border-color: #4b5160; filter: brightness(1.12); }
 .step-pad:active { transform: scale(.94); }
 .step-pad.state-ghost { background: linear-gradient(145deg, #65402a, #342117); border-color: #ff8b52; box-shadow: 0 0 10px #ff7b3540, inset 0 0 8px #ff7b3522, 0 3px 0 #100805; }
@@ -356,6 +363,16 @@ html.in-plugin .foot-hint { display: none; }
 .bar-pad.beyond { opacity: .38; }
 .bar-pad.playing:not(.active) { border-color: var(--teal); color: var(--teal); }
 .knobs { display: flex; align-items: center; gap: 20px; }
+.out-meter { flex: 1; max-width: 420px; min-width: 120px; display: flex; align-items: center; gap: 10px; }
+.out-bars { position: relative; flex: 1; height: 14px; padding: 3px; border-radius: 5px; background: #07090d; border: 1px solid #262b36; box-shadow: inset 0 2px 4px #000c; }
+.out-led { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 100%; }
+.out-led i { border-radius: 1px; background: #1a1f28; }
+.out-led i.g { background: #42f6dc; box-shadow: 0 0 5px #42f6dc88; }
+.out-led i.a { background: #d7ff46; box-shadow: 0 0 5px #d7ff4688; }
+.out-led i.r { background: #ff5a4f; box-shadow: 0 0 5px #ff5a4f88; }
+.out-mute { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-family: var(--mono); font-size: 8.5px; font-weight: 800; letter-spacing: .2em; color: #ff8a80; background: #1a0b0dcc; border-radius: 4px; }
+html.is-muted .out-mute { display: flex; }
+@media (max-width: 760px) { .out-meter { order: 3; flex-basis: 100%; max-width: none; } }
 .knob-wrap { display: flex; align-items: center; gap: 10px; }
 .enc-knob { width: 46px; height: 46px; border-radius: 50%; padding: 3px; border: 0; cursor: ns-resize; touch-action: none;
   background: conic-gradient(from 220deg, #42f6dc 0deg, #d7ff46 var(--ring-deg, 0deg), #2a303b var(--ring-deg, 0deg), #2a303b 270deg, transparent 270deg);
@@ -502,6 +519,7 @@ select.txt { padding: 7px 9px; }
       <button class="silicone-btn transport-btn" id="stopBtn" aria-label="Stop and go to bar 1" title="Stop and go to bar 1">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="#e5e7eb" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
       </button>
+      <button class="silicone-btn transport-btn mute-btn" id="muteBtn" aria-pressed="false" aria-label="Mute Groove Rack" title="Mute Groove Rack: the groove keeps running, silently (Shift M)"></button>
       <div class="gen">
         <button class="generate-pad" id="generateBtn" title="Generate a new groove in this genre (Shift R). Hold for options">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3.5"/><circle cx="8.5" cy="8.5" r="1.4" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
@@ -563,6 +581,7 @@ select.txt { padding: 7px 9px; }
         <div class="knob-txt"><span class="foot-label">MASTER</span><span class="knob-val" id="masterVal">80%</span></div>
       </div>
     </div>
+    <div class="out-meter" aria-hidden="true"><span class="foot-label">OUT</span><div class="out-bars"><div class="out-led" id="outMeter"></div><span class="out-mute" id="outMute">MUTED</span></div></div>
     <div class="midi-drop-pad" id="midiPad" draggable="true" role="button" tabindex="0" title="Click to save the loop as MIDI, or drag it into your DAW">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#49e8d0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span id="midiPadText"><strong>DRAG MIDI</strong> into your DAW</span>
