@@ -1,0 +1,63 @@
+/* Liftoff parameters and presets, shared by the web page and the plugin.
+   The plugin reads the two lists below as JSON (between the PARAMS / PRESETS markers), so keep them strict JSON:
+   quoted keys, no comments and no trailing commas inside the brackets. */
+var LIFTOFF_PARAMS = /*PARAMS*/[
+  { "id": "mode",     "name": "Mode",            "type": "choice", "choices": ["Auto", "Manual", "Trigger"], "def": 0 },
+  { "id": "phrase",   "name": "Phrase",          "type": "choice", "choices": ["4 bars", "8 bars", "16 bars", "32 bars"], "def": 2 },
+  { "id": "length",   "name": "Build length",    "type": "choice", "choices": ["1/2 bar", "1 bar", "2 bars", "4 bars", "8 bars"], "def": 3 },
+  { "id": "build",    "name": "Build",           "type": "float", "min": 0, "max": 1, "def": 0, "unit": "%" },
+  { "id": "curve",    "name": "Curve",           "type": "float", "min": -1, "max": 1, "def": 0.35, "unit": "" },
+  { "id": "rise",     "name": "Rise on",         "type": "bool", "def": 1 },
+  { "id": "pitch",    "name": "Pitch",           "type": "float", "min": 0, "max": 24, "def": 7, "unit": "st" },
+  { "id": "filter",   "name": "Filter",          "type": "float", "min": 0, "max": 1, "def": 0.6, "unit": "%" },
+  { "id": "wash",     "name": "Wash",            "type": "float", "min": 0, "max": 1, "def": 0.5, "unit": "%" },
+  { "id": "stutter",  "name": "Stutter",         "type": "float", "min": 0, "max": 1, "def": 0.3, "unit": "%" },
+  { "id": "noise",    "name": "Noise",           "type": "float", "min": 0, "max": 1, "def": 0.35, "unit": "%" },
+  { "id": "width",    "name": "Width",           "type": "float", "min": 0, "max": 1, "def": 0.5, "unit": "%" },
+  { "id": "verb",     "name": "Backverb on",     "type": "bool", "def": 1 },
+  { "id": "verbMode", "name": "Backverb mode",   "type": "choice", "choices": ["Drop", "Build", "Always"], "def": 0 },
+  { "id": "verbLen",  "name": "Backverb length", "type": "choice", "choices": ["1/8", "1/4", "1/2", "1 bar"], "def": 2 },
+  { "id": "verbSize", "name": "Backverb size",   "type": "float", "min": 0, "max": 1, "def": 0.5, "unit": "%" },
+  { "id": "verbTone", "name": "Backverb tone",   "type": "float", "min": 0, "max": 1, "def": 0.6, "unit": "%" },
+  { "id": "verbMix",  "name": "Backverb mix",    "type": "float", "min": 0, "max": 1, "def": 0.6, "unit": "%" },
+  { "id": "drop",     "name": "Drop on",         "type": "bool", "def": 1 },
+  { "id": "gap",      "name": "Gap",             "type": "choice", "choices": ["Off", "1/16", "1/8", "1/4", "1/2"], "def": 3 },
+  { "id": "gapStyle", "name": "Gap style",       "type": "choice", "choices": ["Cut", "Tape", "Filter", "Stutter"], "def": 0 },
+  { "id": "impact",   "name": "Impact",          "type": "float", "min": 0, "max": 1, "def": 0.4, "unit": "%" },
+  { "id": "mix",      "name": "Mix",             "type": "float", "min": 0, "max": 1, "def": 1, "unit": "%" },
+  { "id": "output",   "name": "Output",          "type": "float", "min": -24, "max": 12, "def": 0, "unit": "dB" }
+]/*END*/;
+
+/* Presets set the sound: everything except the mode, the phrase, BUILD, MIX and OUTPUT. */
+var LIFTOFF_PRESETS = /*PRESETS*/[
+  { "name": "Liftoff", "tag": "The all-rounder: a 4 bar riser, a 1/4 cut and a reverse swell into the drop",
+    "values": { "length": 3, "curve": 0.35, "rise": 1, "pitch": 7, "filter": 0.6, "wash": 0.5, "stutter": 0.3, "noise": 0.35, "width": 0.5,
+                "verb": 1, "verbMode": 0, "verbLen": 2, "verbSize": 0.5, "verbTone": 0.6, "verbMix": 0.6, "drop": 1, "gap": 3, "gapStyle": 0, "impact": 0.4 } },
+  { "name": "Festival Build", "tag": "Big room: an octave rise, snare-roll stutter, white noise and a wide wash",
+    "values": { "length": 3, "curve": 0.55, "rise": 1, "pitch": 12, "filter": 0.8, "wash": 0.7, "stutter": 0.75, "noise": 0.6, "width": 0.8,
+                "verb": 1, "verbMode": 0, "verbLen": 2, "verbSize": 0.6, "verbTone": 0.7, "verbMix": 0.6, "drop": 1, "gap": 3, "gapStyle": 0, "impact": 0.65 } },
+  { "name": "Trap Pre-Drop", "tag": "One bar of tension, a tape stop on the last beat and an 808 boom",
+    "values": { "length": 1, "curve": 0.2, "rise": 1, "pitch": 0, "filter": 0.45, "wash": 0.3, "stutter": 0, "noise": 0.12, "width": 0.3,
+                "verb": 1, "verbMode": 0, "verbLen": 1, "verbSize": 0.4, "verbTone": 0.5, "verbMix": 0.5, "drop": 1, "gap": 3, "gapStyle": 1, "impact": 0.75 } },
+  { "name": "Vocal Backverb", "tag": "Every phrase swells in backwards before it is sung",
+    "values": { "length": 3, "curve": 0.35, "rise": 0, "pitch": 0, "filter": 0, "wash": 0, "stutter": 0, "noise": 0, "width": 0,
+                "verb": 1, "verbMode": 2, "verbLen": 2, "verbSize": 0.6, "verbTone": 0.5, "verbMix": 0.7, "drop": 0, "gap": 0, "gapStyle": 0, "impact": 0 } },
+  { "name": "Afro Swell", "tag": "A warm two-bar lift with a short filter dive, for Afrobeats and Amapiano",
+    "values": { "length": 2, "curve": 0.3, "rise": 1, "pitch": 3, "filter": 0.35, "wash": 0.6, "stutter": 0.15, "noise": 0.22, "width": 0.45,
+                "verb": 1, "verbMode": 0, "verbLen": 1, "verbSize": 0.55, "verbTone": 0.45, "verbMix": 0.55, "drop": 1, "gap": 2, "gapStyle": 2, "impact": 0.25 } },
+  { "name": "Tape Stop Drop", "tag": "No riser: the beat winds down for half a bar, then slams back in",
+    "values": { "length": 1, "curve": 0, "rise": 0, "pitch": 0, "filter": 0, "wash": 0, "stutter": 0, "noise": 0, "width": 0,
+                "verb": 1, "verbMode": 0, "verbLen": 2, "verbSize": 0.5, "verbTone": 0.6, "verbMix": 0.45, "drop": 1, "gap": 4, "gapStyle": 1, "impact": 0.5 } },
+  { "name": "Washout", "tag": "Eight bars that dissolve into reverb and air",
+    "values": { "length": 4, "curve": 0.6, "rise": 1, "pitch": 5, "filter": 0.9, "wash": 1, "stutter": 0, "noise": 0.5, "width": 1,
+                "verb": 1, "verbMode": 1, "verbLen": 2, "verbSize": 0.8, "verbTone": 0.7, "verbMix": 0.5, "drop": 1, "gap": 3, "gapStyle": 0, "impact": 0.45 } },
+  { "name": "Stutter Riser", "tag": "Gated 1/4 to 1/32 notes climbing an octave, then a stutter on the last 1/16",
+    "values": { "length": 2, "curve": 0.4, "rise": 1, "pitch": 12, "filter": 0.6, "wash": 0.3, "stutter": 1, "noise": 0.4, "width": 0.6,
+                "verb": 0, "verbMode": 0, "verbLen": 1, "verbSize": 0.5, "verbTone": 0.6, "verbMix": 0.5, "drop": 1, "gap": 1, "gapStyle": 3, "impact": 0.4 } },
+  { "name": "Reverse Into Drop", "tag": "Silence, then the drop's own first hit swelling in backwards",
+    "values": { "length": 1, "curve": 0.35, "rise": 0, "pitch": 0, "filter": 0, "wash": 0, "stutter": 0, "noise": 0, "width": 0,
+                "verb": 1, "verbMode": 0, "verbLen": 2, "verbSize": 0.7, "verbTone": 0.65, "verbMix": 0.9, "drop": 1, "gap": 3, "gapStyle": 0, "impact": 0.2 } },
+  { "name": "Subtle Lift", "tag": "Mix-friendly: a gentle filter and air, reverse swells that grow with the build",
+    "values": { "length": 3, "curve": 0.3, "rise": 1, "pitch": 0, "filter": 0.3, "wash": 0.25, "stutter": 0, "noise": 0.12, "width": 0.3,
+                "verb": 1, "verbMode": 1, "verbLen": 1, "verbSize": 0.4, "verbTone": 0.5, "verbMix": 0.3, "drop": 1, "gap": 0, "gapStyle": 0, "impact": 0 } }
+]/*END*/;
