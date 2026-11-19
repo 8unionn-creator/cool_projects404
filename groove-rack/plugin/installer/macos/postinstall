@@ -1,0 +1,13 @@
+#!/bin/sh
+# Runs after the Groove Rack installer has copied its files.
+# Copies from a manual install in the user's own Library would shadow the new ones: remove them.
+user=$(stat -f%Su /dev/console 2>/dev/null)
+if [ -n "$user" ] && [ "$user" != "root" ]; then
+  home=$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+  if [ -n "$home" ] && [ -d "$home/Library/Audio/Plug-Ins" ]; then
+    rm -rf "$home/Library/Audio/Plug-Ins/Components/Groove Rack.component" "$home/Library/Audio/Plug-Ins/VST3/Groove Rack.vst3"
+  fi
+fi
+# have macOS register the new Audio Unit now, so Logic and GarageBand find it on their next start
+killall -9 AudioComponentRegistrar 2>/dev/null || true
+exit 0

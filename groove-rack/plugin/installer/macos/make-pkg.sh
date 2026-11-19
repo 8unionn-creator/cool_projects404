@@ -1,0 +1,32 @@
+#!/bin/bash
+# Builds the macOS installer for Groove Rack.
+# It puts the Audio Unit (Logic, GarageBand) and the VST3 in /Library/Audio/Plug-Ins and the app in /Applications,
+# then has macOS pick up the new Audio Unit, so there is nothing to copy or type in Terminal.
+# usage: make-pkg.sh <folder with the built bundles> <version> <output .pkg>
+set -euo pipefail
+src="$1" ver="$2" out="$3"
+here="$(cd "$(dirname "$0")" && pwd)"
+work="$(mktemp -d)"
+root="$work/root"
+mkdir -p "$root/Library/Audio/Plug-Ins/Components" "$root/Library/Audio/Plug-Ins/VST3" "$root/Applications" "$work/pkgs" "$work/scripts"
+ditto "$src/Groove Rack.component" "$root/Library/Audio/Plug-Ins/Components/Groove Rack.component"
+ditto "$src/Groove Rack.vst3" "$root/Library/Audio/Plug-Ins/VST3/Groove Rack.vst3"
+ditto "$src/Groove Rack.app" "$root/Applications/Groove Rack.app"
+
+# install to exactly these places, even when another copy of a bundle exists somewhere else on the Mac
+plist="$work/components.plist"
+pkgbuild --analyze --root "$root" "$plist"
+i=0
+while /usr/libexec/PlistBuddy -c "Print :$i" "$plist" >/dev/null 2>&1; do
+  /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$plist"
+  i=$((i + 1))
+done
+
+cp "$here/postinstall" "$work/scripts/postinstall"
+chmod +x "$work/scripts/postinstall"
+pkgbuild --root "$root" --component-plist "$plist" --identifier com.coolprojects404.grooverack --version "$ver" \
+  --install-location / --scripts "$work/scripts" "$work/pkgs/GrooveRack-core.pkg"
+sed "s/@VERSION@/$ver/g" "$here/distribution.xml" > "$work/distribution.xml"
+productbuild --distribution "$work/distribution.xml" --resources "$here/resources" --package-path "$work/pkgs" "$out"
+rm -rf "$work"
+echo "built $out"
