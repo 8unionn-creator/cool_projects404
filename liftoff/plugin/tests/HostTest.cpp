@@ -12,6 +12,41 @@ static void check (const char* name, bool ok, const String& detail = {})
     else { ++failed; std::printf ("  FAIL %s %s\n", name, detail.toRawUTF8()); }
 }
 
+// a 16-bit stereo WAV
+static bool writeWav (const File& f, const AudioBuffer<float>& b, int sr)
+{
+    MemoryOutputStream o;
+    const int n = b.getNumSamples();
+    o.write ("RIFF", 4); o.writeInt (36 + n * 4); o.write ("WAVEfmt ", 8); o.writeInt (16); o.writeShort (1); o.writeShort (2);
+    o.writeInt (sr); o.writeInt (sr * 4); o.writeShort (4); o.writeShort (16); o.write ("data", 4); o.writeInt (n * 4);
+    for (int i = 0; i < n; ++i)
+        for (int c = 0; c < 2; ++c)
+            o.writeShort ((short) roundToInt (jlimit (-1.0f, 1.0f, b.getSample (c, i)) * 32767.0f));
+    return f.replaceWithData (o.getData(), o.getDataSize());
+}
+
+// a VST3's saved state, as a DAW keeps it: the processor's own state (XML) inside the host's VST3PluginState
+static bool editState (AudioPluginInstance& p, std::function<void (XmlElement&)> edit)
+{
+    MemoryBlock outer;
+    p.getStateInformation (outer);
+    auto vst = AudioProcessor::getXmlFromBinary (outer.getData(), (int) outer.getSize());
+    auto* comp = vst != nullptr ? vst->getChildByName ("IComponent") : nullptr;
+    if (comp == nullptr) return false;
+    MemoryBlock inner;
+    inner.fromBase64Encoding (comp->getAllSubText());
+    auto xml = AudioProcessor::getXmlFromBinary (inner.getData(), (int) inner.getSize());
+    if (xml == nullptr) return false;
+    edit (*xml);
+    MemoryBlock edited, all;
+    AudioProcessor::copyXmlToBinary (*xml, edited);
+    comp->deleteAllTextElements();
+    comp->addTextElement (edited.toBase64Encoding());
+    AudioProcessor::copyXmlToBinary (*vst, all);
+    p.setStateInformation (all.getData(), (int) all.getSize());
+    return true;
+}
+
 struct Head : AudioPlayHead
 {
     double ppq = 0, bpm = 120;
@@ -79,6 +114,38 @@ int main (int argc, char** argv)
         }
     }
     check ("4 seconds of audio pass through untouched", finite && maxErr < 1e-6, String (maxErr));
+
+    {   // IN SONG, from a saved session: the riser (its drop 2 beats in) plays with the DAW, the drop on bar 3's downbeat (beat 8 = 4 s)
+        const int endAt = (int) sr, len = (int) (sr * 1.5);
+        AudioBuffer<float> riser (2, len);
+        riser.clear();
+        riser.setSample (0, 0, 0.5f); riser.setSample (1, 0, 0.5f);
+        riser.setSample (0, endAt, 0.9f); riser.setSample (1, endAt, 0.9f);
+        const auto wav = File::getSpecialLocation (File::tempDirectory).getChildFile ("liftoff-host-test-riser.wav");
+        const bool edited = writeWav (wav, riser, (int) sr) && editState (*plugin, [&] (XmlElement& x)
+        {
+            x.setAttribute ("cue", 1); x.setAttribute ("cueBar", 3);
+            x.setAttribute ("cuePath", wav.getFullPathName()); x.setAttribute ("cueEnd", endAt);
+        });
+        int64 dropAt = -1, startAt = -1; double other = 0;
+        for (int b = 0; b < (int) (sr * 6 / block); ++b)
+        {
+            buf.clear();
+            head.ppq = (double) b * block / sr * head.bpm / 60.0;
+            plugin->processBlock (buf, midi);
+            for (int i = 0; i < block; ++i)
+            {
+                const float v = buf.getSample (0, i);
+                const int64 at = (int64) b * block + i;
+                if (v > 0.8f) dropAt = at; else if (v > 0.4f) startAt = at; else other = jmax (other, (double) std::abs (v));
+            }
+        }
+        check ("IN SONG, from a saved session: the riser plays with the DAW and its drop lands on bar 3",
+               edited && dropAt == (int64) (sr * 4) && startAt == (int64) (sr * 3) && other < 1e-4,
+               "edited " + String ((int) edited) + ", drop at " + String (dropAt) + ", start at " + String (startAt));
+        editState (*plugin, [] (XmlElement& x) { x.setAttribute ("cue", 0); });
+        wav.deleteFile();
+    }
 
     MemoryBlock state;
     plugin->getStateInformation (state);

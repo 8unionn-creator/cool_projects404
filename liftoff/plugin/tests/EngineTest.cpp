@@ -97,6 +97,36 @@ int main (int argc, char** argv)
     std::printf ("Liftoff engine\n");
     auto sine = [] (double f) { return [f] (int i) { return (float) (0.5 * std::sin (6.283185307179586 * f * i / SR)); }; };
 
+    {   // IN SONG: a riser whose drop is 2 beats in, played with a DAW at 120 BPM, drop on bar 3: the drop lands on beat 8
+        const int endAt = beat (2), len = beat (3);
+        juce::AudioBuffer<float> riser (2, len);
+        riser.clear();
+        riser.setSample (0, endAt, 1.0f); riser.setSample (1, endAt, 1.0f);   // a click where the drop goes
+        riser.setSample (0, 0, 0.5f);                                          // and one at its start
+        long long heardAt = -1, startAt = -1; int sounding = 0;
+        for (int blockSize : { 64, 441, 512 })
+        {
+            heardAt = startAt = -1; sounding = 0;
+            juce::AudioBuffer<float> out (2, blockSize);
+            for (int i = 0; i < beat (12); i += blockSize)
+            {
+                out.clear();
+                const double ppq = i * 120.0 / 60.0 / SR;
+                if (cueMix (out, riser, cueStart (ppq, 3, 4, 120, SR, endAt), blockSize)) ++sounding;
+                for (int j = 0; j < blockSize; ++j)
+                {
+                    if (out.getSample (1, j) > 0.9f) heardAt = i + j;
+                    if (std::abs (out.getSample (0, j) - 0.5f) < 1e-6f) startAt = i + j;
+                }
+            }
+            if (heardAt != beat (8) || startAt != beat (6)) break;
+        }
+        check ("IN SONG: the drop lands on the bar's downbeat, the riser starts before it (blocks of 64, 441, 512)",
+               heardAt == beat (8) && startAt == beat (6), juce::String (heardAt) + " / " + juce::String (startAt));
+        juce::AudioBuffer<float> out (2, 512); out.clear();
+        check ("IN SONG: nothing before the riser or after it", ! cueMix (out, riser, -600, 512) && ! cueMix (out, riser, len, 512));
+    }
+
     {   // with every module off the plugin is a wire, with no latency
         Params p; p.rise = false; p.verb = false; p.drop = false; p.trem = false; p.chorus = false;
         auto r = run (p, 1, sine (330));

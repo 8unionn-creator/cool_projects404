@@ -1,5 +1,6 @@
 #include "Core.h"
 #include <cmath>
+#include <limits>
 
 namespace lf
 {
@@ -158,9 +159,11 @@ void Core::prepare (double sampleRate)
 {
     sr = sampleRate;
     smoothA = 1 - std::exp (-1 / (0.02 * sr));
-    W = (int) std::lround (0.05 * sr);
-    psN = pow2 (W + 8); psL.assign ((size_t) psN, 0.0f); psR.assign ((size_t) psN, 0.0f); psW = 0;
-    phase = 0;
+    psN = pow2 ((int) std::ceil (0.2 * sr)); psL.assign ((size_t) psN, 0.0f); psR.assign ((size_t) psN, 0.0f); psW = 0;
+    psK = (int) std::lround (0.012 * sr);
+    psXF = (int) std::lround (0.008 * sr);
+    psD = psK + (double) std::lround (0.035 * sr); psDo = 0; psX = -1; psG = 0; psA = 1 - std::exp (-1 / (0.01 * sr));
+    psCmp.assign ((size_t) psK, 0.0);
     hN = pow2 ((int) std::ceil (sr * 3.2)); hL.assign ((size_t) hN, 0.0f); hR.assign ((size_t) hN, 0.0f); hW = 0;
     hpL = hpR = lpL = lpR = nL = nR = SVF();
     wash.prepare (sr);
@@ -190,6 +193,38 @@ double Core::readHist (const std::vector<float>& buf, double pos) const
     return a + (b - a) * f;
 }
 
+double Core::psRead (const std::vector<float>& buf, int pw, double d) const
+{
+    const double r = pw - d;
+    const long long i = (long long) std::floor (r);
+    const double f = r - (double) i, a = buf[(size_t) (i & (psN - 1))];
+    return a + (buf[(size_t) ((i + 1) & (psN - 1))] - a) * f;
+}
+
+// the grain caught up with the input: jump back about J samples, to where the next K samples best match what it plays now
+double Core::splice (int pw, double d, double drift)
+{
+    const long long m = psN - 1, K = psK;
+    const long long J = std::llround ((0.035 + 0.02 * drift) * sr), a0 = (long long) std::floor (pw - d);
+    for (long long k = 0; k < K; k += 2)
+        psCmp[(size_t) k] = (double) psL[(size_t) ((a0 + k) & m)] + (double) psR[(size_t) ((a0 + k) & m)];
+    double best = -std::numeric_limits<double>::infinity();
+    long long bestOff = 0;
+    for (long long off = -K; off <= K; ++off)
+    {
+        const long long b0 = a0 - J - off;
+        double xy = 0, yy = 0;
+        for (long long k = 0; k < K; k += 2)
+        {
+            const double b = (double) psL[(size_t) ((b0 + k) & m)] + (double) psR[(size_t) ((b0 + k) & m)];
+            xy += psCmp[(size_t) k] * b; yy += b * b;
+        }
+        const double sc = xy / std::sqrt (yy + 1e-9);
+        if (sc > best) { best = sc; bestOff = off; }
+    }
+    return d + (double) J + (double) bestOff;
+}
+
 void Core::process (const float* inL, const float* inR, float* outL, float* outR, float* sendL, float* sendR, int n, const Transport& tp)
 {
     const double A = smoothA;
@@ -197,7 +232,6 @@ void Core::process (const float* inL, const float* inR, float* outL, float* outR
     const bool rise = P.rise, dropOn = P.drop;
     const double gapBeats = dropOn ? gapBeatsTable[juce::jlimit (0, 4, P.gap)] : 0;
     const double sliceBeats = 0.25;
-    const int m = psN - 1;
     double peakIn = 0, peakOut = 0, lastP = 0, lastRaw = -1, toDrop = -1;
 
     for (int i = 0; i < n; ++i)
@@ -275,27 +309,25 @@ void Core::process (const float* inL, const float* inR, float* outL, float* outR
 
         // ---------- rise ----------
         double sL = xL, sR = xR;
-        const int pw = psW; psL[(size_t) pw] = (float) xL; psR[(size_t) pw] = (float) xR; psW = (pw + 1) & m;
+        const int pw = psW; psL[(size_t) pw] = (float) xL; psR[(size_t) pw] = (float) xR; psW = (pw + 1) & (psN - 1);
         const double semis = rise ? S[sPitch] * p : 0;
-        if (semis > 0.01)
+        const bool psOn = semis > 0.01;
+        psG += ((psOn ? 1.0 : 0.0) - psG) * psA;
+        if (psOn || psG > 1e-4)
         {
-            const double ratio = std::pow (2.0, semis / 12);
-            double ph = phase - (ratio - 1) / W; ph -= std::floor (ph); phase = ph;
-            const double ph2 = ph + 0.5 - std::floor (ph + 0.5);
-            const double sn = std::sin (PI * ph), w1 = sn * sn, w2 = 1 - w1;
-            const double r1 = pw - ph * W, r2 = pw - ph2 * W;
-            const long long i1 = (long long) std::floor (r1), i2 = (long long) std::floor (r2);
-            const double f1 = r1 - (double) i1, f2 = r2 - (double) i2;
-            auto tap = [m] (const std::vector<float>& b, long long ix, double f)
+            const double drift = psOn ? std::pow (2.0, semis / 12) - 1 : 0.0;
+            psD -= drift; if (psX >= 0) psDo -= drift;
+            if (psX < 0 && psD < std::max ((double) psK, psXF * drift + 2)) { psDo = psD; psD = splice (pw, psD, drift); psX = 0; }
+            double yL = psRead (psL, pw, psD), yR = psRead (psR, pw, psD);
+            if (psX >= 0)
             {
-                const double a = b[(size_t) (ix & m)], c = b[(size_t) ((ix + 1) & m)];
-                return a + (c - a) * f;
-            };
-            const double yL = w1 * tap (psL, i1, f1) + w2 * tap (psL, i2, f2);
-            const double yR = w1 * tap (psR, i1, f1) + w2 * tap (psR, i2, f2);
-            const double mx = std::min (1.0, semis / 1.5);
-            sL += (yL - sL) * mx; sR += (yR - sR) * mx;
+                const double w = (double) psX / psXF;
+                yL = psRead (psL, pw, psDo) * (1 - w) + yL * w; yR = psRead (psR, pw, psDo) * (1 - w) + yR * w;
+                if (++psX >= psXF) psX = -1;
+            }
+            sL += (yL - sL) * psG; sR += (yR - sR) * psG;
         }
+        else { psD = psK + (double) std::lround (0.035 * sr); psX = -1; }
         if (rise && S[sFilter] > 0) { hpL.run (sL); hpR.run (sR); sL = hpL.hp; sR = hpR.hp; }
         if (rise && S[sStutter] > 0)
         {

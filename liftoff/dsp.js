@@ -153,10 +153,12 @@ function LiftoffDSP(G) {
       this.P = Object.assign({}, DEFAULTS);
       this.S = {}; for (const k of SMOOTHED) this.S[k] = this.target(k);
       this.smoothA = 1 - Math.exp(-1 / (0.02 * sr));
-      // pitch shifter
-      this.W = Math.round(0.05 * sr);
-      this.psN = pow2(this.W + 8); this.psL = new Float32Array(this.psN); this.psR = new Float32Array(this.psN); this.psW = 0;
-      this.phase = 0;
+      // pitch shifter: one grain reading faster than the input, spliced back where the sound matches (see _splice)
+      this.psN = pow2(Math.ceil(0.2 * sr)); this.psL = new Float32Array(this.psN); this.psR = new Float32Array(this.psN); this.psW = 0;
+      this.psK = Math.round(0.012 * sr);      // compared span, and the search either side of the jump
+      this.psXF = Math.round(0.008 * sr);     // crossfade at a splice
+      this.psD = this.psK + Math.round(0.035 * sr); this.psDo = 0; this.psX = -1; this.psG = 0; this.psA = 1 - Math.exp(-1 / (0.01 * sr));
+      this.psCmp = new Float64Array(this.psK);
       // history for the gap (tape stop, stutter): up to 2 beats at 40 BPM
       this.hN = pow2(Math.ceil(sr * 3.2)); this.hL = new Float32Array(this.hN); this.hR = new Float32Array(this.hN); this.hW = 0;
       this.hpL = new SVF(); this.hpR = new SVF(); this.lpL = new SVF(); this.lpR = new SVF(); this.nL = new SVF(); this.nR = new SVF();
@@ -196,6 +198,29 @@ function LiftoffDSP(G) {
       this.inGap = false; this.armed = false;
     }
 
+    _psRead(buf, pw, d) {   // d samples behind the newest input, interpolated
+      const r = pw - d, i = Math.floor(r), f = r - i, m = this.psN - 1, a = buf[i & m];
+      return a + (buf[(i + 1) & m] - a) * f;
+    }
+
+    /* The grain has caught up with the input: jump back about J samples, to the spot within +-K whose next K samples
+       look most like what the grain is playing now (normalised cross-correlation, mono, every other sample).
+       Crossfading between two matching waveforms removes the flutter and the hollow, phasey sound of a fixed splice. */
+    _splice(pw, d, drift) {
+      const L = this.psL, R = this.psR, m = this.psN - 1, K = this.psK, a = this.psCmp;
+      const J = Math.round((0.035 + 0.02 * drift) * this.sr), a0 = Math.floor(pw - d);
+      for (let k = 0; k < K; k += 2) a[k] = L[(a0 + k) & m] + R[(a0 + k) & m];
+      let best = -Infinity, bestOff = 0;
+      for (let off = -K; off <= K; off++) {
+        const b0 = a0 - J - off;
+        let xy = 0, yy = 0;
+        for (let k = 0; k < K; k += 2) { const b = L[(b0 + k) & m] + R[(b0 + k) & m]; xy += a[k] * b; yy += b * b; }
+        const sc = xy / Math.sqrt(yy + 1e-9);
+        if (sc > best) { best = sc; bestOff = off; }
+      }
+      return d + J + bestOff;
+    }
+
     _readHist(buf, pos) {   // pos: absolute sample index (may be fractional), must be in the past
       const N = this.hN, i = Math.floor(pos), f = pos - i;
       const a = buf[i & (N - 1)], b = buf[(i + 1) & (N - 1)];
@@ -206,8 +231,7 @@ function LiftoffDSP(G) {
     process(inL, inR, outL, outR, sendL, sendR, n, tp) {
       const P = this.P, S = this.S, sr = this.sr, A = this.smoothA;
       const bpm = Math.max(20, tp.bpm || 120), bpb = tp.bpb || 4, bps = bpm / 60 / sr;
-      const W = this.W, psN = this.psN;
-      const rise = !!P.rise, dropOn = !!P.drop;
+            const rise = !!P.rise, dropOn = !!P.drop;
       const gapBeats = dropOn ? GAP_BEATS[P.gap] : 0;
       const sliceBeats = 0.25;
       let peakIn = 0, peakOut = 0, lastP = 0, lastRaw = -1, toDrop = -1;
@@ -273,21 +297,24 @@ function LiftoffDSP(G) {
 
         // ---------- rise ----------
         let sL = xL, sR = xR;
-        // pitch: two crossfaded taps sweeping through a 50 ms window
-        const pw = this.psW; this.psL[pw] = xL; this.psR[pw] = xR; this.psW = (pw + 1) & (psN - 1);
-        const semis = rise ? S.pitch * p : 0;
-        if (semis > 0.01) {
-          const ratio = Math.pow(2, semis / 12);
-          let ph = this.phase - (ratio - 1) / W; ph -= Math.floor(ph); this.phase = ph;
-          const ph2 = ph + 0.5 - Math.floor(ph + 0.5);
-          const w1 = Math.sin(Math.PI * ph) ** 2, w2 = 1 - w1;
-          const r1 = pw - ph * W, r2 = pw - ph2 * W;
-          const i1 = Math.floor(r1), f1 = r1 - i1, i2 = Math.floor(r2), f2 = r2 - i2, m = psN - 1;
-          const yL = w1 * (this.psL[i1 & m] + (this.psL[(i1 + 1) & m] - this.psL[i1 & m]) * f1) + w2 * (this.psL[i2 & m] + (this.psL[(i2 + 1) & m] - this.psL[i2 & m]) * f2);
-          const yR = w1 * (this.psR[i1 & m] + (this.psR[(i1 + 1) & m] - this.psR[i1 & m]) * f1) + w2 * (this.psR[i2 & m] + (this.psR[(i2 + 1) & m] - this.psR[i2 & m]) * f2);
-          const mix = Math.min(1, semis / 1.5);
-          sL += (yL - sL) * mix; sR += (yR - sR) * mix;
-        }
+        // pitch: a grain reading the input faster than it comes in, spliced back when it catches up
+        const pw = this.psW; this.psL[pw] = xL; this.psR[pw] = xR; this.psW = (pw + 1) & (this.psN - 1);
+        const semis = rise ? S.pitch * p : 0, psOn = semis > 0.01;
+        this.psG += ((psOn ? 1 : 0) - this.psG) * this.psA;
+        if (psOn || this.psG > 1e-4) {
+          const drift = psOn ? Math.pow(2, semis / 12) - 1 : 0;
+          this.psD -= drift; if (this.psX >= 0) this.psDo -= drift;
+          if (this.psX < 0 && this.psD < Math.max(this.psK, this.psXF * drift + 2)) {
+            this.psDo = this.psD; this.psD = this._splice(pw, this.psD, drift); this.psX = 0;
+          }
+          let yL = this._psRead(this.psL, pw, this.psD), yR = this._psRead(this.psR, pw, this.psD);
+          if (this.psX >= 0) {
+            const w = this.psX / this.psXF;
+            yL = this._psRead(this.psL, pw, this.psDo) * (1 - w) + yL * w; yR = this._psRead(this.psR, pw, this.psDo) * (1 - w) + yR * w;
+            if (++this.psX >= this.psXF) this.psX = -1;
+          }
+          sL += (yL - sL) * this.psG; sR += (yR - sR) * this.psG;
+        } else { this.psD = this.psK + Math.round(0.035 * sr); this.psX = -1; }
         if (rise && S.filter > 0) { this.hpL.run(sL); this.hpR.run(sR); sL = this.hpL.hp; sR = this.hpR.hp; }
         if (rise && S.stutter > 0) {
           const steps = [1, 2, 4, 8][Math.min(3, Math.floor(p * 4))];

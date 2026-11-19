@@ -106,6 +106,7 @@ void LiftoffProcessor::timerCallback()
 {
     // free renders the audio thread has let go of (one timer tick after they were replaced)
     if (retired.size() > 2) retired.erase (retired.begin(), retired.end() - 2);
+    keepCueRender();
     // SAMPLE mode adds no latency; LIVE mode is late by the backverb length
     const int wantLatency = sampleView ? 0 : engine.irLatency.load();
     if (getLatencySamples() != wantLatency)
@@ -120,6 +121,48 @@ void LiftoffProcessor::timerCallback()
     engine.loadIR (p, bpm);
     if (! sampleView && getLatencySamples() != engine.irLatency.load())
         setLatencySamples (engine.irLatency.load());
+}
+
+bool LiftoffProcessor::writeWav (const File& f, const AudioBuffer<float>& b, double sr)
+{
+    f.deleteFile();
+    std::unique_ptr<OutputStream> os = f.createOutputStream();
+    if (os == nullptr) return false;
+    WavAudioFormat wav;
+    auto w = wav.createWriterFor (os, AudioFormatWriterOptions{}.withSampleRate (sr).withNumChannels (b.getNumChannels()).withBitsPerSample (24));
+    return w != nullptr && w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+}
+
+// a reopened session reads back the riser IN SONG plays, so it plays before the plugin's window has been opened
+void LiftoffProcessor::loadCueRender()
+{
+    if (cuePath.isEmpty() || std::atomic_load (&render) != nullptr)
+        return;
+    std::unique_ptr<AudioFormatReader> reader (formats.createReaderFor (File (cuePath)));
+    if (reader == nullptr || reader->lengthInSamples <= 0 || reader->lengthInSamples > (int64) (reader->sampleRate * 120))
+        return;
+    auto k = std::make_shared<Render>();
+    k->sampleRate = reader->sampleRate;
+    k->endAt = cueEnd;
+    k->name = File (cuePath).getFileNameWithoutExtension();
+    k->audio.setSize (2, (int) reader->lengthInSamples);
+    reader->read (&k->audio, 0, (int) reader->lengthInSamples, 0, true, true);
+    cueSaved = k;
+    setRender (k);
+}
+
+// IN SONG keeps the riser on disk once it has stopped changing
+void LiftoffProcessor::keepCueRender()
+{
+    auto r = std::atomic_load (&render);
+    if (! cueOn || r == nullptr || r == cueSaved || Time::getMillisecondCounterHiRes() - renderAt < 1500.0)
+        return;
+    if (cueId.isEmpty()) cueId = Uuid().toString();
+    auto dir = dataDir().getChildFile ("In Song");
+    dir.createDirectory();
+    const auto f = dir.getChildFile (cueId + ".wav");
+    if (writeWav (f, r->audio, r->sampleRate)) { cuePath = f.getFullPathName(); cueEnd = r->endAt; }
+    cueSaved = r;
 }
 
 File LiftoffProcessor::dataDir()
@@ -148,6 +191,7 @@ AudioBuffer<float> LiftoffProcessor::stopRecording()
 
 void LiftoffProcessor::setRender (std::shared_ptr<Render> r)
 {
+    renderAt = Time::getMillisecondCounterHiRes();
     retired.push_back (std::atomic_load (&render));
     std::atomic_store (&render, r);
     if (previewing && ! auditioning)   // a new render while it plays: keep playing, from the same place
@@ -222,6 +266,16 @@ void LiftoffProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& mid
             recLevel = jmax (recLevel.load() * 0.9f, peakIn);
             if (room <= n) recording = false;   // full: 60 s
         }
+        // IN SONG: while the DAW plays, the riser plays where the song is, its drop on the chosen bar
+        bool cueNow = false;
+        if (cueOn && hostPlaying && tp.playing && ! previewing)
+            if (auto r = std::atomic_load (&render))
+            {
+                const long long start = lf::cueStart (tp.ppq, cueBar.load(), tp.bpb, tp.bpm, getSampleRate(), r->endAt);
+                cueNow = lf::cueMix (buffer, r->audio, start, n);
+                if (cueNow) cuePos = (double) start / r->sampleRate;
+            }
+        cueing = cueNow;
         if (previewing)
             if (auto r = std::atomic_load (&playBuf))
             {
@@ -279,7 +333,12 @@ void LiftoffProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& mid
 void LiftoffProcessor::getStateInformation (MemoryBlock& destData)
 {
     auto state = apvts.copyState();
-    state.setProperty ("preset", preset.load(), nullptr);
+    state.setProperty ("preset", presetKey, nullptr);
+    state.setProperty ("cue", cueOn.load(), nullptr);
+    state.setProperty ("cueBar", cueBar.load(), nullptr);
+    state.setProperty ("cueId", cueId, nullptr);
+    state.setProperty ("cuePath", cuePath, nullptr);
+    state.setProperty ("cueEnd", cueEnd, nullptr);
     state.setProperty ("ui", uiJson, nullptr);
     state.setProperty ("sample", samplePath, nullptr);
     state.setProperty ("sampleView", sampleView.load(), nullptr);
@@ -294,11 +353,19 @@ void LiftoffProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xml->hasTagName (apvts.state.getType()))
         {
             auto state = ValueTree::fromXml (*xml);
-            preset = (int) state.getProperty ("preset", 0);
+            const auto pk = state.getProperty ("preset", "f:0");
+            presetKey = pk.isString() ? pk.toString() : "f:" + String ((int) pk);   // 0.4 and older kept a number
+            cueOn = (bool) state.getProperty ("cue", false);
+            cueBar = (int) state.getProperty ("cueBar", 17);
+            cueId = state.getProperty ("cueId", "").toString();
+            cuePath = state.getProperty ("cuePath", "").toString();
+            cueEnd = (int64) state.getProperty ("cueEnd", 0);
             uiJson = state.getProperty ("ui", "").toString();
             samplePath = state.getProperty ("sample", "").toString();
             sampleView = (bool) state.getProperty ("sampleView", true);
             apvts.replaceState (state);
+            if (MessageManager::existsAndIsCurrentThread()) loadCueRender();
+            else MessageManager::callAsync ([safe = WeakReference<LiftoffProcessor> (this)] { if (safe != nullptr) safe->loadCueRender(); });
         }
 }
 

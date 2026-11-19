@@ -67,7 +67,7 @@ function LiftoffTransition(G) {
   const tick = () => new Promise(r => setTimeout(r, 0));
 
   /* sample: { chans: [Float32Array, Float32Array?], sr } (already cut to the part to use)   P: the Liftoff parameters
-     o: { bpm, bpb, signal: { cancelled }, async }
+     o: { bpm, bpb, signal: { cancelled }, async, reverse, normalize }
      The riser lasts BUILD LENGTH and ends at `endAt`, where your drop goes; the effects ring on for a tail after it. */
   async function renderTransition(sample, P, o) {
     const sr = sample.sr, bpm = o.bpm || 120, bpb = o.bpb || 4, spb = 60 / bpm * sr;
@@ -141,10 +141,122 @@ function LiftoffTransition(G) {
     const fo = Math.round(sr * 0.3);
     for (let i = 0; i < fo; i++) { const w = i / fo; outL[N - 1 - i] *= w; outR[N - 1 - i] *= w; }
 
-    return {
+    let r = {
       L: outL, R: outR, dryL: xL.subarray(0, N), dryR: xR.subarray(0, N), sr, N, spb, bpm, bpb, oneShot,
-      buildN, endAt: buildN, verbStart: endSwell ? buildN - L : -1, buildBars: buildB / bpb
+      buildN, endAt: buildN, verbStart: endSwell ? buildN - L : -1, buildBars: buildB / bpb, reversed: false, gain: 1
     };
+    if (o.reverse) r = reverseRender(r);
+    if (o.normalize) {   // the loudest peak at -1 dBFS
+      let pk = 0; for (let i = 0; i < r.N; i++) pk = Math.max(pk, Math.abs(r.L[i]), Math.abs(r.R[i]));
+      if (pk > 1e-6) { const g = 0.8913 / pk; for (let i = 0; i < r.N; i++) { r.L[i] *= g; r.R[i] *= g; } r.gain = g; }
+    }
+    return r;
+  }
+
+  /* REVERSE: the whole thing backwards, a downlifter. The tail turns into a one-beat swell into the drop (END),
+     then the riser falls away from it for BUILD LENGTH. The clip starts on a beat, one beat before the drop. */
+  function reverseRender(r) {
+    const lead = Math.min(Math.round(r.spb), r.N - r.buildN), start = r.N - r.buildN - lead, n = lead + r.buildN;
+    const rev = a => { const b = new Float32Array(n); for (let i = 0; i < n; i++) b[i] = a[r.N - 1 - (start + i)]; return b; };
+    const L = rev(r.L), R = rev(r.R), fi = Math.round(r.sr * 0.01), fo = Math.round(r.sr * 0.005);
+    for (let i = 0; i < fi; i++) { const w = i / fi; L[i] *= w; R[i] *= w; }
+    for (let i = 0; i < fo; i++) { const w = i / fo; L[n - 1 - i] *= w; R[n - 1 - i] *= w; }
+    return { ...r, L, R, dryL: rev(r.dryL), dryR: rev(r.dryR), N: n, endAt: lead, verbStart: -1, reversed: true };
+  }
+
+  /* The tempo of a loop: an onset curve (spectral flux), its autocorrelation over 70..180 BPM with a gentle pull
+     toward 120, then, if the sound is a whole number of bars at about that tempo, the exact tempo that makes it so.
+     Returns { bpm, offset (samples to the first beat), confidence 0..1, exact } or null for sounds too short to tell. */
+  function detectBpm(chans, sr, near) {
+    const n = chans[0].length, sec = n / sr;
+    if (sec < 1.5) return null;
+    const hop = Math.round(sr / 100), F = 1024, frames = Math.floor((n - F) / hop);
+    if (frames < 50) return null;
+    const re = new Float64Array(F), im = new Float64Array(F), prev = new Float64Array(F / 2), prevLin = new Float64Array(F / 2), flux = new Float64Array(frames), low = new Float64Array(frames);
+    const lowK = Math.max(2, Math.round(160 * F / sr));   // the kick's band, for where the beats fall
+    const win = new Float64Array(F); for (let i = 0; i < F; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / F);
+    for (let t = 0; t < frames; t++) {
+      re.fill(0); im.fill(0);
+      for (let i = 0; i < F; i++) { let v = 0; for (const c of chans) v += c[t * hop + i]; re[i] = v * win[i]; }
+      fft(re, im, false);
+      let f = 0, lf = 0;
+      for (let k = 1; k < F / 2; k++) {
+        const mag = Math.hypot(re[k], im[k]), m = Math.log(1 + 100 * mag);
+        if (m > prev[k]) f += m - prev[k];
+        if (k <= lowK && mag > prevLin[k]) lf += mag - prevLin[k];   // linear, so the loud low hits (kicks) rule
+        prev[k] = m; prevLin[k] = mag;
+      }
+      flux[t] = f; low[t] = lf;
+    }
+    // remove the slow trend, keep the hits
+    const detrend = x => {
+      const e = new Float64Array(frames), w = 8;
+      for (let t = 0; t < frames; t++) { let s = 0, c = 0; for (let k = Math.max(0, t - w); k <= Math.min(frames - 1, t + w); k++) { s += x[k]; c++; } e[t] = Math.max(0, x[t] - s / c); }
+      return e;
+    };
+    const env = detrend(flux), lowEnv = detrend(low);
+    let lowSum = 0, allSum = 0; for (let t = 0; t < frames; t++) { lowSum += lowEnv[t]; allSum += env[t]; }
+    const beatEnv = lowSum > 0.01 * allSum ? lowEnv : env;
+    const fps = sr / hop, ac = lag => { let s = 0; for (let t = 0; t + lag < frames; t++) s += env[t] * env[t + lag]; return s / (frames - lag); };
+    let e0 = ac(0); if (e0 <= 0) return null;
+    const score = bpm => {
+      const lag = 60 / bpm * fps, l0 = Math.floor(lag), fr = lag - l0, at = l => ac(l) + (ac(l + 1) - ac(l)) * fr;
+      return at(l0) + 0.5 * (2 * lag + 1 < frames ? ac(Math.round(2 * lag)) : 0) + 0.25 * (4 * lag + 1 < frames ? ac(Math.round(4 * lag)) : 0);
+    };
+    const prior = bpm => Math.exp(-0.5 * Math.pow(Math.log2(bpm / 120) / 0.9, 2));
+    let best = -1, bpm = 0;
+    for (let b = 70; b <= 180; b += 0.25) { const sc = score(b) * prior(b); if (sc > best) { best = sc; bpm = b; } }
+    // loops are a whole number of bars: prefer a tempo that makes this one so, if the onsets agree with it
+    let exact = false, bestBar = -1;
+    for (const nb of [4, 8, 16, 32, 64]) {
+      const b = nb * 60 / sec; if (b < 70 || b > 180) continue;
+      const sc = score(b) * prior(b); if (sc > bestBar) { bestBar = sc; if (sc >= 0.6 * best) { bpm = b; exact = true; } }
+    }
+    if (!exact) { const beats = sec * bpm / 60; for (const nb of [12, 24, 48]) if (Math.abs(beats - nb) / nb < 0.04) { bpm = nb * 60 / sec; exact = true; break; } }
+    // half and double time are the same groove: take the one nearest the session's tempo
+    if (near) { for (const b of [bpm / 2, bpm * 2]) if (b >= 60 && b <= 200 && Math.abs(Math.log(b / near)) < Math.abs(Math.log(bpm / near))) bpm = b; }
+    bpm = Math.abs(bpm - Math.round(bpm)) < 0.15 ? Math.round(bpm) : Math.round(bpm * 10) / 10;
+    // where the beats fall: the phase of the beat grid that lines up with the most onsets
+    const lag = 60 / bpm * fps;
+    let bestPh = 0, phSc = -1;
+    for (let ph = 0; ph < lag; ph++) { let t = 0; for (let k = ph; k < frames; k += lag) t += beatEnv[Math.round(k)] || 0; if (t > phSc) { phSc = t; bestPh = ph; } }
+    // an onset shows when it reaches the middle of the frame; the phase is taken within (-1/2, 1/2] beat
+    const spbS = 60 / bpm * sr;
+    let ph = (bestPh * hop + F / 2) % spbS; if (ph > spbS / 2) ph -= spbS;
+    let offset = Math.round(ph < 0 ? ph + spbS : ph);
+    if (exact && Math.abs(ph) < spbS / 8) offset = 0;   // a loop starts on its first beat
+    return { bpm, offset, confidence: Math.min(1, score(bpm) / (1.75 * e0)), exact };
+  }
+
+  /* Time-stretch (WSOLA): longer or shorter by `ratio` without changing the pitch. Each 50 ms grain is taken from where
+     the input best continues the previous one (within 10 ms), and overlap-added with Hann windows. */
+  function stretch(chans, ratio, sr) {
+    const n = chans[0].length;
+    if (Math.abs(ratio - 1) < 0.002 || n < sr * 0.1) return chans.map(c => c.slice());
+    const N = Math.round(0.05 * sr) & ~1, Hs = N / 2, Ha = Hs / ratio, D = Math.round(0.01 * sr), out = Math.round(n * ratio);
+    const ys = chans.map(() => new Float32Array(out + N)), wsum = new Float32Array(out + N);
+    const win = new Float32Array(N); for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+    const mono = new Float32Array(n); for (const c of chans) for (let i = 0; i < n; i++) mono[i] += c[i];
+    let prevA = 0;
+    for (let k = 0; k * Hs < out; k++) {
+      const nominal = Math.round(k * Ha);
+      let a = Math.min(Math.max(0, nominal), Math.max(0, n - N));
+      if (k > 0) {   // match the natural continuation of the previous grain over the overlap
+        const want = prevA + Hs, lo = Math.max(0, nominal - D), hi = Math.min(n - N, nominal + D);
+        let best = -Infinity;
+        for (let c = lo; c <= hi; c++) {
+          let xy = 0, yy = 0;
+          for (let i = 0; i < Hs && want + i < n; i += 4) { const b = mono[c + i]; xy += mono[want + i] * b; yy += b * b; }
+          const sc = xy / Math.sqrt(yy + 1e-9);
+          if (sc > best) { best = sc; a = c; }
+        }
+      }
+      const at = k * Hs;
+      for (let ch = 0; ch < chans.length; ch++) { const x = chans[ch], y = ys[ch]; for (let i = 0; i < N && a + i < n; i++) y[at + i] += x[a + i] * win[i]; }
+      for (let i = 0; i < N; i++) wsum[at + i] += win[i];
+      prevA = a;
+    }
+    return ys.map(y => { const r = new Float32Array(out); for (let i = 0; i < out; i++) r[i] = wsum[i] > 0.1 ? y[i] / wsum[i] : y[i]; return r; });
   }
 
   // min/max of a channel per column, for drawing
@@ -175,6 +287,6 @@ function LiftoffTransition(G) {
     return buf;
   }
 
-  Object.assign(LF, { renderTransition, convolve, fft, trimSilence, peaks, wav24 });
+  Object.assign(LF, { renderTransition, convolve, fft, trimSilence, peaks, wav24, detectBpm, stretch, reverseRender });
 }
 LiftoffTransition(typeof globalThis !== 'undefined' ? globalThis : this);
