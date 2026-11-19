@@ -47,7 +47,8 @@ int main (int argc, char** argv)
     StringArray names;
     for (auto* p : params) names.add (p->getName (64));
     names.removeString ("Bypass");   // the host's own bypass
-    check ("its 24 parameters come from params.js, nothing else", names.size() == 24 && names.contains ("Build") && names.contains ("Backverb mode") && names.contains ("Gap style"),
+    check ("its 28 parameters come from params.js, nothing else", names.size() == 28 && names.contains ("Build") && names.contains ("Backverb mode")
+           && names.contains ("Tremolo rate") && names.contains ("Chorus mix") && ! names.contains ("Gap style"),
            String (params.size()) + ": " + names.joinIntoString (", ").substring (0, 300));
 
     Head head;

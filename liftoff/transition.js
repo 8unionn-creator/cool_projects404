@@ -1,12 +1,11 @@
-/* Liftoff transitions: a sample in, a finished transition out.
+/* Liftoff risers: a sample in (the part you cut), a finished riser out.
    The sample fills the build (looped, or for a one-shot, retriggered faster and faster: 1/4 up to 1/32 notes),
-   the Liftoff core (dsp.js) turns it into the riser, cuts the gap and hits the drop, and the backverb is an FFT
-   convolution with the reversed reverb. On the drop the sample plays again from its start, dry, for the AFTER bars.
+   the Liftoff core (dsp.js) turns it into the riser with chorus and tremolo, and the backverb is an FFT convolution
+   with the reversed reverb. The riser ends where your drop goes; the effects ring on for a short tail.
    The same code renders in the browser, in the plugin's window and in node (tests/transition-test.js). */
 function LiftoffTransition(G) {
   'use strict';
   const LF = G.Liftoff;
-  const AFTER_BARS = [1, 2, 4];
 
   // in-place radix-2 FFT
   function fft(re, im, inverse) {
@@ -67,26 +66,26 @@ function LiftoffTransition(G) {
 
   const tick = () => new Promise(r => setTimeout(r, 0));
 
-  /* sample: { chans: [Float32Array, Float32Array?], sr }   P: the Liftoff parameters
-     o: { bpm, bpb, after (index into AFTER_BARS), signal: { cancelled } }  */
+  /* sample: { chans: [Float32Array, Float32Array?], sr } (already cut to the part to use)   P: the Liftoff parameters
+     o: { bpm, bpb, signal: { cancelled }, async }
+     The riser lasts BUILD LENGTH and ends at `endAt`, where your drop goes; the effects ring on for a tail after it. */
   async function renderTransition(sample, P, o) {
     const sr = sample.sr, bpm = o.bpm || 120, bpb = o.bpb || 4, spb = 60 / bpm * sr;
     const srcL = sample.chans[0], srcR = sample.chans[1] || sample.chans[0], len = srcL.length;
-    const buildB = LF.LENGTH_BARS[P.length] * bpb, buildN = Math.round(buildB * spb);
-    const afterN = Math.round(AFTER_BARS[o.after || 0] * bpb * spb), tailN = Math.round(sr * 1.5);
+    const buildB = LF.LENGTH_BARS[P.length] * bpb, buildN = Math.round(buildB * spb), tailN = Math.round(sr * 1.5);
     const L = P.verb ? Math.round(LF.VERB_BEATS[P.verbLen] * spb) : 0;
-    const N = buildN + afterN + tailN, NL = N + L;
+    const N = buildN + tailN, NL = N + L;
     const oneShot = len < spb;
     const xL = new Float32Array(NL), xR = new Float32Array(NL);
     const fadeN = Math.max(1, Math.round(sr * 0.004));
 
-    // put the sample down: the build, then the drop
+    // put the sample down over the build
     const place = (at, maxLen, gain, fadeIn) => {
       const n = Math.min(maxLen, len, NL - at);
       for (let i = 0; i < n; i++) {
         let w = gain;
         if (fadeIn && i < fadeN) w *= i / fadeN;
-        if (n < len && i > n - fadeN) w *= (n - i) / fadeN;
+        if (i > n - fadeN) w *= (n - i) / fadeN;
         xL[at + i] += srcL[i] * w; xR[at + i] += srcR[i] * w;
       }
     };
@@ -96,17 +95,13 @@ function LiftoffTransition(G) {
         place(t, Math.min(step, buildN - t), 0.55 + 0.45 * raw, false);
         t += step;
       }
-      place(buildN, afterN, 1, false);
     } else {
       for (let t = 0; t < buildN; t += len) place(t, buildN - t, 1, t > 0);
-      for (let t = buildN; t < buildN + afterN; t += len) place(t, buildN + afterN - t, 1, t > buildN);
-      const fo = Math.round(sr * 0.03), e = buildN + afterN;
-      for (let i = 0; i < fo; i++) { const w = i / fo; xL[e - 1 - i] *= w; xR[e - 1 - i] *= w; }
     }
 
-    // the Liftoff core, triggered at the start: the build lasts BUILD LENGTH and drops at buildN
+    // the Liftoff core, triggered at the start: the build lasts BUILD LENGTH
     const core = new LF.Core(sr);
-    core.setParams({ ...P, mode: LF.MODE.TRIGGER });
+    core.setParams({ ...P, mode: LF.MODE.TRIGGER, drop: 0 });
     core.snapSmoothing();
     core.trigger();
     const yL = new Float32Array(NL), yR = new Float32Array(NL), sL = new Float32Array(NL), sR = new Float32Array(NL);
@@ -120,21 +115,35 @@ function LiftoffTransition(G) {
 
     // the backverb: the send convolved with the reversed reverb lands one length L later, so pull it back by L
     const outL = yL.slice(0, N), outR = yR.slice(0, N);
+    const endSwell = P.verb && P.verbMode === LF.VERB_MODE.DROP;
     if (L > 0) {
       const ir = LF.makeReverseIR(sr, L, P.verbSize, P.verbTone);
       const cL = convolve(sL, ir[0]); if (o.signal && o.signal.cancelled) return null; if (o.async !== false) await tick();
       const cR = convolve(sR, ir[1]);
       for (let m = 0; m < N; m++) { outL[m] += cL[m + L]; outR[m] += cR[m + L]; }
+      // END: the sample's first 1/8 note, as if it hit right at the end, swells up to it and stops there
+      if (endSwell) {
+        const win = Math.round(0.5 * spb), g = P.verbMix * 1.5 * P.mix * Math.pow(10, P.output / 20);
+        const hL = new Float32Array(2 * L + win), hR = new Float32Array(2 * L + win);   // the swell of a hit at L peaks at 2L
+        for (let i = 0; i < win && i < len; i++) {
+          const w = g * (i < 0.6 * win ? 1 : 0.5 * (1 + Math.cos(Math.PI * (i - 0.6 * win) / (0.4 * win))));
+          hL[L + i] = srcL[i] * w; hR[L + i] = srcR[i] * w;
+        }
+        const eL = convolve(hL, ir[0]), eR = convolve(hR, ir[1]), fade = Math.round(sr * 0.004);
+        // eL[L + k] is the swell k samples after the hit's time; the hit sits at the end of the build
+        for (let k = -L; k < fade; k++) {
+          const m = buildN + k; if (m < 0 || m >= N) continue;
+          const w = k < 0 ? 1 : 1 - k / fade;
+          outL[m] += eL[2 * L + k] * w; outR[m] += eR[2 * L + k] * w;
+        }
+      }
     }
     const fo = Math.round(sr * 0.3);
     for (let i = 0; i < fo; i++) { const w = i / fo; outL[N - 1 - i] *= w; outR[N - 1 - i] *= w; }
 
-    const gapB = P.drop ? Math.min(LF.GAP_BEATS[P.gap], buildB) : 0;
     return {
       L: outL, R: outR, dryL: xL.subarray(0, N), dryR: xR.subarray(0, N), sr, N, spb, bpm, bpb, oneShot,
-      buildN, afterN, dropAt: buildN, gapStart: Math.round(buildN - gapB * spb),
-      verbStart: P.verb && P.verbMode === LF.VERB_MODE.DROP ? buildN - L : -1,
-      buildBars: buildB / bpb, afterBars: AFTER_BARS[o.after || 0]
+      buildN, endAt: buildN, verbStart: endSwell ? buildN - L : -1, buildBars: buildB / bpb
     };
   }
 
@@ -166,6 +175,6 @@ function LiftoffTransition(G) {
     return buf;
   }
 
-  Object.assign(LF, { renderTransition, convolve, fft, trimSilence, peaks, wav24, AFTER_BARS });
+  Object.assign(LF, { renderTransition, convolve, fft, trimSilence, peaks, wav24 });
 }
 LiftoffTransition(typeof globalThis !== 'undefined' ? globalThis : this);

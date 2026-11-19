@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Liftoff VERSION 0.2.0)
+project(Liftoff VERSION 0.3.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,7 +29,7 @@ juce_add_plugin(Liftoff
     PLUGIN_CODE Lftf
     FORMATS ${LF_FORMATS}
     PRODUCT_NAME "Liftoff"
-    DESCRIPTION "Riser, reverse reverb and pre-drop cut, locked to your bars"
+    DESCRIPTION "Turn any sample into a riser: rise, backverb, tremolo, chorus"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
@@ -53,6 +53,12 @@ target_sources(Liftoff PRIVATE
     Source/Core.cpp
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp)
+
+# The DSP core must do exactly the arithmetic dsp.js does: no fused multiply-adds (Clang, e.g. on Apple Silicon, fuses them
+# by default), or a tremolo step that falls exactly on a sample can flip one sample early and the two versions drift apart.
+if(NOT MSVC)
+    set_source_files_properties(Source/Core.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
 
 target_compile_definitions(Liftoff PUBLIC
     JUCE_USE_CURL=0

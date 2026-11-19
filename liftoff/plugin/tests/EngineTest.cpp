@@ -62,10 +62,10 @@ static void dump (const char* path)
     const int block = 256, N = (int) (9 * SR);
     for (int sc = 0; sc < 4; ++sc)
     {
-        Params P; P.phrase = 0; P.length = 2;
-        if (sc == 1) { P.gapStyle = 1; P.verbMode = 1; P.stutter = 1; P.pitch = 12; }
-        if (sc == 2) { P.gapStyle = 2; P.verbMode = 2; P.curve = -0.5; P.width = 1; }
-        if (sc == 3) { P.gapStyle = 3; P.gap = 4; P.impact = 1; P.noise = 1; P.output = -6; P.mix = 0.7; }
+        Params P; P.phrase = 0; P.length = 2; P.drop = true;
+        if (sc == 1) { P.gapStyle = 1; P.verbMode = 1; P.stutter = 1; P.pitch = 12; P.tremShape = 1; P.tremRate = 4; }
+        if (sc == 2) { P.gapStyle = 2; P.verbMode = 2; P.curve = -0.5; P.width = 1; P.tremShape = 3; P.chorusDepth = 1; P.chorusRate = 3; }
+        if (sc == 3) { P.gapStyle = 3; P.gap = 4; P.impact = 1; P.noise = 1; P.output = -6; P.mix = 0.7; P.tremShape = 2; P.tremRate = 5; P.chorus = false; }
         Core c; c.prepare (SR); c.setParams (P); c.snapSmoothing();
         Rng rng (1234);
         std::vector<float> inL ((size_t) block), inR ((size_t) block), o[4];
@@ -98,7 +98,7 @@ int main (int argc, char** argv)
     auto sine = [] (double f) { return [f] (int i) { return (float) (0.5 * std::sin (6.283185307179586 * f * i / SR)); }; };
 
     {   // with every module off the plugin is a wire, with no latency
-        Params p; p.rise = false; p.verb = false; p.drop = false;
+        Params p; p.rise = false; p.verb = false; p.drop = false; p.trem = false; p.chorus = false;
         auto r = run (p, 1, sine (330));
         double err = 0;
         for (size_t i = 0; i < r.L.size(); ++i) err = std::max (err, (double) std::abs (r.L[i] - sine (330) ((int) i)));
@@ -106,7 +106,7 @@ int main (int argc, char** argv)
     }
 
     {   // the reverse swell made from the drop's first hit ends exactly on that hit
-        Params p; p.mode = autoMode; p.phrase = 0; p.length = 1; p.rise = false; p.drop = false;
+        Params p; p.mode = autoMode; p.phrase = 0; p.length = 1; p.rise = false; p.drop = false; p.trem = false; p.chorus = false;
         p.verb = true; p.verbMode = verbDrop; p.verbLen = 2; p.verbMix = 1;
         const int hit = beat (16);
         auto r = run (p, 10, [hit] (int i) { return i == hit ? 0.8f : 0.0f; });

@@ -4,7 +4,7 @@
 (() => {
 'use strict';
 const LF = globalThis.Liftoff;
-const { PHRASE_BARS, LENGTH_BARS, VERB_BEATS, GAP_BEATS, MODE, VERB_MODE, AFTER_BARS } = LF;
+const { PHRASE_BARS, LENGTH_BARS, VERB_BEATS, GAP_BEATS, MODE, VERB_MODE } = LF;
 const DEFS = {}; for (const p of LIFTOFF_PARAMS) DEFS[p.id] = p;
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -23,7 +23,7 @@ if (HOST) document.documentElement.classList.add('in-plugin');
 
 /* ---------- state ---------- */
 const V = {}; for (const p of LIFTOFF_PARAMS) V[p.id] = p.def;
-const UI = { view: 'sample', after: 0 };           // settings of the page, not DAW parameters
+const UI = { view: 'sample', sel: [0, 1] };        // settings of the page, not DAW parameters (sel: the part of the sample used, 0..1)
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem('liftoff.' + k)); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem('liftoff.' + k, JSON.stringify(v)); } catch (e) {} }
@@ -33,7 +33,7 @@ const HS = { sr: 48000, previewPos: 0, previewing: false, recording: false, recS
 if (!HOST) {
   const saved = store.get('params'); if (saved) for (const k in saved) if (k in V) V[k] = saved[k];
   bpm = store.get('bpm') || bpm; presetIdx = store.get('preset') ?? 0;
-  const ui = store.get('ui'); if (ui) UI.after = ui.after || 0;
+  const ui = store.get('ui'); if (ui && Array.isArray(ui.sel)) UI.sel = ui.sel;
 }
 
 /* ---------- formatting ---------- */
@@ -43,25 +43,30 @@ function fmt(id, v) {
   if (id === 'output') return (v > 0.05 ? '+' : '') + v.toFixed(1) + ' dB';
   if (id === 'curve') return Math.abs(v) < 0.03 ? 'linear' : (v > 0 ? 'late ' : 'early ') + Math.round(Math.abs(v) * 100);
   if (d.unit === '%') return Math.round(v * 100) + '%';
+  if (d.unit === 'Hz') return v.toFixed(2) + ' Hz';
   return v.toFixed(2);
 }
 const KNOB_LABEL = { pitch: 'PITCH', filter: 'FILTER', wash: 'WASH', stutter: 'STUTTER', noise: 'NOISE', width: 'WIDTH',
-  verbSize: 'SIZE', verbTone: 'TONE', verbMix: 'MIX', impact: 'IMPACT', mix: 'MIX', output: 'OUTPUT', curve: 'CURVE' };
+  verbSize: 'SIZE', verbTone: 'TONE', verbMix: 'MIX', impact: 'IMPACT', mix: 'MIX', output: 'OUTPUT', curve: 'CURVE',
+  tremDepth: 'DEPTH', chorusRate: 'RATE', chorusDepth: 'DEPTH', chorusMix: 'MIX' };
 const KNOB_TIP = {
   pitch: 'How far the sound pitches up by the drop', filter: 'High-pass sweep that thins the sound out', wash: 'Reverb that swallows the sound as it rises',
   stutter: 'Gate that speeds up from 1/4 to 1/32 notes', noise: 'A white-noise riser that sweeps up', width: 'Stereo widening toward the drop',
   verbSize: 'Longer, fuller tail', verbTone: 'Darker or brighter swell', verbMix: 'Level of the reverse swell', impact: 'Sub boom and crack on the drop',
-  mix: 'Dry/wet for the whole effect', output: 'Output level', curve: 'Late: slow start, rushes at the end. Early: jumps up, then hangs'
+  mix: 'Dry/wet for the whole effect', output: 'Output level', curve: 'Late: slow start, rushes at the end. Early: jumps up, then hangs',
+  tremDepth: 'How deep the tremolo pulses', chorusRate: 'How fast the chorus moves', chorusDepth: 'How far the chorus detunes', chorusMix: 'How much chorus'
 };
 const SEG_LABEL = {
   mode: ['AUTO', 'MANUAL', 'TRIGGER'], phrase: ['4', '8', '16', '32'], length: ['½', '1', '2', '4', '8'],
-  verbMode: ['DROP', 'BUILD', 'ALWAYS'], verbLen: ['1/8', '1/4', '1/2', '1 BAR'], gap: ['OFF', '1/16', '1/8', '1/4', '1/2'],
+  verbMode: ['END', 'BUILD', 'ALWAYS'], verbLen: ['1/8', '1/4', '1/2', '1 BAR'], gap: ['OFF', '1/16', '1/8', '1/4', '1/2'],
+  tremRate: ['1/4', '1/8', '1/16', '1/32', '1/8T', '1/16T'], tremShape: ['SINE', 'SQUARE', 'RAMP', 'PAN'],
   gapStyle: ['CUT', 'TAPE', 'FILTER', 'STUTTER']
 };
 const SEG_TIP = {
   mode: ['The build fills the end of every phrase and drops on its first bar', 'Ride or automate BUILD yourself: pull it down to drop', 'LAUNCH or a MIDI note starts a build; it drops BUILD LENGTH later'],
   length: ['Half a bar', '1 bar', '2 bars', '4 bars', '8 bars'],
-  verbMode: ['Reverse swell made from the drop’s first hit, landing on it', 'Reverse swells on everything, growing through the build', 'Reverse swell on every sound, all the time'],
+  verbMode: ['A reverse swell made from your sample’s first hit, landing at the end of the riser (LIVE: on the drop)', 'Reverse swells on everything, growing through the build', 'Reverse swell on every sound, all the time'],
+  tremShape: ['Smooth pulses', 'Hard on/off chops', 'Pumping: each pulse starts loud and fades', 'Auto-pan: left and right take turns'],
   gapStyle: ['Silence before the drop', 'The beat slows to a stop', 'The beat sinks into a low-pass', 'The first 1/16 of the gap repeats']
 };
 
@@ -178,8 +183,6 @@ document.querySelectorAll('[data-knob]').forEach(el => knob(el, el.dataset.knob)
 document.querySelectorAll('.seg[data-param]').forEach(el => paramSeg(el, el.dataset.param));
 document.querySelectorAll('[data-toggle]').forEach(el => toggle(el, el.dataset.toggle));
 fader($('#buildFader'), 'build');
-const afterView = seg($('#afterSeg'), null, AFTER_BARS.map(b => `${b} BAR${b > 1 ? 'S' : ''}`), AFTER_BARS.map(b => `The transition goes on for ${b} bar${b > 1 ? 's' : ''} after the drop`),
-  () => UI.after, i => { UI.after = i; afterView.update(i); saveUi(); scheduleRender(); });
 
 /* ---------- parameters ---------- */
 // parameters that change the rendered transition (everything except the live-only timing)
@@ -206,7 +209,7 @@ function modeChanged() {
 let saveT = 0;
 function saveSoon() { if (HOST) return; clearTimeout(saveT); saveT = setTimeout(() => { store.set('params', V); store.set('bpm', bpm); store.set('preset', presetIdx); }, 300); }
 function saveUi() { if (HOST) HOST.call('setUi', JSON.stringify(UI)); else store.set('ui', UI); }
-function refreshAll() { for (const id in views) showValue(id, V[id]); afterView.update(UI.after); modeChanged(); }
+function refreshAll() { for (const id in views) showValue(id, V[id]); modeChanged(); }
 
 /* ---------- presets ---------- */
 const presetSel = $('#preset');
@@ -271,14 +274,26 @@ async function setSample(s, name, source, opts = {}) {
   if (source === 'rec') s = { ...s, chans: LF.trimSilence(s.chans, s.sr) };
   const maxN = s.sr * 60;
   if (s.chans[0].length > maxN) s = { ...s, chans: s.chans.map(c => c.slice(0, maxN)) };   // a minute is plenty
-  SM.sample = s; SM.name = name; SM.source = source;
-  const sec = s.chans[0].length / s.sr;
+  SM.sample = s; SM.name = name; SM.source = source; SM.laneFor = null;
+  UI.sel = opts.sel && opts.sel[1] - opts.sel[0] > 0.001 ? opts.sel : [0, 1];
+  if (opts.sel === undefined) saveUi();
   $('#sampleName').textContent = name;
-  $('#sampleInfo').textContent = `${sec < 10 ? sec.toFixed(2) : sec.toFixed(1)} s · ${sec * s.sr < 60 / bpm * s.sr ? 'one-shot → roll' : 'loops through the build'}`;
+  sampleInfo();
   $('#empty').hidden = true;
   if (opts.persist !== false) persistSample(s, name, source);
   stopPreview();
   scheduleRender(0);
+}
+
+// the part of the sample that is used
+function selRange() { const n = SM.sample.chans[0].length; return [Math.floor(UI.sel[0] * n), Math.max(Math.floor(UI.sel[0] * n) + 1, Math.round(UI.sel[1] * n))]; }
+function selectedSample() { const [a, b] = selRange(); return { chans: SM.sample.chans.map(c => c.subarray(a, b)), sr: SM.sample.sr }; }
+function sampleInfo() {
+  if (!SM.sample) return;
+  const [a, b] = selRange(), sr = SM.sample.sr, sec = (b - a) / sr, all = SM.sample.chans[0].length / sr;
+  const f = t => t < 10 ? t.toFixed(2) : t.toFixed(1);
+  $('#sampleInfo').textContent = `${f(sec)} s${b - a < SM.sample.chans[0].length ? ` of ${f(all)} s` : ''} · ${sec < 60 / bpm ? 'one-shot → roll' : 'loops through the riser'}`;
+  $('#selInfo').textContent = `${f(a / sr)} – ${f(b / sr)} s · ${f(sec)} s · ${(sec * bpm / 60).toFixed(1)} beats`;
 }
 
 function scheduleRender(delay = 140) {
@@ -289,13 +304,18 @@ function scheduleRender(delay = 140) {
 async function doRender() {
   if (SM.signal) SM.signal.cancelled = true;
   const signal = { cancelled: false }; SM.signal = signal; SM.rendering = true;
-  const sample = await resample(SM.sample, renderSr());
+  const sample = await resample(selectedSample(), renderSr());
   if (signal.cancelled) return;
-  const r = await LF.renderTransition(sample, { ...V }, { bpm, bpb, after: UI.after, signal });
+  const r = await LF.renderTransition(sample, { ...V }, { bpm, bpb, signal });
   if (!r || signal.cancelled) return;
   const pos = previewPos();
   SM.render = r; SM.rendering = false; SM.layersFor = null;
   engine.renderReady(r, pos);
+  if (!HOST) {   // ready to drag out of the browser
+    if (SM.wavURL) URL.revokeObjectURL(SM.wavURL);
+    SM.wavURL = URL.createObjectURL(new Blob([LF.wav24([r.L, r.R], r.sr)], { type: 'audio/wav' }));
+    $('#dragOut').setAttribute('aria-disabled', 'false');
+  }
 }
 
 /* ---------- engines: the browser plays and records itself, the plugin does it in C++ ---------- */
@@ -323,8 +343,10 @@ function pluginEngine() {
     renderReady(r) {
       HOST.call('setRender', toPCM([r.L, r.R]), r.sr, SM.name.replace(/\.[^.]+$/, '') + ' - Liftoff');
     },
-    play(from) { if (SM.render) HOST.call('preview', true, from || 0); },
+    play(from) { if (SM.render) { SM.audition = null; setPartButton(false); HOST.call('preview', true, from || 0); } },
     stop() { HOST.call('preview', false, 0); },
+    playPart(s) { const c = s.chans.length > 1 ? s.chans : [s.chans[0], s.chans[0]]; HOST.call('audition', toPCM(c), s.sr); },
+    stopPart() { HOST.call('preview', false, 0); },
     toggle() { HS.previewing ? this.stop() : this.play(0); },
     pos() { return HS.previewing ? (HS.previewPos + (performance.now() - HS.at) / 1000) * (SM.render ? SM.render.sr : 48000) : -1; },
     playing: () => HS.previewing,
@@ -344,12 +366,12 @@ function pluginEngine() {
       const r = await HOST.call('getParams');
       if (r && r.values) for (const k in r.values) setParam(k, r.values[k], true);
       if (r && typeof r.preset === 'number') { presetIdx = r.preset; presetSel.value = presetIdx; }
-      if (r && r.ui) { try { Object.assign(UI, JSON.parse(r.ui)); } catch (e) {} }
+      if (r && r.ui) { try { const u = JSON.parse(r.ui); if (u.view) UI.view = u.view; if (Array.isArray(u.sel)) UI.sel = u.sel; } catch (e) {} }
       if (r && r.sr) HS.sr = r.sr;
       if (r && r.bpm) { bpm = r.bpm; HS.hostBpm = r.bpm; }
       markEdited(); refreshAll(); setView(UI.view);
       const s = await HOST.call('getSample');
-      if (s && s.frames) setSample(fromPCM(s), s.name, 'file', { persist: false });
+      if (s && s.frames) setSample(fromPCM(s), s.name, 'file', { persist: false, sel: UI.sel });
       else $('#empty').hidden = false;
     }
   };
@@ -359,9 +381,10 @@ function browserEngine() {
   const A = { ctx: null, src: null, start: 0, from: 0, rec: null };
   const ensure = () => { if (!A.ctx) A.ctx = new (window.AudioContext || window.webkitAudioContext)(); return A.ctx; };
   function toBuffer(r) { const b = ensure().createBuffer(2, r.N, r.sr); b.copyToChannel(r.L, 0); b.copyToChannel(r.R, 1); return b; }
+  function stopPart() { if (A.part) { const p = A.part; A.part = null; try { p.stop(); } catch (e) {} } }
   function play(from = 0) {
     if (!SM.render) return;
-    stop(true);
+    stop(true); stopPart(); SM.audition = null; setPartButton(false);
     const ctx = ensure(); ctx.resume();
     const r = SM.render, src = ctx.createBufferSource();
     src.buffer = toBuffer(r); src.connect(ctx.destination);
@@ -374,7 +397,14 @@ function browserEngine() {
   return {
     set() {}, gesture() {}, launch() {},
     renderReady(r, pos) { if (pos >= 0 && A.src) play(Math.min(pos, r.N - 1)); },
-    play, stop,
+    play, stop, stopPart,
+    playPart(s) {
+      stop(); stopPart();
+      const ctx = ensure(); ctx.resume();
+      const b = ctx.createBuffer(s.chans.length, s.chans[0].length, s.sr); s.chans.forEach((c, i) => b.copyToChannel(c, i));
+      const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(); A.part = src;
+      src.onended = () => { if (A.part === src) A.part = null; };
+    },
     toggle() { A.src ? stop() : play(0); },
     pos() { return A.src && SM.render ? (A.ctx.currentTime - A.start) * SM.render.sr : -1; },
     playing: () => !!A.src,
@@ -418,7 +448,7 @@ function browserEngine() {
       refreshAll(); setView('sample', false);
       $('#bpm').value = bpm;
       const s = await idb.get();
-      if (s) setSample({ chans: s.chans, sr: s.sr }, s.name, s.source, { persist: false });
+      if (s) setSample({ chans: s.chans, sr: s.sr }, s.name, s.source, { persist: false, sel: UI.sel });
       else loadDemo('loop');
     }
   };
@@ -524,6 +554,13 @@ $('#loadBtn').addEventListener('click', () => engine.load());
 $('#fileIn').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; });
 $('#demoSel').addEventListener('change', e => { if (e.target.value) loadDemo(e.target.value); e.target.value = ''; });
 $('#previewBtn').addEventListener('click', () => engine.toggle());
+$('#dragOut').addEventListener('dragstart', e => {
+  if (!SM.wavURL) { e.preventDefault(); toast('Load or record a sample first'); return; }
+  const name = `${SM.name.replace(/\.[^.]+$/, '')} - Liftoff riser ${Math.round(bpm)}bpm.wav`;
+  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData('DownloadURL', `audio/wav:${name}:${SM.wavURL}`);
+  e.dataTransfer.setData('text/uri-list', SM.wavURL);
+});
 $('#exportBtn').addEventListener('click', () => SM.render ? engine.exportWav() : toast('Load or record a sample first'));
 $('#empty').addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -588,38 +625,23 @@ function buildLayers(W, H, dpr) {
   const mk = () => { const c = document.createElement('canvas'); c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); return [c, x]; };
   const [bg, gb] = mk(), [hi, gh] = mk(), [lo, gl] = mk();
   const xs = n => G.padX + n / r.N * G.w;
-  const spb = r.spb;
+  const spb = r.spb, xe = xs(r.endAt);
 
-  // background: bar grid, regions, labels
+  // background: bar grid, the riser warming up toward its end, labels
   screenBase(gb, W, H);
   gb.font = `700 10px ${MONO}`; gb.textBaseline = 'middle';
   const bars = Math.ceil(r.N / (spb * bpb));
   for (let k = 0; k <= bars; k++) {
     const n = k * bpb * spb; if (n > r.N) break;
     gb.fillStyle = 'rgba(255,240,210,.07)'; gb.fillRect(Math.round(xs(n)), G.top - 6, 1, G.bot - G.top + 6);
-    for (let b = 1; b < bpb; b++) { const nb = n + b * spb; if (nb < r.N && r.N / spb < 40) { gb.fillStyle = 'rgba(255,240,210,.025)'; gb.fillRect(Math.round(xs(nb)), G.top, 1, G.bot - G.top); } }
-    const label = n < r.dropAt - 1 ? `${k + 1}` : n < r.dropAt + r.afterN - 1 ? (Math.abs(n - r.dropAt) < 2 ? '' : `+${Math.round((n - r.dropAt) / (spb * bpb))}`) : '';
-    if (label) { gb.fillStyle = COL.faint; gb.textAlign = 'left'; gb.fillText(label, xs(n) + 4, G.bot + 14); }
+    for (let b = 1; b < bpb; b++) { const nb = n + b * spb; if (nb < r.endAt && r.N / spb < 40) { gb.fillStyle = 'rgba(255,240,210,.025)'; gb.fillRect(Math.round(xs(nb)), G.top, 1, G.bot - G.top); } }
+    if (n < r.endAt - 1) { gb.fillStyle = COL.faint; gb.textAlign = 'left'; gb.fillText(`${k + 1}`, xs(n) + 4, G.bot + 14); }
   }
   gb.fillStyle = 'rgba(255,240,210,.06)'; gb.fillRect(G.padX, Math.round(G.mid), G.w, 1);
-  // region tints: the build warms up toward the drop, the gap is hatched, the drop glows
-  const bg1 = gb.createLinearGradient(xs(0), 0, xs(r.gapStart), 0); bg1.addColorStop(0, 'rgba(227,176,98,0)'); bg1.addColorStop(1, 'rgba(227,176,98,.09)');
-  gb.fillStyle = bg1; gb.fillRect(xs(0), G.top, xs(r.gapStart) - xs(0), G.bot - G.top);
-  if (r.gapStart < r.dropAt) {
-    const x0 = xs(r.gapStart), x1 = xs(r.dropAt);
-    gb.save(); gb.beginPath(); gb.rect(x0, G.top, x1 - x0, G.bot - G.top); gb.clip();
-    gb.fillStyle = 'rgba(157,130,255,.06)'; gb.fillRect(x0, G.top, x1 - x0, G.bot - G.top);
-    gb.strokeStyle = 'rgba(157,130,255,.16)'; gb.lineWidth = 1;
-    for (let k = -(G.bot - G.top); k < x1 - x0; k += 6) { gb.beginPath(); gb.moveTo(x0 + k, G.bot); gb.lineTo(x0 + k + (G.bot - G.top), G.top); gb.stroke(); }
-    gb.restore();
-    gb.fillStyle = 'rgba(190,170,255,.8)'; gb.textAlign = 'center';
-    if (x1 - x0 > 30) gb.fillText(['CUT', 'TAPE', 'FILTER', 'STUTTER'][V.gapStyle], (x0 + x1) / 2, G.top - 10);
-  }
-  const xd = xs(r.dropAt);
-  const dg = gb.createLinearGradient(xd, 0, xd + G.w * 0.25, 0); dg.addColorStop(0, 'rgba(247,217,150,.16)'); dg.addColorStop(1, 'rgba(247,217,150,0)');
-  gb.fillStyle = dg; gb.fillRect(xd, G.top, G.w * 0.25, G.bot - G.top);
-  gb.fillStyle = COL.muted; gb.textAlign = 'left'; gb.fillText('BUILD', xs(0) + 2, G.top - 10);
-  gb.fillStyle = 'rgba(160,150,135,.6)'; gb.textAlign = 'right'; gb.fillText('TAIL', xs(r.N) - 2, G.top - 10);
+  const warm = gb.createLinearGradient(xs(0), 0, xe, 0); warm.addColorStop(0, 'rgba(227,176,98,0)'); warm.addColorStop(1, 'rgba(227,176,98,.12)');
+  gb.fillStyle = warm; gb.fillRect(xs(0), G.top, xe - xs(0), G.bot - G.top);
+  gb.fillStyle = 'rgba(0,0,0,.25)'; gb.fillRect(xe, G.top, xs(r.N) - xe, G.bot - G.top);
+  gb.fillStyle = 'rgba(160,150,135,.7)'; gb.textAlign = 'center'; gb.fillText('TAIL', (xe + xs(r.N)) / 2, G.top - 10);
   // the build curve, like an automation lane
   gb.setLineDash([3, 4]); gb.strokeStyle = 'rgba(227,176,98,.45)'; gb.lineWidth = 1.2; gb.beginPath();
   for (let i = 0; i <= 100; i++) { const t = i / 100, x = xs(t * r.buildN), y = G.bot - LF.shape(t, V.curve) * (G.bot - G.top); i ? gb.lineTo(x, y) : gb.moveTo(x, y); }
@@ -633,12 +655,12 @@ function buildLayers(W, H, dpr) {
   gb.fillStyle = 'rgba(255,240,210,.07)';
   for (let c = 0; c < cols; c++) { const y0 = G.mid - dry[c * 2 + 1] * sc, y1 = G.mid - dry[c * 2] * sc; gb.fillRect(G.padX + c * cw, y0, Math.max(1, cw - 1), Math.max(1, y1 - y0)); }
 
-  // the transition itself, coloured by where it is
+  // the riser, from dark gold to bright as it rises; the reverse swell's last beat in violet; the tail in grey
+  const swellFrom = r.verbStart >= 0 ? Math.max(r.verbStart, r.endAt - spb) : r.endAt;
   const colour = (n, played) => {
     let rgb, a;
-    if (n < r.gapStart) { const p = LF.shape(n / r.buildN, V.curve); rgb = [Math.round(143 + (247 - 143) * p), Math.round(100 + (217 - 100) * p), Math.round(38 + (150 - 38) * p)]; a = 0.6 + 0.4 * p; }
-    else if (n < r.dropAt) { rgb = [176, 150, 255]; a = 0.95; }
-    else if (n < r.dropAt + r.afterN) { const k = Math.min(1, (n - r.dropAt) / (spb * 2)); rgb = [255, Math.round(246 - 20 * k), Math.round(222 - 60 * k)]; a = 1; }
+    if (n < swellFrom) { const p = LF.shape(n / r.buildN, V.curve); rgb = [Math.round(143 + (247 - 143) * p), Math.round(100 + (217 - 100) * p), Math.round(38 + (150 - 38) * p)]; a = 0.6 + 0.4 * p; }
+    else if (n < r.endAt) { const k = (n - swellFrom) / Math.max(1, r.endAt - swellFrom); rgb = [Math.round(247 - 70 * k), Math.round(217 - 60 * k), Math.round(150 + 105 * k)]; a = 1; }
     else { rgb = [130, 122, 108]; a = 0.7; }
     return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${played ? a : a * 0.32})`;
   };
@@ -647,19 +669,16 @@ function buildLayers(W, H, dpr) {
       const n = (c + 0.5) / cols * r.N, y0 = G.mid - wet[c * 2 + 1] * sc, y1 = G.mid - wet[c * 2] * sc;
       g.fillStyle = colour(n, played); g.fillRect(G.padX + c * cw, y0, Math.max(1, cw - 1), Math.max(1, y1 - y0));
     }
-    // the reverse swell's shape over the gap
-    if (r.verbStart >= 0 && V.verb) {
+    if (r.verbStart >= 0 && V.verb) {   // the reverse swell's shape, rising into the end
       const tail = Math.pow(10, (-60 + 48 * V.verbSize) / 20);
       g.strokeStyle = played ? 'rgba(190,170,255,.9)' : 'rgba(190,170,255,.35)'; g.lineWidth = 1.5; g.beginPath();
-      for (let i = 0; i <= 50; i++) { const t = i / 50, n = r.verbStart + t * (r.dropAt - r.verbStart), y = G.mid - Math.pow(tail, 1 - t) * G.half * 0.9; i ? g.lineTo(xs(n), y) : g.moveTo(xs(n), y); }
+      for (let i = 0; i <= 50; i++) { const t = i / 50, n = r.verbStart + t * (r.endAt - r.verbStart), y = G.mid - Math.pow(tail, 1 - t) * G.half * 0.9; i ? g.lineTo(xs(n), y) : g.moveTo(xs(n), y); }
       g.stroke();
     }
-  }
-  // the drop line
-  for (const g of [gh, gl]) {
+    // the end of the riser: where your drop goes
     const dl = g.createLinearGradient(0, G.top, 0, G.bot); dl.addColorStop(0, 'rgba(255,246,220,.95)'); dl.addColorStop(1, 'rgba(227,176,98,.25)');
-    g.fillStyle = dl; g.fillRect(Math.round(xd) - 1, G.top - 14, 2, G.bot - G.top + 14);
-    g.font = `800 11px ${MONO}`; g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = COL.goldHi; g.fillText('DROP', xd + 6, G.top - 10);
+    g.fillStyle = dl; g.fillRect(Math.round(xe) - 1, G.top - 14, 2, G.bot - G.top + 14);
+    g.font = `800 11px ${MONO}`; g.textBaseline = 'middle'; g.textAlign = 'right'; g.fillStyle = COL.goldHi; g.fillText('END', xe - 6, G.top - 10);
   }
   SM.layers = { bg, hi, lo, G, xs };
   SM.layersFor = SM.render;
@@ -670,6 +689,7 @@ function drawSample(now) {
   const { dpr, W, H } = sizeCanvas();
   const g = g2; g.setTransform(1, 0, 0, 1, 0, 0);
   const r = SM.render, playing = engine.playing();
+  drawLane();
 
   if (H_recording()) { drawRec(g, W, H, dpr, now); return; }
   if (!r) {
@@ -691,24 +711,114 @@ function drawSample(now) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   // where we are
-  let label = 'TRANSITION', big = `${fmtBars(r.buildBars)} → DROP`, sub = playing ? '' : '▶ PREVIEW or Space · click the screen to play from there', hot = false, pct = 0, phase = 'rest';
+  let label = 'RISER', big = `${fmtBars(r.buildBars)}`, sub = playing ? '' : W < 600 ? '▶ PREVIEW · or tap the screen' : '▶ PREVIEW or Space · click the screen to play from there', hot = false, pct = 0, phase = 'rest';
   if (playing && pos >= 0) {
     const x = L.xs(pos);
     g.fillStyle = 'rgba(255,246,220,.9)'; g.shadowColor = COL.gold; g.shadowBlur = 14; g.fillRect(Math.round(x), G.top - 14, 1.5, G.bot - G.top + 14); g.shadowBlur = 0;
     g.beginPath(); g.moveTo(x - 5, G.top - 20); g.lineTo(x + 5, G.top - 20); g.lineTo(x, G.top - 13); g.fillStyle = COL.goldHi; g.fill();
-    const beats = (r.dropAt - pos) / r.spb;
-    if (pos < r.gapStart) { phase = 'build'; label = 'NEXT DROP'; big = beats > bpb ? `T–${Math.ceil(beats / bpb - 1e-6)} BAR${Math.ceil(beats / bpb - 1e-6) > 1 ? 'S' : ''}` : `T–${Math.max(1, Math.ceil(beats - 1e-6))}`; sub = 'building'; hot = true; pct = LF.shape(pos / r.buildN, V.curve); }
-    else if (pos < r.dropAt) { phase = 'gap'; label = 'NEXT DROP'; big = 'HOLD'; sub = ['cut', 'tape stop', 'filter dive', 'stutter'][V.gapStyle] + (V.verb ? ' · reverse swell' : ''); hot = true; pct = 1; }
-    else if (pos < r.dropAt + 1.5 * r.spb) { phase = 'drop'; label = 'DROP'; big = 'DROP'; sub = 'and it lands'; hot = true; }
-    else { phase = 'after'; label = 'AFTER'; big = `+${Math.floor((pos - r.dropAt) / (r.spb * bpb)) + 1} BAR`; sub = pos > r.dropAt + r.afterN ? 'tail' : 'the drop'; }
-    if (phase === 'drop' && lastPhase !== 'drop') flash();
+    const beats = (r.endAt - pos) / r.spb;
+    if (pos < r.endAt) {
+      phase = 'build'; label = 'LIFTOFF IN'; hot = true; pct = LF.shape(pos / r.buildN, V.curve);
+      big = beats > bpb ? `T–${Math.ceil(beats / bpb - 1e-6)} BAR${Math.ceil(beats / bpb - 1e-6) > 1 ? 'S' : ''}` : `T–${Math.max(1, Math.ceil(beats - 1e-6))}`;
+      sub = beats > bpb ? 'rising' : 'beats to the end';
+    } else if (pos < r.endAt + 1.5 * r.spb) { phase = 'end'; label = 'END'; big = 'LIFTOFF'; sub = 'your drop goes here'; hot = true; pct = 1; }
+    else { phase = 'tail'; label = 'TAIL'; big = 'TAIL'; sub = 'the effects ring out'; }
+    if (phase === 'end' && lastPhase !== 'end') flash();
   }
   lastPhase = phase;
   if (SM.rendering) sub = 'rendering…';
   hud(label, big, sub, hot, pct);
-  modulation(phase === 'build' || phase === 'gap' ? pct : 0);
+  modulation(phase === 'build' ? pct : 0);
   scanlines(g, W, H);
 }
+
+/* ---------- the source lane: your whole sample, and the part you cut from it ---------- */
+const lane = $('#srcLane'), lg = lane.getContext('2d');
+let laneDrag = null;
+function laneGeom() { return { pad: 12, w: lane.clientWidth - 24, h: lane.clientHeight }; }
+function drawLane() {
+  const dpr = window.devicePixelRatio || 1, W = lane.clientWidth, Hh = lane.clientHeight;
+  if (!W) return;
+  if (lane.width !== Math.round(W * dpr) || lane.height !== Math.round(Hh * dpr)) { lane.width = Math.round(W * dpr); lane.height = Math.round(Hh * dpr); SM.laneFor = null; }
+  const g = lg; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { pad, w } = laneGeom(), mid = Hh / 2 - 2;
+  if (!SM.sample) { g.fillStyle = '#070605'; g.fillRect(0, 0, W, Hh); g.fillStyle = 'rgba(255,240,210,.08)'; g.fillRect(pad, Math.round(mid), w, 1); return; }
+  if (SM.laneFor !== SM.sample) {   // the sample's peaks, once
+    const s = SM.sample, cols = Math.max(50, Math.floor(w / 2));
+    SM.lanePeaks = LF.peaks(s.chans[0], s.chans[1] || null, 0, s.chans[0].length, cols);
+    let mx = 0.05; for (const v of SM.lanePeaks) mx = Math.max(mx, Math.abs(v)); SM.laneMax = mx; SM.laneFor = s;
+  }
+  g.fillStyle = '#070605'; g.fillRect(0, 0, W, Hh);
+  const pk = SM.lanePeaks, cols = pk.length / 2, cw = w / cols, sc = (Hh / 2 - 8) / SM.laneMax;
+  const xa = pad + UI.sel[0] * w, xb = pad + UI.sel[1] * w;
+  g.fillStyle = 'rgba(227,176,98,.08)'; g.fillRect(xa, 2, xb - xa, Hh - 4);
+  for (let c = 0; c < cols; c++) {
+    const x = pad + c * cw, inSel = x + cw / 2 >= xa && x + cw / 2 <= xb;
+    g.fillStyle = inSel ? 'rgba(247,217,150,.9)' : 'rgba(255,240,210,.18)';
+    const y0 = mid - pk[c * 2 + 1] * sc, y1 = mid - pk[c * 2] * sc; g.fillRect(x, y0, Math.max(1, cw - 0.6), Math.max(1, y1 - y0));
+  }
+  if (!(UI.sel[0] <= 0 && UI.sel[1] >= 1)) {   // the bar on top: drag it to move the part
+    g.fillStyle = 'rgba(227,176,98,.55)'; g.fillRect(xa, 2, xb - xa, 10);
+    g.fillStyle = '#1d1407'; for (let k = -2; k <= 2; k++) g.fillRect(Math.round((xa + xb) / 2 + k * 4), 5, 2, 4);
+  }
+  // the handles
+  for (const x of [xa, xb]) {
+    g.fillStyle = COL.goldHi; g.fillRect(Math.round(x) - 1, 2, 2, Hh - 4);
+    g.beginPath(); g.roundRect ? g.roundRect(x - 5, Hh / 2 - 12, 10, 24, 3) : g.rect(x - 5, Hh / 2 - 12, 10, 24); g.fill();
+    g.fillStyle = '#1d1407'; g.fillRect(Math.round(x) - 2, Hh / 2 - 5, 1, 10); g.fillRect(Math.round(x) + 1, Hh / 2 - 5, 1, 10);
+  }
+  // the part playing on its own
+  if (SM.audition) {
+    const t = (performance.now() - SM.audition.at) / 1000 / SM.audition.dur;
+    if (t >= 1) { SM.audition = null; setPartButton(false); }
+    else { const x = xa + t * (xb - xa); g.fillStyle = '#fff6dc'; g.fillRect(Math.round(x), 2, 1.5, Hh - 4); }
+  }
+}
+const laneT = e => { const r = lane.getBoundingClientRect(), { pad, w } = laneGeom(); return clamp((e.clientX - r.left - pad) / w, 0, 1); };
+lane.addEventListener('pointerdown', e => {
+  if (!SM.sample) return;
+  const t = laneT(e), { w } = laneGeom(), near = 8 / w, y = e.clientY - lane.getBoundingClientRect().top;
+  const whole = UI.sel[0] <= 0 && UI.sel[1] >= 1;
+  lane.setPointerCapture(e.pointerId);
+  if (!whole && Math.abs(t - UI.sel[0]) < near) laneDrag = { kind: 'a' };
+  else if (!whole && Math.abs(t - UI.sel[1]) < near) laneDrag = { kind: 'b' };
+  else if (!whole && y < 16 && t > UI.sel[0] && t < UI.sel[1]) laneDrag = { kind: 'move', from: t, sel: UI.sel.slice() };   // the bar on top
+  else { laneDrag = { kind: 'new', from: t }; UI.sel = [t, t]; }
+});
+lane.addEventListener('pointermove', e => {
+  const t = laneT(e), { w } = laneGeom(), near = 8 / w;
+  if (!laneDrag) {
+    const y = e.clientY - lane.getBoundingClientRect().top, whole = UI.sel[0] <= 0 && UI.sel[1] >= 1;
+    lane.style.cursor = !SM.sample || whole ? 'crosshair' : Math.abs(t - UI.sel[0]) < near || Math.abs(t - UI.sel[1]) < near ? 'ew-resize' : y < 16 && t > UI.sel[0] && t < UI.sel[1] ? 'grab' : 'crosshair';
+    return;
+  }
+  const min = 0.02 * SM.sample.sr / SM.sample.chans[0].length;   // 20 ms at the least
+  if (laneDrag.kind === 'a') UI.sel = [clamp(t, 0, UI.sel[1] - min), UI.sel[1]];
+  else if (laneDrag.kind === 'b') UI.sel = [UI.sel[0], clamp(t, UI.sel[0] + min, 1)];
+  else if (laneDrag.kind === 'move') { const len = laneDrag.sel[1] - laneDrag.sel[0], a = clamp(laneDrag.sel[0] + t - laneDrag.from, 0, 1 - len); UI.sel = [a, a + len]; }
+  else UI.sel = [Math.min(laneDrag.from, t), Math.max(laneDrag.from, t)];
+  sampleInfo();
+});
+const laneUp = () => {
+  if (!laneDrag) return;
+  const min = 0.02 * SM.sample.sr / SM.sample.chans[0].length;
+  if (UI.sel[1] - UI.sel[0] < min) UI.sel = [0, 1];   // a click, not a drag: the whole sample
+  laneDrag = null; sampleInfo(); saveUi(); stopPreview(); scheduleRender(0);
+};
+lane.addEventListener('pointerup', laneUp); lane.addEventListener('pointercancel', laneUp);
+lane.addEventListener('dblclick', () => { if (!SM.sample) return; UI.sel = [0, 1]; sampleInfo(); saveUi(); scheduleRender(0); });
+$('#selAll').addEventListener('click', () => { if (!SM.sample) return; UI.sel = [0, 1]; sampleInfo(); saveUi(); scheduleRender(0); });
+function setPartButton(on) { $('#selPlayIcon').setAttribute('d', on ? 'M6 5h4.5v14H6zM13.5 5H18v14h-4.5z' : 'M7 4.5v15l13-7.5z'); }
+function playPart() {
+  if (!SM.sample) return;
+  if (SM.audition) { engine.stopPart(); SM.audition = null; setPartButton(false); return; }
+  stopPreview();
+  const s = selectedSample();
+  engine.playPart(s);
+  SM.audition = { at: performance.now(), dur: s.chans[0].length / s.sr }; setPartButton(true);
+}
+$('#selPlay').addEventListener('click', playPart);
+
 const fmtBars = b => b < 1 ? '½ BAR' : `${b} BAR${b > 1 ? 'S' : ''}`;
 const H_recording = () => HOST ? HS.recording : !!engine.recSeconds && HS.recording;
 
@@ -880,6 +990,7 @@ window.addEventListener('keydown', e => {
   if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.code === 'Space' && UI.view === 'sample') { e.preventDefault(); engine.toggle(); }
   else if ((e.key === 'r' || e.key === 'R') && UI.view === 'sample') engine.record();
+  else if ((e.key === 'a' || e.key === 'A') && UI.view === 'sample') playPart();
   else if (e.key === 'l' || e.key === 'L') { if (UI.view === 'live' && V.mode === MODE.TRIGGER) engine.launch(); }
   else if (e.key === 'ArrowLeft' && !e.target.closest('.knob, .seg, .fader')) loadPreset(presetIdx - 1);
   else if (e.key === 'ArrowRight' && !e.target.closest('.knob, .seg, .fader')) loadPreset(presetIdx + 1);

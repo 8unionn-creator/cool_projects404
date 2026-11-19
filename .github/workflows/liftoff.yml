@@ -191,7 +191,7 @@ jobs:
           LINUX_ROW=""
           [ -f dist/Liftoff-Linux.zip ] && LINUX_ROW="| Linux | | Liftoff-Linux.zip: VST3 and the app |"
           cat > notes.md <<EOF
-          **Liftoff $version**: riser, reverse reverb and pre-drop cut in one effect, locked to your bars.
+          **Liftoff $version**: record or load a sample, cut the part you want, and turn it into a riser.
 
           | Your computer | Installer (recommended) | Or the files to copy yourself |
           |---|---|---|
@@ -205,7 +205,7 @@ jobs:
           - **Mac:** if macOS says it cannot check the installer, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
           - **Windows:** if SmartScreen says it protected your PC, click **More info → Run anyway**.
 
-          **What it does:** load a sample or record one straight from your track, and Liftoff turns it into a transition: your sound becomes the riser (pitch, filter, stutter, wash, noise, width; a one-shot becomes a roll), the last beat cuts, tape-stops, filter-dives or stutters, a reverse swell made from the drop's own first hit rises out of the gap, and a sub boom hits on the one. Preview it through your DAW, then drag the WAV into your session. LIVE mode still builds into every drop on your DAW's bars. 10 presets.
+          **What it does:** record a sample straight from your track (or load one), cut the part you want in SOURCE, and Liftoff turns it into a riser: your sound pitches up, thins out, stutters, washes out and widens (a one-shot becomes a roll), with a chorus, a tremolo on your grid, and a reverse swell from its first hit rising into the end. Preview it through your DAW, then drag the clip from the strip under the window onto a track. LIVE mode still builds into every drop on your DAW's bars. 10 presets.
           EOF
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
