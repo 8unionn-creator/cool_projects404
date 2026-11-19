@@ -18,9 +18,10 @@ plist="$work/components.plist"
 pkgbuild --analyze --root "$root" "$plist"
 i=0
 while /usr/libexec/PlistBuddy -c "Print :$i" "$plist" >/dev/null 2>&1; do
-  /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$plist"
+  plutil -replace "$i.BundleIsRelocatable" -bool NO "$plist"   # adds the key when the entry has none
   i=$((i + 1))
 done
+plutil -p "$plist"
 
 cp "$here/postinstall" "$work/scripts/postinstall"
 chmod +x "$work/scripts/postinstall"
