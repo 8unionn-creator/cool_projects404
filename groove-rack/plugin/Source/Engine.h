@@ -24,6 +24,7 @@ using SamplePtr = std::shared_ptr<const Sample>;
 struct Note
 {
     double t = 0, len = 6;
+    double nudge = 0;   // ticks off the grid: + late, - early (the genre's feel)
     float vel = 0.9f;
     int p = 48, roll = 1;
     bool slide = false;

@@ -145,6 +145,33 @@ int main (int argc, char** argv)
         check (ratio > 0.35 && ratio < 0.65, "a hit pitched up 12 rows plays an octave higher (length ratio " + String (ratio, 2) + ")");
     }
 
+    // a note's own timing (the genre's feel): early and late against the grid, also across the loop's end
+    {
+        auto onsetOf = [&] (double t, double nudge)
+        {
+            auto v = JSON::parse (json);
+            for (auto& tv : *v["tracks"].getArray()) tv.getDynamicObject()->setProperty ("notes", Array<var>());
+            v.getDynamicObject()->setProperty ("swing", 0.0);
+            Array<var> one; DynamicObject::Ptr n = new DynamicObject(); n->setProperty ("t", t); n->setProperty ("vel", 1.0); n->setProperty ("nudge", nudge); one.add (var (n.get()));
+            v["tracks"][2].getDynamicObject()->setProperty ("notes", one);
+            gr::Engine e5; e5.prepare (sr, block); e5.setPattern (gr::parsePattern (JSON::toString (v), bank)); e5.internalPlay = true;
+            const double loopSamples = (double) v["bars"] * 4 * 60.0 / 120.0 * sr;
+            for (int64 pos = 0; pos < (int64) (loopSamples * 1.6); pos += block)
+            {
+                AudioBuffer<float> b (2, block); MidiBuffer midi; gr::Engine::Transport tp; tp.hasBpm = true; tp.bpm = 120.0;
+                e5.process (b, midi, tp);
+                for (const auto m : midi) if (m.getMessage().isNoteOn() && pos + m.samplePosition > (t == 0 ? loopSamples * 0.5 : 0)) return (double) (pos + m.samplePosition);
+            }
+            return -1.0;
+        };
+        const double tick = 60.0 / 120.0 * 4 / 96 * sr, grid = onsetOf (48, 0);
+        const double late = onsetOf (48, 1.0) - grid, early = onsetOf (48, -0.5) - grid;
+        check (std::abs (late - tick) <= 2 && std::abs (early + tick * 0.5) <= 2,
+               "notes play late or early by their timing (" + String (late / tick, 2) + " and " + String (early / tick, 2) + " ticks)");
+        const double loopEnd = (double) JSON::parse (json)["bars"] * 4 * 60.0 / 120.0 * sr, wrap = onsetOf (0, -0.5);
+        check (std::abs (wrap - (loopEnd - tick * 0.5)) <= 2, "an early note on beat 1 plays just before the loop comes round (" + String ((wrap - loopEnd) / tick, 2) + " ticks)");
+    }
+
     // MIDI in: a note on the kick's note plays it while the DAW is stopped
     {
         MidiBuffer midi; midi.addEvent (MidiMessage::noteOn (1, 36, (uint8) 110), 0);

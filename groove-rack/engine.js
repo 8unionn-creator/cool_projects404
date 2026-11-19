@@ -526,6 +526,8 @@ GR.updateMix = function (m, P, muted) {
 /* ---------- sequencing ---------- */
 GR.tickDur = P => 60 / P.bpm * 4 / TPB;
 GR.swing = (P, tick, td) => (tick % 12 === 6 ? (P.swing / 100) * 3 * td : 0);
+// a note's own timing against the grid, in ticks: + late, - early (the genre's feel)
+GR.nudge = n => (n.nudge ? Math.max(-2, Math.min(2, +n.nudge || 0)) : 0);
 GR.buildTickMap = function (P) {
   const map = new Map(), loopT = P.bars * TPB;
   P.tracks.forEach(tr => tr.notes.forEach(n => {
@@ -587,7 +589,7 @@ GR.render = async function (P, opts) {
     for (let tick = 0; tick < loopT; tick++) {
       const ev = map.get(tick); if (!ev) continue;
       const t = (L * loopT + tick) * td + GR.swing(P, tick, td);
-      ev.forEach(([tr, n]) => { if (!opts.only || tr.id === opts.only) GR.playEvent(ctx, dest(tr), st, tr, n, t, td); });
+      ev.forEach(([tr, n]) => { if (!opts.only || tr.id === opts.only) GR.playEvent(ctx, dest(tr), st, tr, n, Math.max(0, t + GR.nudge(n) * td), td); });
     }
   }
   const buf = await ctx.startRendering();
@@ -646,7 +648,7 @@ GR.midiEvents = function (P, only) {
       if (n.t >= loopT) return;
       const roll = n.roll || 1;
       for (let r = 0; r < roll; r++) {
-        const t0 = Math.round((n.t + r * stepT / roll + GR.swing(P, n.t, 1)) * k);
+        const t0 = Math.max(0, Math.round((n.t + r * stepT / roll + GR.swing(P, n.t, 1) + GR.nudge(n)) * k));
         const len = Math.max(1, Math.round((inst.pitched && roll === 1 ? (n.len || stepT) : stepT / roll) * k) - 1);
         const p = inst.pitched ? Math.max(0, Math.min(127, (n.p != null ? n.p : 48) + (tr.pitch || 0))) : m.note;
         const v = Math.max(1, Math.min(127, Math.round(n.vel * 127)));

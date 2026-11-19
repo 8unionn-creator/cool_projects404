@@ -20,6 +20,18 @@ permissions:
   contents: write
 
 jobs:
+  generator:
+    name: Genre rule tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Every style of every genre keeps its rules
+        run: node groove-rack/tests/genre-rules.js
+
   build:
     strategy:
       fail-fast: false

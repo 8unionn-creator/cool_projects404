@@ -125,6 +125,7 @@ PatternPtr parsePattern (const String& json, SampleBank& bank)
                     note.p = (int) num (n, "p", tr.pitched ? 48.0 : 60.0);   // drums: 60 = the sound as it is
                     note.roll = jlimit (1, 8, (int) num (n, "roll", 1.0));
                     note.slide = (bool) n["slide"];
+                    note.nudge = jlimit (-2.0, 2.0, num (n, "nudge", 0.0));
                     tr.notes.push_back (note);
                 }
             }
@@ -139,9 +140,13 @@ PatternPtr parsePattern (const String& json, SampleBank& bank)
     for (int ti = 0; ti < (int) p->tracks.size(); ++ti)
         for (int ni = 0; ni < (int) p->tracks[(size_t) ti].notes.size(); ++ni)
         {
-            const int tick = roundToInt (p->tracks[(size_t) ti].notes[(size_t) ni].t);
-            if (tick >= 0 && tick < loopT)
-                p->ticks[(size_t) tick].push_back ({ ti, ni });
+            // a note sits in the tick it actually sounds in, so an early note is scheduled ahead of its grid line
+            const Note& no = p->tracks[(size_t) ti].notes[(size_t) ni];
+            const int grid = roundToInt (no.t);
+            if (grid < 0 || grid >= loopT)
+                continue;
+            const int tick = (int) std::floor (grid + no.nudge);
+            p->ticks[(size_t) (((tick % loopT) + loopT) % loopT)].push_back ({ ti, ni });
         }
     return p;
 }
@@ -216,11 +221,13 @@ void Engine::schedule (const Pattern& P, double start, double end, double tps, i
         const auto ki = (int64) std::llround (k);
         const int lt = (int) (((ki % loopT) + loopT) % loopT);
         const double off = base + (k - start) / tps;
-        const double swing = (lt % 12 == 6) ? P.swing / 100.0 * 3.0 / tps : 0.0;
         for (const auto& [ti, ni] : P.ticks[(size_t) lt])
         {
             const Track& tr = P.tracks[(size_t) ti];
             const Note& no = tr.notes[(size_t) ni];
+            const int grid = roundToInt (no.t);
+            const double sounds = grid + no.nudge;
+            const double swing = ((grid % 12 == 6) ? P.swing / 100.0 * 3.0 : 0.0) / tps + (sounds - std::floor (sounds)) / tps;
             const double stepT = (double) TPB / tr.res;
             const int roll = jlimit (1, 8, no.roll);
             const double dur = (tr.pitched ? jmax (no.len, 1.0) : stepT) / tps;

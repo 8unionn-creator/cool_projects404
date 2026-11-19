@@ -123,7 +123,7 @@ function sched() {
     const tick = S.nextTick % loopT, ev = map.get(tick);
     if (ev) {
       const t = S.nextTime + GR.swing(P, tick, td);
-      ev.forEach(([tr, n]) => { const s = mix.strips[tr.id]; if (s) GR.playEvent(ctx, s.in, S.st, tr, n, t, td); });
+      ev.forEach(([tr, n]) => { const s = mix.strips[tr.id]; if (s) GR.playEvent(ctx, s.in, S.st, tr, n, t + GR.nudge(n) * td, td); });
     }
     if (ui.metro && tick % 24 === 0) metroClick(S.nextTime, tick % TPB === 0);
     S.nextTick++; S.nextTime += td;
@@ -183,6 +183,7 @@ function load(project, keepHistory) {
   P = sanitize(project);
   if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
   if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
+  takeTaste(P.taste);
   if (!keepHistory) { hist.undo.length = 0; hist.redo.length = 0; }
   if (!track(ui.sel)) ui.sel = (P.tracks[0] || {}).id || null;
   ui.bar = clamp(ui.bar, 0, P.bars - 1);
@@ -195,11 +196,17 @@ function sanitize(p) {
   p.master = clamp(p.master == null ? 0.8 : +p.master, 0, 1); p.key = clamp(p.key | 0, 0, 11);
   p.chords = Array.isArray(p.chords) ? p.chords.slice(0, 8).map(c => (c && isFinite(c.r) ? { r: ((c.r | 0) % 12 + 12) % 12, q: String(c.q || '') } : null)) : null;
   if (!GR.SCALES[p.scale]) p.scale = 'minor';
+  p.style = typeof p.style === 'string' ? p.style : ''; p.chordLock = !!p.chordLock;
+  if (!(p.taste && typeof p.taste === 'object')) delete p.taste;
   p.tracks = (p.tracks || []).filter(t => t && I[t.inst]).map(t => {
     const n = GR.newTrack(t.inst, t.sound, t);
     if (!I[n.inst].sounds[n.sound]) n.sound = I[n.inst].def;
     if (![12, 16, 24, 32].includes(n.res)) n.res = 16;
-    n.notes = (t.notes || []).filter(x => x && isFinite(x.t)).map(x => Object.assign({}, x));
+    n.notes = (t.notes || []).filter(x => x && isFinite(x.t)).map(x => {
+      const y = Object.assign({}, x);
+      if (y.nudge != null) { y.nudge = clamp(+y.nudge || 0, -1.5, 1.5); if (Math.abs(y.nudge) < 0.02) delete y.nudge; }
+      return y;
+    });
     return n;
   });
   return p;
@@ -258,8 +265,15 @@ const SCALE_SHORT = { minor: 'm', major: '', dorian: ' dor', phrygian: ' phr', '
 const keyLabel = () => GR.NOTE_NAMES[P.key] + (SCALE_SHORT[P.scale] != null ? SCALE_SHORT[P.scale] : '');
 
 function renderAll() { renderOled(); renderTransport(); renderDensity(); renderDeck(); renderChan(); renderRoll(); renderFoot(); }
+function renderStyleTag() {
+  const t = $('#styleTag'); if (!t) return;
+  const [lo, hi] = GR.styleBpm(genreOf(), P.style), L = learnedLoops();
+  t.textContent = `${styleLabel().toUpperCase()} · ${lo}–${hi} BPM${L ? ` · ${L} LEARNED` : ''}`;
+}
 function renderOled() {
   $('#oledGenre').textContent = GR.GROOVES[genreOf()].name.toUpperCase();
+  $('#oledGenreLbl').textContent = 'GENRE · ' + styleOf().name.toUpperCase();
+  renderStyleTag();
   $('#oledTempo').textContent = (+P.bpm).toFixed(2);
   const daw = !!(HOST && H.daw);
   $('#syncTag').textContent = daw ? 'DAW SYNC' : 'INTERNAL';
@@ -565,7 +579,7 @@ function renderRoll() {
   const ruler = Array.from({ length: L }, (_, b) => `<button class="pr-bar${b === ui.bar ? ' on' : ''}" data-rbar="${b}" style="left:${b / L * 100}%;width:${100 / L}%" title="Go to bar ${b + 1}">${b + 1}</button>`).join('');
   const chords = Array.from({ length: L }, (_, b) => {
     const c = P.chords[b];
-    return `<button class="pr-chord${c ? '' : ' empty'}" data-cbar="${b}" style="left:${b / L * 100}%;width:${100 / L}%" title="Chord for bar ${b + 1}: the bass follows it"><span>${c ? esc(GR.chordName(c)) : '+ chord'}</span></button>`;
+    return `<button class="pr-chord${c ? '' : ' empty'}" data-cbar="${b}" style="left:${b / L * 100}%;width:${100 / L}%" title="Chord for bar ${b + 1}: the bass follows it"><span>${c ? esc(GR.chordName(c, P)) : '+ chord'}</span></button>`;
   }).join('');
   box.innerHTML = `
     <div class="phead">
@@ -609,7 +623,7 @@ function drawRollNotes() {
     const p = notePitch(tr, n), r = rows.indexOf(p), len = Math.min(noteLen(tr, n), loopT - n.t);
     v += `<span class="vstalk${n.vel < 0.5 ? ' ghost' : ''}" style="left:${n.t / loopT * 100}%;height:${Math.round(6 + n.vel * 40)}px"></span>`;
     if (r < 0) { hidden++; return; }
-    h += `<div class="rnote${n.vel < 0.5 ? ' ghost' : ''}${isPitched(tr) ? '' : ' hit'}" style="top:${r * ROWH + 1}px;left:${n.t / loopT * 100}%;width:calc(${len / loopT * 100}% - 1px);--v:${n.vel}">${n.slide ? '↗' : ''}${n.roll > 1 ? '×' + n.roll : ''}</div>`;
+    h += `<div class="rnote${n.vel < 0.5 ? ' ghost' : ''}${isPitched(tr) ? '' : ' hit'}${n.nudge ? ' off' : ''}" style="top:${r * ROWH + 1}px;left:${(n.t + GR.nudge(n)) / loopT * 100}%;width:calc(${len / loopT * 100}% - 1px);--v:${n.vel}">${n.slide ? '↗' : ''}${n.roll > 1 ? '×' + n.roll : ''}</div>`;
   });
   layer.innerHTML = h; vel.innerHTML = v;
   const hint = $('#rhint');
@@ -935,24 +949,25 @@ function onRollClick(e) {
 // pick the chord for a bar; the bass in that bar moves with it
 function chordSheet(bar) {
   const { triads, sevenths } = GR.diatonicChords(P), cur = P.chords && P.chords[bar];
-  const btn = (c, i, set) => `<button class="b sm${cur && cur.r === c.r && cur.q === c.q ? ' on' : ''}" data-set="${set}" data-ci="${i}"><span style="opacity:.55;font-family:var(--mono);font-size:9.5px">${c.roman}</span>&nbsp; ${esc(GR.chordName(c))}</button>`;
+  const btn = (c, i, set) => `<button class="b sm${cur && cur.r === c.r && cur.q === c.q ? ' on' : ''}" data-set="${set}" data-ci="${i}"><span style="opacity:.55;font-family:var(--mono);font-size:9.5px">${c.roman}</span>&nbsp; ${esc(GR.chordName(c, P))}</button>`;
   openSheet(`Bar ${bar + 1} chord`, `
     <div class="sh-sec"><h4>In ${GR.NOTE_NAMES[P.key]} ${esc(P.scale)}</h4><div class="btns">${triads.map((c, i) => btn(c, i, 't')).join('')}</div></div>
     ${sevenths.length ? `<div class="sh-sec"><h4>Sevenths</h4><div class="btns">${sevenths.map((c, i) => btn(c, i, 's')).join('')}</div></div>` : ''}
-    <div class="sh-sec"><div class="btns"><button class="b sm" data-clear>No chord</button><button class="b sm" data-all>Use for every bar</button></div>
-      <p class="hint" style="margin:8px 0 0">The bass notes in this bar move to the new chord. The dice and GENERATE follow these chords.</p></div>`, sh => {
+    <div class="sh-sec"><div class="btns"><button class="b sm" data-clear>No chord</button><button class="b sm" data-all>Use for every bar</button>${P.chordLock ? '<button class="b sm" data-unlock>Let the style pick chords again</button>' : ''}</div>
+      <p class="hint" style="margin:8px 0 0">The bass notes in this bar move to the new chord. The dice and GENERATE keep your chords and follow them.</p></div>`, sh => {
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.ci != null) { applyChord(bar, Object.assign({}, (b.dataset.set === 's' ? sevenths : triads)[+b.dataset.ci])); closeSheet(); }
-      else if (b.dataset.clear != null) { edit(() => { P.chords[bar] = null; }); closeSheet(); }
-      else if (b.dataset.all != null && cur) { commit(); for (let i = 0; i < P.bars; i++) shiftChord(i, cur); changed(); settle(); closeSheet(); toast(`Every bar is ${GR.chordName(cur)}`); }
+      else if (b.dataset.clear != null) { edit(() => { P.chords[bar] = null; P.chordLock = true; }); closeSheet(); }
+      else if (b.dataset.unlock != null) { edit(() => { P.chordLock = false; }); closeSheet(); toast('GENERATE picks new chords from the style again'); }
+      else if (b.dataset.all != null && cur) { commit(); for (let i = 0; i < P.bars; i++) shiftChord(i, cur); changed(); settle(); closeSheet(); toast(`Every bar is ${GR.chordName(cur, P)}`); }
     });
   });
 }
 function shiftChord(bar, c) {
   if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
   const old = P.chords[bar] || GR.inferChords(P)[bar];
-  P.chords[bar] = { r: c.r, q: c.q };
+  P.chords[bar] = { r: c.r, q: c.q }; P.chordLock = true;
   if (!old) return;
   const d = (((c.r - old.r) % 12) + 18) % 12 - 6;
   if (d) P.tracks.forEach(t => { if (isPitched(t)) t.notes.forEach(n => { if (Math.floor(n.t / TPB) === bar) n.p = clamp(n.p + d, 0, 127); }); });
@@ -960,12 +975,61 @@ function shiftChord(bar, c) {
 function applyChord(bar, c) {
   edit(() => shiftChord(bar, c));
   const tr = bassTracks()[0]; if (tr) audition(tr, { p: (() => { let r = c.r; while (r < 28) r += 12; return r; })(), vel: 0.85 });
-  toast(`Bar ${bar + 1}: ${GR.chordName(c)} · the bass moved with it`);
+  toast(`Bar ${bar + 1}: ${GR.chordName(c, P)} · the bass moved with it`);
 }
 
 /* ---------- groove generator ---------- */
 const genreOf = () => (GR.GROOVES[P.genre] ? P.genre : 'trap');
-function genOpts() { return { genre: genreOf(), complexity: ui.gen.complexity, bar: ui.gen.scope === 'bar' ? ui.bar : null }; }
+const styleOf = () => GR.styleOf(genreOf(), P.style);
+const styleLabel = () => `${GR.GROOVES[genreOf()].name} · ${styleOf().name}`;
+function genOpts() { return { genre: genreOf(), style: styleOf().id, complexity: ui.gen.complexity, bar: ui.gen.scope === 'bar' ? ui.bar : null }; }
+const dawTempo = () => !!(HOST && H.daw);
+// a genre or style change brings the tempo into the style's range (the DAW keeps its own)
+function setStyle(genre, id) {
+  P.genre = genre; P.style = GR.styleOf(genre, id).id;
+  const [lo, hi] = GR.styleBpm(genre, P.style);
+  if (!dawTempo() && (P.bpm < lo || P.bpm > hi)) { P.bpm = Math.round((lo + hi) / 2); S.map = null; }
+}
+function styleTempoNote() {
+  const [lo, hi] = GR.styleBpm(genreOf(), P.style), ok = P.bpm >= lo - 0.5 && P.bpm <= hi + 0.5;
+  return `${styleOf().name} sits at ${lo}–${hi} BPM${ok ? '' : ` · you are at ${Math.round(P.bpm)}${dawTempo() ? ' (your DAW sets the tempo)' : ''}`}`;
+}
+/* what you taught the generator: learned loops and liked patterns, kept in this browser and in the project */
+function takeTaste(t) {
+  if (!t) return;
+  Object.entries(t.learn || {}).forEach(([k, v]) => { if (v && (!GR.LEARN[k] || (v.n || 0) > (GR.LEARN[k].n || 0))) GR.LEARN[k] = v; });
+  Object.entries(t.weights || {}).forEach(([k, v]) => { if (GR.WEIGHTS[k] == null && isFinite(v)) GR.WEIGHTS[k] = +v; });
+}
+function saveTaste() {
+  store.set('groove-rack.learn', JSON.stringify(GR.LEARN)); store.set('groove-rack.weights', JSON.stringify(GR.WEIGHTS));
+  P.taste = { learn: JSON.parse(JSON.stringify(GR.LEARN)), weights: Object.assign({}, GR.WEIGHTS) };
+}
+const learnedLoops = () => { const L = GR.LEARN[genreOf() + ':' + styleOf().id]; return L ? L.n : 0; };
+const pickKeys = () => Object.values(GR.lastPicks).filter(Boolean);
+function likeGroove() {
+  edit(() => { GR.rate(pickKeys(), true); GR.learnProject(P, genreOf(), styleOf().id); saveTaste(); });
+  toast(`Liked · ${styleLabel()} will lean towards this groove (${learnedLoops()} learned)`);
+  renderStyleTag();
+}
+function skipGroove() {
+  GR.rate(pickKeys(), false); saveTaste();
+  newGroove(true);
+  toast(`Skipped · less of that one in ${styleLabel()}`);
+}
+async function learnMidiFiles() {
+  const f = await chooseFile('.mid,.midi,audio/midi', '*.mid;*.midi');
+  if (!f) return;
+  let mf; try { mf = GR.parseMidi(f.buf); } catch (e) { toast('That file is not a MIDI file Groove Rack can read'); return; }
+  const T = JSON.parse(JSON.stringify(P));
+  const r = readMidi(T, mf, null);
+  if (!r) { toast('That MIDI file has no notes'); return; }
+  const got = GR.learnProject(T, genreOf(), styleOf().id);
+  if (!got) { toast('No drums or bass Groove Rack could read in that file'); return; }
+  edit(() => saveTaste());
+  toast(`Learned ${f.name} · ${styleLabel()} now knows ${got.n} loop${got.n > 1 ? 's' : ''}. Press GENERATE`, 3600);
+  if (sheetEl) grooveSheet(selTrack());
+  renderStyleTag();
+}
 function spinDice(id) {
   document.querySelectorAll(`.deck-row[data-id="${id}"] .dice-btn`).forEach(d => { d.classList.remove('spin'); void d.offsetWidth; d.classList.add('spin'); });
 }
@@ -973,29 +1037,52 @@ function newPattern(tr, scope) {
   const o = genOpts(); if (scope) o.bar = scope === 'bar' ? ui.bar : null;
   edit(() => GR.generateTrack(P, tr, o));
   spinDice(tr.id);
-  toast(`New ${tr.name} pattern · ${GR.GROOVES[o.genre].name}${o.bar != null ? ' · bar ' + (o.bar + 1) : ''}`);
+  toast(`New ${tr.name} pattern · ${styleLabel()}${o.bar != null ? ' · bar ' + (o.bar + 1) : ''}`);
 }
-function newGroove() {
+function newGroove(quiet) {
   const o = genOpts();
   edit(() => GR.generateAll(P, o));
   P.tracks.forEach(t => spinDice(t.id));
-  toast(`New ${GR.GROOVES[o.genre].name} groove${o.bar != null ? ' for bar ' + (o.bar + 1) : ''}${o.bar == null ? ' · swing ' + P.swing + '%' : ''}`);
+  if (!quiet) toast(`New ${styleLabel()} groove${o.bar != null ? ' for bar ' + (o.bar + 1) : ''}${o.bar == null ? ' · swing ' + P.swing + '% · ' + P.chords.map(c => GR.chordName(c, P)).join(' ') : ''}`, 2600);
 }
 function grooveSheet(tr) {
+  const styleBtns = () => GR.stylesOf(genreOf()).map(s => `<button class="b sm${s.id === styleOf().id ? ' on' : ''}" data-style="${s.id}">${esc(s.name)} <i class="bpmr">${s.bpm[0]}–${s.bpm[1]}</i></button>`).join('');
+  const L = learnedLoops();
   const sh = openSheet('Groove generator', `
-    <div class="sh-sec"><h4>Genre</h4><select class="txt" id="g_genre" aria-label="Genre">${GR.GENRES.map(k => `<option value="${k}"${k === genreOf() ? ' selected' : ''}>${GR.GROOVES[k].name}</option>`).join('')}</select>
-      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">New patterns use this genre's kicks, backbeats, hat feels, percussion and bass rhythms. The bass follows your kick or the genre's bass line, in ${GR.NOTE_NAMES[P.key]} ${P.scale}.</p></div>
+    <div class="sh-sec"><h4>Genre</h4><select class="txt" id="g_genre" aria-label="Genre">${GR.GENRES.map(k => `<option value="${k}"${k === genreOf() ? ' selected' : ''}>${GR.GROOVES[k].name}</option>`).join('')}</select></div>
+    <div class="sh-sec"><h4>Style</h4><div class="btns" id="g_styles">${styleBtns()}</div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0" id="g_tempo"></p>
+      <div class="btns" style="margin-top:6px" id="g_fit"></div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Each style has its own kicks, backbeats, hats and percussion, its own feel (which parts push ahead or sit back, and how they accent), its own chord progressions and bass phrases. Loops play as phrases: the same idea, a variation in bar 3, a fill at the end.</p></div>
+    <div class="sh-sec"><h4>Chords</h4><div class="seg" role="group" aria-label="Chords">${[[0, 'The style picks them'], [1, 'Keep mine']].map(([k, l]) => `<button data-lock="${k}" class="${+!!P.chordLock === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Now: ${P.chords && P.chords.some(Boolean) ? P.chords.map(c => (c ? GR.chordName(c, P) : '–')).join(' · ') : 'none yet'}. Pick a chord in the piano roll's chord lane and GENERATE keeps your chords.</p></div>
     <div class="sh-sec"><h4>Busyness</h4><div class="seg" role="group" aria-label="Busyness">${['Simple', 'Medium', 'Busy'].map((l, i) => `<button data-cx="${i}" class="${ui.gen.complexity === i ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     <div class="sh-sec"><h4>Change</h4><div class="seg" role="group" aria-label="Which bars">${[['all', 'Whole loop'], ['bar', 'Bar ' + (ui.bar + 1) + ' only']].map(([k, l]) => `<button data-scope="${k}" class="${ui.gen.scope === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="sh-sec"><h4>Teach ${esc(styleLabel())}</h4><div class="btns">
+      <button class="b sm" data-learn>Learn from a MIDI loop…</button><button class="b sm" data-like>👍 Like this groove</button><button class="b sm" data-skip>👎 Skip it</button>${L ? `<button class="b sm warn" data-forget>Forget ${L} learned loop${L > 1 ? 's' : ''}</button>` : ''}</div>
+      <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Drop in drum or bass MIDI loops you like for this style: the generator learns how often each part hits on each step and mixes that with its own patterns. 👍 learns the groove you have now and picks its patterns more often; 👎 makes a new one and picks those less. It is remembered in this browser and saved with the project.</p></div>
     <div class="sh-sec"><div class="btns">
       ${tr ? `<button class="b gold" data-go="track">${ICON.dice.replace('<svg', '<svg width="16" height="16" style="vertical-align:-3px;margin-right:4px"')}New ${esc(tr.name)} pattern</button>` : ''}
       <button class="b${tr ? '' : ' gold'}" data-go="all">Generate the whole groove</button></div>
       <p class="hint" style="text-align:left;margin:8px 0 0;padding:0">Every result can be undone. The 🎲 on each track makes a new pattern for that track alone. Shortcuts: <b>R</b> for the selected track, <b>Shift R</b> for the whole groove.</p></div>`, sh => {
-    sh.querySelector('#g_genre').addEventListener('change', e => edit(() => { P.genre = e.target.value; }));
+    const tempo = () => {
+      sh.querySelector('#g_tempo').textContent = styleTempoNote();
+      const [lo, hi] = GR.styleBpm(genreOf(), P.style), out = P.bpm < lo - 0.5 || P.bpm > hi + 0.5;
+      sh.querySelector('#g_fit').innerHTML = out && !dawTempo() ? `<button class="b sm" data-fit>Set ${Math.round((lo + hi) / 2)} BPM</button>` : '';
+    };
+    tempo();
+    sh.querySelector('#g_genre').addEventListener('change', e => { edit(() => setStyle(e.target.value)); sh.querySelector('#g_styles').innerHTML = styleBtns(); tempo(); toast(`${styleLabel()} · ${Math.round(P.bpm)} BPM`); });
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.cx) { ui.gen.complexity = +b.dataset.cx; sh.querySelectorAll('[data-cx]').forEach(x => x.classList.toggle('on', x === b)); saveGen(); }
+      if (b.dataset.style) { edit(() => setStyle(genreOf(), b.dataset.style)); sh.querySelectorAll('[data-style]').forEach(x => x.classList.toggle('on', x === b)); tempo(); toast(`${styleLabel()} · ${Math.round(P.bpm)} BPM`); }
+      else if (b.dataset.fit != null) { const [lo, hi] = GR.styleBpm(genreOf(), P.style); edit(() => { P.bpm = Math.round((lo + hi) / 2); S.map = null; }); tempo(); }
+      else if (b.dataset.lock) { edit(() => { P.chordLock = b.dataset.lock === '1'; }); sh.querySelectorAll('[data-lock]').forEach(x => x.classList.toggle('on', x === b)); }
+      else if (b.dataset.cx) { ui.gen.complexity = +b.dataset.cx; sh.querySelectorAll('[data-cx]').forEach(x => x.classList.toggle('on', x === b)); saveGen(); renderDensity(); }
       else if (b.dataset.scope) { ui.gen.scope = b.dataset.scope; sh.querySelectorAll('[data-scope]').forEach(x => x.classList.toggle('on', x === b)); saveGen(); }
+      else if (b.dataset.learn != null) learnMidiFiles();
+      else if (b.dataset.like != null) { likeGroove(); closeSheet(); }
+      else if (b.dataset.skip != null) { skipGroove(); closeSheet(); }
+      else if (b.dataset.forget != null) { GR.forget(genreOf(), styleOf().id); edit(() => saveTaste()); toast(`${styleLabel()} forgot what it learned`); closeSheet(); renderStyleTag(); }
       else if (b.dataset.go === 'track') newPattern(tr);
       else if (b.dataset.go === 'all') newGroove();
     });
@@ -1205,6 +1292,7 @@ function noteSheet(tr, n) {
   const inst = I[tr.inst];
   const sh = openSheet(`${tr.name} · ${inst.pitched ? GR.noteName(n.p) : 'step ' + (Math.floor((n.t % TPB) / (TPB / tr.res)) + 1)}`, `
     ${ctlRow('n_vel', 'Velocity', 0.05, 1, 0.01, n.vel)}
+    ${ctlRow('n_nudge', 'Timing', -1.5, 1.5, 0.05, n.nudge || 0)}
     ${!inst.pitched ? `<div class="sh-sec"><h4>Roll (hits inside the step)</h4><div class="seg">${[1, 2, 3, 4].map(r => `<button data-roll="${r}" class="${(n.roll || 1) === r ? 'on' : ''}">${r === 1 ? 'off' : r + '×'}</button>`).join('')}</div></div>` : `
     <div class="sh-sec"><h4>Pitch</h4><div class="btns"><button class="b sm" data-p="-12">−oct</button><button class="b sm" data-p="-1">−1</button><b id="nP" style="min-width:52px;text-align:center;align-self:center">${GR.noteName(n.p)}</b><button class="b sm" data-p="1">+1</button><button class="b sm" data-p="12">+oct</button></div></div>
     <div class="sh-sec"><h4>Length</h4><div class="btns"><button class="b sm" data-l="-1">shorter</button><b id="nL" style="min-width:64px;text-align:center;align-self:center"></b><button class="b sm" data-l="1">longer</button></div></div>
@@ -1214,6 +1302,10 @@ function noteSheet(tr, n) {
     const lab = () => { const l = sh.querySelector('#nL'); if (l) l.textContent = `${+(n.len / stepT).toFixed(2)} step${n.len === stepT ? '' : 's'}`; const p = sh.querySelector('#nP'); if (p) p.textContent = GR.noteName(n.p); };
     lab();
     slider(sh, 'n_vel', v => { n.vel = v; }, pct);
+    slider(sh, 'n_nudge', v => { if (Math.abs(v) < 0.02) delete n.nudge; else n.nudge = v; }, v => {
+      const ms = Math.round(Math.abs(v) * GR.tickDur(P) * 1000);
+      return Math.abs(v) < 0.02 || !ms ? 'on the grid' : `${ms} ms ${v < 0 ? 'early' : 'late'}`;
+    });
     sh.querySelector('#n_vel').addEventListener('change', () => audition(tr, n));
     sh.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -1274,13 +1366,25 @@ async function importMidiFile(target) {
 function importMidi(buf, target, fileName) {
   let mf;
   try { mf = GR.parseMidi(buf); } catch (e) { toast('That file is not a MIDI file Groove Rack can read'); return; }
+  commit();
+  const r = readMidi(P, mf, target);
+  if (!r) { hist.undo.pop(); toast('That MIDI file has no notes'); return; }
+  if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
+  if (!target) P.chords = GR.inferChords(P);
+  changed(); settle(); closeSheet();
+  toast(`Imported ${fileName || 'MIDI'}${target ? ' into ' + target.name : ''} · ${r.bars} bar${r.bars > 1 ? 's' : ''}${r.skipped ? ` · ${r.skipped} notes had no matching drum` : ''}`, 3200);
+}
+// read a parsed MIDI file into project T (into one track, or across its tracks by drum note and channel)
+function readMidi(T, mf, target) {
   const k = TPB / (mf.ppq * 4), all = [];
   mf.tracks.forEach(t => t.notes.forEach(n => all.push(Object.assign({ track: t.name }, n))));
-  if (!all.length) { toast('That MIDI file has no notes'); return; }
+  if (!all.length) return null;
   const last = Math.max(...all.map(n => n.tick * k));
   const bars = clamp(Math.ceil((last + 1) / TPB), 1, 8);
   let skipped = 0;
-  const sw = (P.swing / 100) * 3;
+  const sw = (T.swing / 100) * 3;
+  // a note's distance from its step, kept as its own timing when it is small (a played or humanized feel)
+  const feel = (x, t) => { const d = Math.round((x - t) * 100) / 100; return Math.abs(d) >= 0.05 && Math.abs(d) <= 1.5 ? d : 0; };
   const put = (tr, n) => {
     const stepT = TPB / tr.res;
     let x = n.tick * k;
@@ -1288,7 +1392,9 @@ function importMidi(buf, target, fileName) {
     const exact = x / stepT, near = Math.round(exact);
     if (I[tr.inst].pitched) {
       const t = near * stepT; if (t >= bars * TPB) return;
-      tr.notes.push({ t, p: n.p, len: Math.max(stepT, Math.round(n.len * k / stepT) * stepT), vel: n.vel });
+      const note = { t, p: n.p, len: Math.max(stepT, Math.round(n.len * k / stepT) * stepT), vel: n.vel }, d = feel(x, t);
+      if (d) note.nudge = d;
+      tr.notes.push(note);
       return;
     }
     if (Math.abs(exact - near) > 0.2) {   // a hit between steps: part of a roll in the step before it
@@ -1299,43 +1405,41 @@ function importMidi(buf, target, fileName) {
     }
     const t = near * stepT; if (t >= bars * TPB) return;
     const ex = tr.notes.find(y => y.t === t);
-    if (!ex) tr.notes.push({ t, vel: n.vel });
+    if (!ex) { const note = { t, vel: n.vel }, d = feel(x, t); if (d) note.nudge = d; tr.notes.push(note); }
   };
-  commit();
-  P.bars = Math.max(bars, target ? P.bars : 1);
-  if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
+  T.bars = Math.max(bars, target ? T.bars : 1);
   if (target) {
     target.notes = [];
     all.forEach(n => put(target, n));
     sortNotes(target);
   } else {
-    if (mf.bpm) P.bpm = clamp(mf.bpm, 40, 240);
-    const map = GR.midiMap(P), touched = new Set();
+    if (mf.bpm) T.bpm = clamp(mf.bpm, 40, 240);
+    const map = GR.midiMap(T), touched = new Set();
     const touch = tr => { if (!touched.has(tr.id)) { touched.add(tr.id); tr.notes = []; } return tr; };
     const byNote = {}, byCh = {};
-    P.tracks.forEach(tr => { const m = map[tr.id]; if (!m) return; if (m.note != null) byNote[m.note] = tr; else byCh[m.ch] = tr; });
+    T.tracks.forEach(tr => { const m = map[tr.id]; if (!m) return; if (m.note != null) byNote[m.note] = tr; else byCh[m.ch] = tr; });
     all.forEach(n => {
-      let tr = n.track && P.tracks.find(t => t.name.toLowerCase() === n.track.toLowerCase());
+      let tr = n.track && T.tracks.find(t => t.name.toLowerCase() === n.track.toLowerCase());
       if (!tr) tr = byCh[n.ch] && n.ch !== 9 ? byCh[n.ch] : null;
       if (!tr && (n.ch === 9 || byNote[n.p])) {
         tr = byNote[n.p];
         if (!tr) {
           const s = findSoundForGm(n.p);
-          if (s) { tr = GR.newTrack(s[0], s[1]); P.tracks.push(tr); byNote[n.p] = tr; }
+          if (s) { tr = GR.newTrack(s[0], s[1]); T.tracks.push(tr); byNote[n.p] = tr; }
         }
       }
       if (!tr && n.ch !== 9) {
-        tr = P.tracks.find(t => I[t.inst].pitched);
-        if (!tr) { tr = GR.newTrack('b808', 'clean'); P.tracks.push(tr); }
+        tr = T.tracks.find(t => I[t.inst].pitched);
+        if (!tr) { tr = GR.newTrack('b808', 'clean'); T.tracks.push(tr); }
         byCh[n.ch] = tr;
       }
       if (!tr) { skipped++; return; }
       put(touch(tr), n);
     });
-    P.tracks.forEach(sortNotes);
+    T.tracks.forEach(sortNotes);
+    if (T !== P) T.tracks = T.tracks.filter(t => touched.has(t.id));   // learning: only the parts the file has
   }
-  changed(); settle(); closeSheet();
-  toast(`Imported ${fileName || 'MIDI'}${target ? ' into ' + target.name : ''} · ${bars} bar${bars > 1 ? 's' : ''}${skipped ? ` · ${skipped} notes had no matching drum` : ''}`, 3200);
+  return { bars, skipped };
 }
 function midiLabel(tr) {
   const m = GR.midiMap(P)[tr.id]; if (!m) return '';
@@ -1596,10 +1700,13 @@ function wire() {
   $('#genreBox').addEventListener('click', e => {
     if (holdT === -1) { holdT = 0; return; }
     const i = GR.GENRES.indexOf(genreOf());
-    edit(() => { P.genre = GR.GENRES[(i + (e.shiftKey ? GR.GENRES.length - 1 : 1)) % GR.GENRES.length]; });
-    toast(`Genre: ${GR.GROOVES[P.genre].name} · press GENERATE or a dice`);
+    edit(() => setStyle(GR.GENRES[(i + (e.shiftKey ? GR.GENRES.length - 1 : 1)) % GR.GENRES.length]));
+    toast(`${styleLabel()} · ${Math.round(P.bpm)} BPM · press GENERATE, hold for styles`);
   });
   $('#barBox').addEventListener('click', barSheet);
+  $('#styleBtn').addEventListener('click', () => grooveSheet(selTrack()));
+  $('#likeBtn').addEventListener('click', likeGroove);
+  $('#skipBtn').addEventListener('click', skipGroove);
   $('#keyBox').addEventListener('click', e => {
     if (e.shiftKey) { songSheet(); return; }
     edit(() => transposeBy(P.key === 11 ? -11 : 1));
@@ -1766,6 +1873,7 @@ let holdT = 0, holdTimer = 0;
 /* ---------- start ---------- */
 async function init() {
   try { Object.assign(ui.gen, JSON.parse(store.get('groove-rack.gen') || '{}')); } catch (e) {}
+  try { Object.assign(GR.LEARN, JSON.parse(store.get('groove-rack.learn') || '{}')); Object.assign(GR.WEIGHTS, JSON.parse(store.get('groove-rack.weights') || '{}')); } catch (e) {}
   let start = null;
   if (HOST) {
     document.documentElement.classList.add('in-plugin');
