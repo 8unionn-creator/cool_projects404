@@ -1,9 +1,10 @@
-/* Liftoff DSP core: the build, the riser, the pre-drop cut and the impact, sample by sample.
+/* Liftoff DSP core: the build, the riser, chorus and tremolo, sample by sample.
    The same algorithm runs in C++ in the plugin (plugin/Source/Core.cpp); keep the two in step.
 
    Signal path for each sample x:
-     pitch rise -> high-pass sweep -> stutter gate -> pre-drop gap (cut / tape stop / filter dive / stutter)
-     -> + impact -> + wash reverb (FDN) -> + noise riser -> stereo width -> mix with dry -> output gain
+     pitch rise -> high-pass sweep -> stutter gate -> pre-drop gap (cut / tape stop / filter dive / stutter; off unless drop)
+     -> chorus -> + impact (off unless drop) -> + wash reverb (FDN) -> + noise riser -> tremolo -> stereo width
+     -> mix with dry -> output gain
    Backverb: the dry input, gated by its mode, is sent out separately. Convolving it with a time-reversed reverb
    of length L and delaying everything else by L makes the swell of every sound end exactly on that sound,
    so a reverse swell made from the drop's own first hit rises out of the gap and lands on the drop.
@@ -19,6 +20,8 @@ function LiftoffDSP(G) {
   const MODE = { AUTO: 0, MANUAL: 1, TRIGGER: 2 };
   const VERB_MODE = { DROP: 0, BUILD: 1, ALWAYS: 2 };
   const GAP_STYLE = { CUT: 0, TAPE: 1, FILTER: 2, STUTTER: 3 };
+  const TREM_STEPS = [1, 2, 4, 8, 3, 6];   // per beat: 1/4, 1/8, 1/16, 1/32, 1/8 triplets, 1/16 triplets
+  const TREM_SHAPE = { SINE: 0, SQUARE: 1, RAMP: 2, PAN: 3 };
   const TAU = Math.PI * 2;
 
   // xorshift32, identical in C++, so both versions make the same reverb
@@ -133,11 +136,14 @@ function LiftoffDSP(G) {
     mode: 0, phrase: 2, length: 3, build: 0, curve: 0.35,
     rise: 1, pitch: 7, filter: 0.6, wash: 0.5, stutter: 0.3, noise: 0.35, width: 0.5,
     verb: 1, verbMode: 0, verbLen: 2, verbSize: 0.5, verbTone: 0.6, verbMix: 0.6,
-    drop: 1, gap: 3, gapStyle: 0, impact: 0.4,
+    drop: 0, gap: 3, gapStyle: 0, impact: 0.4,
+    trem: 1, tremRate: 1, tremDepth: 0.35, tremShape: 0,
+    chorus: 1, chorusRate: 0.8, chorusDepth: 0.5, chorusMix: 0.4,
     mix: 1, output: 0
   };
   // continuous parameters glide (about 20 ms) so automation and knob moves never click
-  const SMOOTHED = ['build', 'curve', 'pitch', 'filter', 'wash', 'stutter', 'noise', 'width', 'verbMix', 'impact', 'mix', 'output'];
+  const SMOOTHED = ['build', 'curve', 'pitch', 'filter', 'wash', 'stutter', 'noise', 'width', 'verbMix', 'impact', 'mix', 'output',
+                    'tremDepth', 'chorusRate', 'chorusDepth', 'chorusMix'];
 
   function pow2(n) { let p = 1; while (p < n) p <<= 1; return p; }
 
@@ -155,6 +161,9 @@ function LiftoffDSP(G) {
       this.hN = pow2(Math.ceil(sr * 3.2)); this.hL = new Float32Array(this.hN); this.hR = new Float32Array(this.hN); this.hW = 0;
       this.hpL = new SVF(); this.hpR = new SVF(); this.lpL = new SVF(); this.lpR = new SVF(); this.nL = new SVF(); this.nR = new SVF();
       this.wash = new Wash(sr);
+      // chorus: two modulated taps per channel; tremolo: smoothing for the square and ramp shapes
+      this.chN = pow2(Math.ceil(0.05 * sr)); this.chL = new Float32Array(this.chN); this.chR = new Float32Array(this.chN); this.chW = 0; this.chPh = 0;
+      this.tremSm = 1;
       this.noise = rng(0xa11ce);
       this.gate = 1;
       this.gateA = 1 - Math.exp(-1 / (0.0015 * sr));
@@ -309,6 +318,17 @@ function LiftoffDSP(G) {
           this.gapT++;
         }
 
+        // ---------- chorus ----------
+        const cw = this.chW, cm = this.chN - 1; this.chL[cw] = sL; this.chR[cw] = sR; this.chW = (cw + 1) & cm;
+        if (P.chorus) {
+          let cp = this.chPh + S.chorusRate / sr; cp -= Math.floor(cp); this.chPh = cp;
+          const base = 0.012 * sr, dep = 0.006 * sr * S.chorusDepth;
+          const tap = (buf, ph) => { const r = cw - (base + dep * Math.sin(TAU * ph)), i = Math.floor(r), f = r - i, a = buf[i & cm]; return a + (buf[(i + 1) & cm] - a) * f; };
+          const wL = 0.5 * (tap(this.chL, cp) + tap(this.chL, cp + 0.5)), wR = 0.5 * (tap(this.chR, cp + 0.25) + tap(this.chR, cp + 0.75));
+          const m = S.chorusMix;
+          sL = sL * (1 - 0.5 * m) + wL * m; sR = sR * (1 - 0.5 * m) + wR * m;
+        }
+
         // ---------- impact on the drop ----------
         let imp = 0, crack = 0;
         if (this.impT >= 0) {
@@ -338,6 +358,17 @@ function LiftoffDSP(G) {
         const duck = 1 - 0.6 * wAmt * p;
         let oL = sL * duck + this.wash.oL + nzL + impMono;
         let oR = sR * duck + this.wash.oR + nzR + impMono;
+
+        // ---------- tremolo, on the beat grid ----------
+        if (P.trem) {
+          const steps = TREM_STEPS[P.tremRate], ph = beat * steps - Math.floor(beat * steps), d = S.tremDepth;
+          let lL, lR;
+          if (P.tremShape === TREM_SHAPE.SQUARE) { this.tremSm += ((ph < 0.5 ? 1 : 0) - this.tremSm) * this.gateA; lL = lR = this.tremSm; }
+          else if (P.tremShape === TREM_SHAPE.RAMP) { this.tremSm += ((1 - ph) - this.tremSm) * this.gateA; lL = lR = this.tremSm; }
+          else if (P.tremShape === TREM_SHAPE.PAN) { lL = 0.5 + 0.5 * Math.cos(TAU * ph); lR = 0.5 - 0.5 * Math.cos(TAU * ph); }
+          else lL = lR = 0.5 + 0.5 * Math.cos(TAU * ph);
+          oL *= 1 - d * (1 - lL); oR *= 1 - d * (1 - lR);
+        }
 
         // ---------- width ----------
         if (rise && S.width > 0 && p > 0) {
@@ -373,6 +404,6 @@ function LiftoffDSP(G) {
     }
   }
 
-  G.Liftoff = { Core, makeReverseIR, autoTimeline, shape, rng, DEFAULTS, PHRASE_BARS, LENGTH_BARS, VERB_BEATS, GAP_BEATS, MODE, VERB_MODE, GAP_STYLE };
+  G.Liftoff = { Core, makeReverseIR, autoTimeline, shape, rng, DEFAULTS, PHRASE_BARS, LENGTH_BARS, VERB_BEATS, GAP_BEATS, MODE, VERB_MODE, GAP_STYLE, TREM_STEPS, TREM_SHAPE };
 }
 LiftoffDSP(typeof globalThis !== 'undefined' ? globalThis : this);

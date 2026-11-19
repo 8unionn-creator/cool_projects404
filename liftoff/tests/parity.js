@@ -12,12 +12,13 @@ const cpp = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
 
 const SR = 48000, bpm = 128, spb = 60 / bpm * SR, block = 256, N = 9 * SR;
 const scenarios = [
-  {},
-  { gapStyle: 1, verbMode: 1, stutter: 1, pitch: 12 },
-  { gapStyle: 2, verbMode: 2, curve: -0.5, width: 1 },
-  { gapStyle: 3, gap: 4, impact: 1, noise: 1, output: -6, mix: 0.7 }
+  { drop: 1 },
+  { drop: 1, gapStyle: 1, verbMode: 1, stutter: 1, pitch: 12, tremShape: 1, tremRate: 4 },
+  { drop: 1, gapStyle: 2, verbMode: 2, curve: -0.5, width: 1, tremShape: 3, chorusDepth: 1, chorusRate: 3 },
+  { drop: 1, gapStyle: 3, gap: 4, impact: 1, noise: 1, output: -6, mix: 0.7, tremShape: 2, tremRate: 5, chorus: 0 }
 ];
-const names = ['cut, drop swell', 'tape, build swells, stutter, octave', 'filter, swells always, early curve, wide', 'stutter gap, impact, noise, -6 dB, 70% mix'];
+const names = ['defaults: chorus, sine tremolo, end swell', 'square 1/8T tremolo, build swells, stutter, octave', 'auto-pan tremolo, deep fast chorus, swells always, wide',
+  'ramp 1/16T tremolo, no chorus, impact, noise, -6 dB, 70% mix'];
 let off = 0, failed = 0;
 console.log('C++ core vs dsp.js');
 scenarios.forEach((sc, s) => {

@@ -20,6 +20,9 @@ bool Params::set (const juce::String& id, double v)
     else if (id == "verbSize") verbSize = v; else if (id == "verbTone") verbTone = v; else if (id == "verbMix") verbMix = v;
     else if (id == "drop") drop = i != 0; else if (id == "gap") gap = i; else if (id == "gapStyle") gapStyle = i;
     else if (id == "impact") impact = v; else if (id == "mix") mix = v; else if (id == "output") output = v;
+    else if (id == "trem") trem = i != 0; else if (id == "tremRate") tremRate = i; else if (id == "tremDepth") tremDepth = v;
+    else if (id == "tremShape") tremShape = i; else if (id == "chorus") chorus = i != 0; else if (id == "chorusRate") chorusRate = v;
+    else if (id == "chorusDepth") chorusDepth = v; else if (id == "chorusMix") chorusMix = v;
     else return false;
     return true;
 }
@@ -143,7 +146,9 @@ double Core::target (int k) const
         case sBuild: return P.build;   case sCurve: return P.curve;     case sPitch: return P.pitch;
         case sFilter: return P.filter; case sWash: return P.wash;       case sStutter: return P.stutter;
         case sNoise: return P.noise;   case sWidth: return P.width;     case sVerbMix: return P.verbMix;
-        case sImpact: return P.impact; case sMix: return P.mix;         default: return std::pow (10.0, P.output / 20);
+        case sImpact: return P.impact; case sMix: return P.mix;         case sOutput: return std::pow (10.0, P.output / 20);
+        case sTremDepth: return P.tremDepth; case sChorusRate: return P.chorusRate; case sChorusDepth: return P.chorusDepth;
+        default: return P.chorusMix;
     }
 }
 
@@ -159,6 +164,7 @@ void Core::prepare (double sampleRate)
     hN = pow2 ((int) std::ceil (sr * 3.2)); hL.assign ((size_t) hN, 0.0f); hR.assign ((size_t) hN, 0.0f); hW = 0;
     hpL = hpR = lpL = lpR = nL = nR = SVF();
     wash.prepare (sr);
+    chN = pow2 ((int) std::ceil (0.05 * sr)); chL.assign ((size_t) chN, 0.0f); chR.assign ((size_t) chN, 0.0f); chW = 0; chPh = 0; tremSm = 1;
     noise = Rng (0xa11ce);
     gate = 1; gapEnv = 0;
     gateA = 1 - std::exp (-1 / (0.0015 * sr));
@@ -330,6 +336,25 @@ void Core::process (const float* inL, const float* inR, float* outL, float* outR
             gapT += 1;
         }
 
+        // ---------- chorus ----------
+        const int cw = chW, cm = chN - 1;
+        chL[(size_t) cw] = (float) sL; chR[(size_t) cw] = (float) sR; chW = (cw + 1) & cm;
+        if (P.chorus)
+        {
+            double cp = chPh + S[sChorusRate] / sr; cp -= std::floor (cp); chPh = cp;
+            const double base = 0.012 * sr, dep = 0.006 * sr * S[sChorusDepth];
+            auto tap = [&] (const std::vector<float>& buf, double ph)
+            {
+                const double r = cw - (base + dep * std::sin (TAU * ph));
+                const long long ix = (long long) std::floor (r);
+                const double f = r - (double) ix, a = buf[(size_t) (ix & cm)];
+                return a + (buf[(size_t) ((ix + 1) & cm)] - a) * f;
+            };
+            const double wL = 0.5 * (tap (chL, cp) + tap (chL, cp + 0.5)), wR = 0.5 * (tap (chR, cp + 0.25) + tap (chR, cp + 0.75));
+            const double cmix = S[sChorusMix];
+            sL = sL * (1 - 0.5 * cmix) + wL * cmix; sR = sR * (1 - 0.5 * cmix) + wR * cmix;
+        }
+
         // ---------- impact on the drop ----------
         double imp = 0, crack = 0;
         if (impT >= 0)
@@ -361,6 +386,18 @@ void Core::process (const float* inL, const float* inR, float* outL, float* outR
         const double duck = 1 - 0.6 * wAmt * p;
         double oL = sL * duck + wash.oL + nzL + impMono;
         double oR = sR * duck + wash.oR + nzR + impMono;
+
+        // ---------- tremolo, on the beat grid ----------
+        if (P.trem)
+        {
+            const double steps = tremStepsTable[juce::jlimit (0, 5, P.tremRate)], ph = beat * steps - std::floor (beat * steps), d = S[sTremDepth];
+            double lL, lR;
+            if (P.tremShape == tremSquare) { tremSm += ((ph < 0.5 ? 1.0 : 0.0) - tremSm) * gateA; lL = lR = tremSm; }
+            else if (P.tremShape == tremRamp) { tremSm += ((1 - ph) - tremSm) * gateA; lL = lR = tremSm; }
+            else if (P.tremShape == tremPan) { lL = 0.5 + 0.5 * std::cos (TAU * ph); lR = 0.5 - 0.5 * std::cos (TAU * ph); }
+            else lL = lR = 0.5 + 0.5 * std::cos (TAU * ph);
+            oL *= 1 - d * (1 - lL); oR *= 1 - d * (1 - lR);
+        }
 
         // ---------- width ----------
         if (rise && S[sWidth] > 0 && p > 0)

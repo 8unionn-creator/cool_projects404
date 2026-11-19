@@ -10,7 +10,7 @@ function check(name, ok, detail) {
   if (ok) { passed++; console.log(`  ok   ${name}`); }
   else { failed++; console.log(`  FAIL ${name}${detail ? ' — ' + detail : ''}`); }
 }
-const OFF = { rise: 0, verb: 0, drop: 0, mix: 1, output: 0 };
+const OFF = { rise: 0, verb: 0, drop: 0, trem: 0, chorus: 0, mix: 1, output: 0 };
 
 // runs the core over an input, as a host would, and returns everything it produced
 function run(params, seconds, input, opts = {}) {
@@ -143,12 +143,32 @@ console.log('Liftoff core');
   check('MANUAL: pulling BUILD down drops', o.drops.length === 1 && o.drops[0] > 2 * SR && o.drops[0] < 2.1 * SR, `drops at ${o.drops}`);
 }
 
+
+{ // tremolo: a square 1/8 at full depth chops a steady tone on the beat grid
+  const o = run({ ...OFF, trem: 1, tremRate: 1, tremDepth: 1, tremShape: 1 }, 2, () => 0.5);
+  const e = beat(1 / 2);
+  const on = rms(o.L, e * 2 + 100, e * 2 + e / 2 - 100), off = rms(o.L, e * 2 + e / 2 + 150, e * 3 - 10);
+  check('TREMOLO square 1/8: on, then off, on the grid', db(on) > -7 && db(off) < -30, `on ${db(on).toFixed(1)} dB, off ${db(off).toFixed(1)} dB`);
+  const p2 = run({ ...OFF, trem: 1, tremRate: 1, tremDepth: 1, tremShape: 3 }, 1, () => 0.5);
+  const i = beat(1 / 4) + 7;   // a quarter of the way through an 1/8: L down, R up
+  check('TREMOLO pan: left and right move in opposite directions', Math.abs(p2.L[i] + p2.R[i] - 0.5) < 0.02 && Math.abs(p2.L[i] - p2.R[i]) > 0.2, `L ${p2.L[i].toFixed(3)} R ${p2.R[i].toFixed(3)}`);
+}
+
+{ // chorus: thickens the sound without changing its level, and stays finite
+  const o = run({ ...OFF, chorus: 1, chorusRate: 1.5, chorusDepth: 1, chorusMix: 0.6 }, 2, sine(440));
+  const dry = run(OFF, 2, sine(440));
+  let diff = 0; for (let i = SR; i < 2 * SR; i++) diff = Math.max(diff, Math.abs(o.L[i] - dry.L[i]));
+  const lv = db(rms(o.L, SR, 2 * SR)) - db(rms(dry.L, SR, 2 * SR));
+  check('CHORUS: changes the sound, keeps the level (±4 dB)', diff > 0.05 && Math.abs(lv) < 4, `max change ${diff.toFixed(3)}, level ${lv.toFixed(1)} dB`);
+}
+
 { // stress: random settings never blow up
   let worst = 0, bad = false;
   const r = globalThis.Liftoff.rng(7);
   for (let k = 0; k < 12; k++) {
     const P = { mode: k % 3, phrase: k % 4, length: k % 5, build: (r() + 1) / 2, curve: r(), rise: 1, pitch: 24 * (r() + 1) / 2, filter: (r() + 1) / 2,
-      wash: 1, stutter: (r() + 1) / 2, noise: 1, width: 1, verb: 1, verbMode: k % 3, verbLen: k % 4, verbMix: 1, drop: 1, gap: k % 5, gapStyle: k % 4, impact: 1, mix: 1, output: 0 };
+      wash: 1, stutter: (r() + 1) / 2, noise: 1, width: 1, verb: 1, verbMode: k % 3, verbLen: k % 4, verbMix: 1, drop: 1, gap: k % 5, gapStyle: k % 4, impact: 1,
+      trem: 1, tremRate: k % 6, tremDepth: 1, tremShape: k % 4, chorus: 1, chorusRate: 5, chorusDepth: 1, chorusMix: 1, mix: 1, output: 0 };
     const o = run(P, 9, i => [r() * 0.5, r() * 0.5], { onBlock: (c, i) => { if (k % 3 === 2 && i % beat(16) < BLOCK) c.trigger(); } });
     for (let i = 0; i < o.L.length; i++) { const v = o.L[i]; if (!Number.isFinite(v)) bad = true; worst = Math.max(worst, Math.abs(v)); }
   }

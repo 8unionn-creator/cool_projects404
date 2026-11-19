@@ -15,6 +15,8 @@ public:
 private:
     LiftoffProcessor& proc;
     bool dragging = false;
+    const void* thumbFor = nullptr;   // the render the thumbnail was made from
+    std::vector<float> thumb;
 };
 
 // The plugin window is the web page (the same files as the browser version) in a web view.
@@ -36,7 +38,7 @@ private:
     void choose (const juce::String& title, const juce::File& start, const juce::String& pattern, int browseFlags, std::function<void (const juce::File&)> then);
     juce::var loadSample (const juce::File&);   // decoded, as the page's PCM object
 
-    static constexpr int stripHeight = 34;
+    static constexpr int stripHeight = 64;
     LiftoffProcessor& proc;
     std::map<juce::String, float> sent;   // the values the page has, so only host changes are sent back
     std::unique_ptr<juce::FileChooser> chooser;

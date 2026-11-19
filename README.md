@@ -9,7 +9,7 @@ Things I build to sharpen my skills and make my own work easier.
 | [💿 Spin Room](spin-room/) | A record player and CD player that spin to your beats, made to screen-record for TikTok | HTML, CSS, JS, Web Audio |
 | [🎛️ Stencil](stencil/) | Arrangement stencils for Logic Pro and FL Studio: 20 MIDI song structures for trap, R&B, Afrobeats and rap, with visual maps. A drag-and-drop plugin is planned | MIDI, Python, JUCE (planned) |
 | [🥁 Groove Rack](groove-rack/) | A drum and bass groove maker: channel rack, a piano roll on every channel with a chord lane, your own samples, MIDI in and out, 15 genre starters from Afrobeats and Amapiano to trap, drill and pop. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, C++, JUCE |
-| [🛫 Liftoff](liftoff/) | Load or record a sample and it becomes a transition: your sound turns into the riser (a one-shot into a roll), the last beat cuts or tape-stops, and a reverse reverb made from the drop's own first hit lands exactly on it. Preview, export, or drag the WAV into your DAW. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, AudioWorklet, C++, JUCE |
+| [🛫 Liftoff](liftoff/) | Record or load a sample, cut the part you want, and it becomes a riser: pitch, filter, stutter, wash, noise, a chorus, a tremolo on your grid, and a reverse swell landing on the end. Preview it, then drag it into your DAW. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, AudioWorklet, C++, JUCE |
 
 ## ⏪ Rewind — [`rewind/`](rewind/)
 
@@ -105,14 +105,15 @@ A groove maker for drums and bass, built as the **GR-16**: a hardware-style mach
 
 ![liftoff CI](https://github.com/8unionn-creator/cool_projects404/actions/workflows/liftoff.yml/badge.svg)
 
-Load a sample or record one, and Liftoff turns it into a transition: the riser, the cut, the reverse swell and the drop, ready to drag into your session.
+Record or load a sample, cut the part you want, and Liftoff turns it into a riser you can drag straight into your session.
 
 - **Get a sample:** press REC (the browser records your mic; the plugin records the audio coming down its own track), load a file, drop one anywhere, or try a demo. Recordings are trimmed to the sound
-- **Rise:** your own sound becomes the riser. It pitches up (to +24 semitones), a resonant high-pass sweeps up, a gate speeds up from 1/4 to 1/32 notes, it washes into reverb and widens, and a white-noise riser sweeps along underneath. A one-shot (a snare, a chop) becomes a roll that speeds up into the drop
-- **Backverb:** a reverse reverb that ends exactly on the sound it came from. In DROP mode it swells from the drop's own first hit, out of the silence before it
-- **Drop:** the last 1/16 to 1/2 note cuts, tape-stops, filter-dives or stutters, and a sub boom with a crack hits on the one
-- **The screen:** the transition's real waveform, coloured by build, gap, swell and drop, with the dry sample ghosted behind it. A playhead sweeps across with a T-minus countdown; click anywhere to play from there
-- **Out:** PREVIEW (through your DAW in the plugin), EXPORT WAV (24-bit), or drag the WAV from the plugin into a track. 10 presets. The plugin also has a LIVE mode that builds into every drop as an insert effect, on your DAW's bars
+- **Cut it:** the SOURCE lane shows your whole sample. Drag across it to choose the part to use, fine-tune the edges, and play just that part
+- **Rise:** your sound pitches up (to +24 semitones), a resonant high-pass sweeps up, a gate speeds up from 1/4 to 1/32 notes, it washes into reverb and widens, with a white-noise riser underneath. A one-shot (a snare, a chop) becomes a roll
+- **Tremolo and chorus:** a tremolo locked to your grid (1/4 to 1/32 notes and triplets; sine, square, ramp or auto-pan) and a wide stereo chorus
+- **Backverb:** a reverse reverb that lands on time. In END mode it swells from your sound's first hit into the end of the riser, right where your drop goes
+- **The screen:** the riser's real waveform, warming from dark to bright gold, with the END line, the swell, a playhead and a LIFTOFF IN T-minus countdown; click anywhere to play from there
+- **Out:** PREVIEW (through your DAW in the plugin), then drag the clip from the plugin's strip onto a track, drag it out of the browser, or EXPORT WAV (24-bit). 10 presets. The plugin also has a LIVE mode that builds into every drop as an insert effect
 
 **In the browser:** open `liftoff/index.html`. **As a plugin:** download the installer from the [releases](https://github.com/8unionn-creator/cool_projects404/releases). [Read more →](liftoff/README.md)
 

@@ -104,7 +104,8 @@ void LiftoffProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 // rebuild it off the audio thread when the length, size, tone or tempo change
 void LiftoffProcessor::timerCallback()
 {
-    retired.reset();   // a render the audio thread has let go of
+    // free renders the audio thread has let go of (one timer tick after they were replaced)
+    if (retired.size() > 2) retired.erase (retired.begin(), retired.end() - 2);
     // SAMPLE mode adds no latency; LIVE mode is late by the backverb length
     const int wantLatency = sampleView ? 0 : engine.irLatency.load();
     if (getLatencySamples() != wantLatency)
@@ -147,14 +148,36 @@ AudioBuffer<float> LiftoffProcessor::stopRecording()
 
 void LiftoffProcessor::setRender (std::shared_ptr<Render> r)
 {
-    retired = std::atomic_load (&render);
-    std::atomic_store (&render, std::move (r));
+    retired.push_back (std::atomic_load (&render));
+    std::atomic_store (&render, r);
+    if (previewing && ! auditioning)   // a new render while it plays: keep playing, from the same place
+    {
+        retired.push_back (std::atomic_load (&playBuf));
+        std::atomic_store (&playBuf, r);
+    }
 }
 
 void LiftoffProcessor::preview (bool on, int64 fromSample)
 {
+    previewing = false;
+    auditioning = false;
+    if (on)
+    {
+        retired.push_back (std::atomic_load (&playBuf));
+        std::atomic_store (&playBuf, std::atomic_load (&render));
+    }
     previewPos = jmax ((int64) 0, fromSample);
     previewing = on && currentRender() != nullptr;
+}
+
+void LiftoffProcessor::audition (std::shared_ptr<Render> part)
+{
+    previewing = false;
+    retired.push_back (std::atomic_load (&playBuf));
+    std::atomic_store (&playBuf, std::move (part));
+    previewPos = 0;
+    auditioning = true;
+    previewing = true;
 }
 
 bool LiftoffProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -200,14 +223,14 @@ void LiftoffProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& mid
             if (room <= n) recording = false;   // full: 60 s
         }
         if (previewing)
-            if (auto r = currentRender())
+            if (auto r = std::atomic_load (&playBuf))
             {
                 const int64 pos = previewPos.load(), len = r->audio.getNumSamples();
                 const int k = (int) jlimit ((int64) 0, (int64) n, len - pos);
                 for (int c = 0; c < chans && k > 0; ++c)
                     buffer.addFrom (c, 0, r->audio, jmin (c, r->audio.getNumChannels() - 1), (int) pos, k);
                 previewPos = pos + n;
-                if (pos + n >= len) previewing = false;
+                if (pos + n >= len) { previewing = false; auditioning = false; }
             }
         float peakOut = 0.0f;
         for (int c = 0; c < chans; ++c)

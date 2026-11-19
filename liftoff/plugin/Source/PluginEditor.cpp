@@ -61,34 +61,62 @@ void WavDragStrip::paint (Graphics& g)
     g.fillAll (bg);
     g.setColour (Colours::white.withAlpha (0.06f));
     g.fillRect (0, 0, getWidth(), 1);
-    const bool ready = proc.currentRender() != nullptr;
-    Path outline;
-    outline.addRoundedRectangle (getLocalBounds().toFloat().reduced (6.0f, 5.0f), 7.0f);
-    Path dashed;
+    auto r = proc.currentRender();
+    auto tile = getLocalBounds().toFloat().reduced (10.0f, 8.0f);
+    g.setColour (gold.withAlpha (r != nullptr ? 0.10f : 0.04f));
+    g.fillRoundedRectangle (tile, 8.0f);
+    Path outline, dashed;
+    outline.addRoundedRectangle (tile, 8.0f);
     const float dashes[] = { 5.0f, 4.0f };
     PathStrokeType (1.5f).createDashedStroke (dashed, outline, dashes, 2);
-    g.setColour (gold.withAlpha (ready ? 0.55f : 0.2f));
+    g.setColour (gold.withAlpha (r != nullptr ? 0.7f : 0.25f));
     g.fillPath (dashed);
-    auto r = getLocalBounds().reduced (16, 0);
-    Path wave;   // a little waveform icon
-    const float cy = (float) getHeight() * 0.5f, x = (float) r.getX();
-    for (int i = 0; i < 7; ++i)
-    {
-        const float h = (float) (2 + (i * 5) % 9);
-        wave.addRoundedRectangle (x + (float) i * 3.0f, cy - h * 0.5f, 1.8f, h, 0.9f);
-    }
-    g.setColour (gold.withAlpha (ready ? 1.0f : 0.35f));
-    g.fillPath (wave);
-    g.setColour (ready ? cream : muted);
-    g.setFont (FontOptions (13.0f, Font::bold));
-    g.drawText (ready ? "DRAG the transition into your DAW" : "the transition appears here: load or record a sample",
-                r.withTrimmedLeft (30), Justification::centredLeft);
-    if (ready)
+    auto inner = tile.reduced (14.0f, 8.0f);
+
+    if (r == nullptr)
     {
         g.setColour (muted);
-        g.setFont (FontOptions (12.5f));
-        g.drawText ("24-bit WAV, at your session's sample rate", r, Justification::centredRight);
+        g.setFont (FontOptions (13.0f));
+        g.drawText ("your riser appears here, ready to drag into your DAW: load or record a sample", inner, Justification::centred);
+        return;
     }
+    // a grip, then the riser as a clip
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 2; ++j)
+            g.fillEllipse (inner.getX() + (float) j * 5.0f, inner.getCentreY() - 8.0f + (float) i * 7.0f, 2.6f, 2.6f);
+    auto clip = inner.withTrimmedLeft (18.0f).withWidth (jmin (inner.getWidth() * 0.5f, 520.0f));
+    if (thumbFor != r.get())   // the waveform, once per render
+    {
+        thumbFor = r.get();
+        const int cols = 220, n = r->audio.getNumSamples();
+        thumb.assign ((size_t) cols, 0.0f);
+        float mx = 0.001f;
+        for (int c = 0; c < cols; ++c)
+        {
+            const int s0 = (int) ((int64) c * n / cols), s1 = (int) ((int64) (c + 1) * n / cols);
+            float m = 0.0f;
+            for (int ch = 0; ch < r->audio.getNumChannels(); ++ch)
+                m = jmax (m, r->audio.getMagnitude (ch, s0, jmax (1, s1 - s0)));
+            thumb[(size_t) c] = m; mx = jmax (mx, m);
+        }
+        for (auto& v : thumb) v /= mx;
+    }
+    g.setColour (Colours::black.withAlpha (0.35f));
+    g.fillRoundedRectangle (clip, 5.0f);
+    const float cw = clip.getWidth() / (float) thumb.size(), mid = clip.getCentreY(), half = clip.getHeight() * 0.42f;
+    for (size_t c = 0; c < thumb.size(); ++c)
+    {
+        const float h = jmax (1.0f, thumb[c] * half);
+        g.setColour (gold.withAlpha (0.45f + 0.55f * (float) c / (float) thumb.size()));
+        g.fillRect (clip.getX() + (float) c * cw, mid - h, jmax (1.0f, cw - 0.5f), h * 2.0f);
+    }
+    auto text = inner.withTrimmedLeft (clip.getRight() - inner.getX() + 16.0f);
+    g.setColour (cream);
+    g.setFont (FontOptions (14.0f, Font::bold));
+    g.drawText ("DRAG into your DAW", text.removeFromTop (text.getHeight() * 0.55f), Justification::bottomLeft);
+    g.setColour (muted);
+    g.setFont (FontOptions (12.0f));
+    g.drawText (r->name + "  ·  " + String ((double) r->audio.getNumSamples() / r->sampleRate, 2) + " s  ·  24-bit WAV", text, Justification::topLeft);
 }
 
 void WavDragStrip::mouseDrag (const MouseEvent& e)
@@ -302,6 +330,22 @@ WebBrowserComponent::Options LiftoffEditor::makeOptions()
             proc.preview (a.size() > 0 && (bool) a[0], a.size() > 1 ? (int64) (double) a[1] : 0);
             done (var());
         })
+        .withNativeFunction ("audition", [this] (const Array<var>& a, Completion done)
+        {
+            // the part of the sample you chose, played once through the plugin's output
+            if (a.size() < 2) { done (var()); return; }
+            const auto bytes = fromBase64 (a[0].toString());
+            const int n = (int) (bytes.getSize() / 4);
+            auto r = std::make_shared<LiftoffProcessor::Render>();
+            r->sampleRate = (double) a[1];
+            r->audio.setSize (2, n);
+            const auto* pcm = static_cast<const int16*> (bytes.getData());
+            for (int i = 0; i < n; ++i)
+                for (int c = 0; c < 2; ++c)
+                    r->audio.setSample (c, i, (float) pcm[i * 2 + c] / 32767.0f);
+            proc.audition (r);
+            done (var());
+        })
         .withNativeFunction ("saveRender", [this] (const Array<var>&, Completion done)
         {
             auto r = proc.currentRender();
@@ -346,7 +390,7 @@ void LiftoffEditor::timerCallback()
         { "playing", u.hostPlaying.load() }, { "hostPlaying", u.hostPlaying.load() }, { "drops", u.drops.load() },
         { "peakIn", u.peakIn.exchange (0.0f) }, { "peakOut", u.peakOut.exchange (0.0f) },
         { "bpm", u.bpm.load() }, { "bpb", u.bpb.load() }, { "latency", proc.getLatencySamples() }, { "sr", sr },
-        { "previewing", proc.previewing.load() },
+        { "previewing", proc.previewing.load() && ! proc.auditioning.load() },
         { "previewPos", r != nullptr ? (double) proc.previewPos.load() / r->sampleRate : 0.0 },
         { "recording", proc.recording.load() }, { "recSeconds", (double) proc.recPos.load() / sr },
         { "recLevel", proc.recLevel.exchange (0.0f) } }));

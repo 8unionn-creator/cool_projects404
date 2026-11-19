@@ -15,6 +15,8 @@ static constexpr double gapBeatsTable[] = { 0, 0.25, 0.5, 1, 2 };
 enum Mode { autoMode = 0, manualMode = 1, triggerMode = 2 };
 enum VerbMode { verbDrop = 0, verbBuild = 1, verbAlways = 2 };
 enum GapStyle { gapCut = 0, gapTape = 1, gapFilter = 2, gapStutter = 3 };
+static constexpr double tremStepsTable[] = { 1, 2, 4, 8, 3, 6 };
+enum TremShape { tremSine = 0, tremSquare = 1, tremRamp = 2, tremPan = 3 };
 
 struct Params
 {
@@ -25,9 +27,15 @@ struct Params
     bool verb = true;
     int verbMode = 0, verbLen = 2;
     double verbSize = 0.5, verbTone = 0.6, verbMix = 0.6;
-    bool drop = true;
+    bool drop = false;
     int gap = 3, gapStyle = 0;
-    double impact = 0.4, mix = 1, output = 0;
+    double impact = 0.4;
+    bool trem = true;
+    int tremRate = 1, tremShape = 0;
+    double tremDepth = 0.35;
+    bool chorus = true;
+    double chorusRate = 0.8, chorusDepth = 0.5, chorusMix = 0.4;
+    double mix = 1, output = 0;
 
     bool set (const juce::String& id, double v);   // by the ids in params.js
 };
@@ -93,8 +101,9 @@ public:
     UI ui;
 
 private:
-    static constexpr int numSmoothed = 12;
-    enum { sBuild, sCurve, sPitch, sFilter, sWash, sStutter, sNoise, sWidth, sVerbMix, sImpact, sMix, sOutput };
+    static constexpr int numSmoothed = 16;
+    enum { sBuild, sCurve, sPitch, sFilter, sWash, sStutter, sNoise, sWidth, sVerbMix, sImpact, sMix, sOutput,
+           sTremDepth, sChorusRate, sChorusDepth, sChorusMix };
     double target (int k) const;
     void dropNow();
     double readHist (const std::vector<float>& buf, double pos) const;
@@ -102,7 +111,9 @@ private:
     double sr = 48000, smoothA = 0, gateA = 0, cutA = 0;
     std::array<double, numSmoothed> S {};
     int W = 2400, psN = 4096, psW = 0, hN = 1 << 18;
-    std::vector<float> psL, psR, hL, hR;
+    std::vector<float> psL, psR, hL, hR, chL, chR;
+    int chN = 2048, chW = 0;
+    double chPh = 0, tremSm = 1;
     long long hW = 0;
     double phase = 0, gate = 1, gapEnv = 0;
     SVF hpL, hpR, lpL, lpR, nL, nR;

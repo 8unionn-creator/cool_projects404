@@ -59,8 +59,9 @@ public:
     struct Render { juce::AudioBuffer<float> audio; double sampleRate = 48000; juce::String name; };
     void setRender (std::shared_ptr<Render>);     // message thread
     std::shared_ptr<Render> currentRender() const { return std::atomic_load (&render); }
-    void preview (bool on, juce::int64 fromSample);
-    std::atomic<bool> previewing { false };
+    void preview (bool on, juce::int64 fromSample);   // play the render
+    void audition (std::shared_ptr<Render>);          // play the part of the sample you chose, once
+    std::atomic<bool> previewing { false }, auditioning { false };
     std::atomic<juce::int64> previewPos { 0 };
 
     juce::AudioFormatManager formats;
@@ -79,7 +80,8 @@ private:
 
     std::vector<std::atomic<float>*> raw;
     juce::AudioBuffer<float> recBuffer;           // 60 s, allocated in prepareToPlay
-    std::shared_ptr<Render> render, retired;      // retired: the previous render, freed later on the message thread
+    std::shared_ptr<Render> render, playBuf;      // the latest render; what is playing (the render or the part)
+    std::vector<std::shared_ptr<Render>> retired; // let go of by the audio thread, freed later on the message thread
     std::atomic<double> lastBpm { 120 };
     juce::String irKey;
 
