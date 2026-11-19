@@ -188,25 +188,73 @@ function drumBars(P, tr, g, cx, bars) {
   return { res, out };
 }
 
+/* ---------- chords: one per bar, they steer the bass ---------- */
+const FLATS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const QUALITY = { '': [4, 7, 11], m: [3, 7, 10], dim: [3, 6, 9], '7': [4, 7, 10], m7: [3, 7, 10], maj7: [4, 7, 11], m7b5: [3, 6, 10], sus2: [2, 7, 10], sus4: [5, 7, 10] };
+GR.chordName = c => (c ? FLATS[((c.r % 12) + 12) % 12] + (c.q === 'dim' ? '°' : c.q === 'm7b5' ? 'ø' : c.q) : '');
+// semitones above the root for the bass degrees: 0 root, 2 third, 4 fifth, 6 seventh, 7 octave
+function chordStep(q, d) { const iv = QUALITY[q] || QUALITY.m; return d === 0 ? 0 : d === 2 ? iv[0] : d === 4 ? iv[1] : d === 6 ? iv[2] : d === 7 ? 12 : 0; }
+const qualityAt = (P, pc) => {
+  const sc = GR.SCALES[P.scale], i = sc.indexOf(((pc - P.key) % 12 + 12) % 12);
+  if (i < 0 || sc.length < 7) return GR.SCALES[P.scale][2] === 3 ? 'm' : '';
+  const third = (sc[(i + 2) % 7] - sc[i] + 12) % 12, fifth = (sc[(i + 4) % 7] - sc[i] + 12) % 12;
+  return third === 3 ? (fifth === 6 ? 'dim' : 'm') : '';
+};
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+// the chords that belong to the key: triads and sevenths on each degree
+GR.diatonicChords = function (P) {
+  const sc = GR.SCALES[P.scale], out = [];
+  if (sc.length < 7) {
+    for (let r = 0; r < 12; r++) out.push({ r: (P.key + r) % 12, q: GR.SCALES[P.scale][1] === 3 || P.scale.startsWith('minor') ? 'm' : '', roman: '' });
+    return { triads: out, sevenths: [] };
+  }
+  const triads = [], sevenths = [];
+  for (let i = 0; i < 7; i++) {
+    const r = (P.key + sc[i]) % 12, third = (sc[(i + 2) % 7] - sc[i] + 12) % 12, fifth = (sc[(i + 4) % 7] - sc[i] + 12) % 12, sev = (sc[(i + 6) % 7] - sc[i] + 12) % 12;
+    const q = third === 3 ? (fifth === 6 ? 'dim' : 'm') : '';
+    const roman = third === 3 ? ROMAN[i].toLowerCase() + (q === 'dim' ? '°' : '') : ROMAN[i];
+    triads.push({ r, q, roman });
+    sevenths.push({ r, q: q === 'dim' ? 'm7b5' : q === 'm' ? 'm7' : sev === 11 ? 'maj7' : '7', roman: roman + '7' });
+  }
+  return { triads, sevenths };
+};
+// read the chords off the bass: the first bass note of each bar is its root
+GR.inferChords = function (P) {
+  const bass = P.tracks.filter(t => GR.INST[t.inst].pitched), out = [];
+  for (let b = 0; b < P.bars; b++) {
+    let first = null;
+    bass.forEach(t => t.notes.forEach(n => { if (n.t >= b * TPB && n.t < (b + 1) * TPB && (!first || n.t < first.t)) first = n; }));
+    out.push(first ? { r: ((first.p % 12) + 12) % 12, q: qualityAt(P, first.p) } : null);
+  }
+  return out;
+};
+
+// a bass degree over a chord: from the scale when the chord belongs to the key, so every note stays in key
+function chordPitch(P, rootMidi, chord, d) {
+  const sc = GR.SCALES[P.scale], i = sc.indexOf(((chord.r - P.key) % 12 + 12) % 12);
+  const dia = i >= 0 && sc.length >= 7 ? GR.diatonicChords(P) : null;
+  const inKey = dia && (dia.triads[i].q === chord.q || dia.sevenths[i].q === chord.q);
+  if (!inKey || d === 0 || d === 7) return rootMidi + chordStep(chord.q, d);
+  const j = i + d;
+  return rootMidi - sc[i] + sc[j % sc.length] + 12 * Math.floor(j / sc.length);
+}
+
 /* ---------- bass ---------- */
 function progression(P) {
   const minor = GR.SCALES[P.scale][2] === 3;
   return pick(minor ? [[0, 0, 5, 4], [0, 5, 3, 4], [0, 3, 4, 0], [0, 6, 5, 4], [0, 0, 3, 5]] : [[0, 4, 5, 3], [0, 3, 4, 0], [0, 5, 3, 4], [0, 3, 0, 4]]);
 }
-function bassRoot(P, tr) {
-  const lo = GR.INST[tr.inst].id === 'bass' ? 28 : 26;
-  let r = P.key; while (r < lo) r += 12; return r;
-}
-function degreeToPitch(P, root, chordDeg, d) {
-  const sc = GR.SCALES[P.scale], i = chordDeg + d;
-  return root + sc[((i % sc.length) + sc.length) % sc.length] + 12 * Math.floor(i / sc.length);
-}
 function bassNotes(P, tr, g, cx, bars, kickNotes) {
   const style = (tr.inst === 'logdrum' && g.bass.style !== 'follow') ? 'log' : g.bass.style;
-  const prog = progression(P), root = bassRoot(P, tr), stepT = TPB / 16, notes = [];
+  const prog = progression(P), stepT = TPB / 16, notes = [], sc = GR.SCALES[P.scale];
+  const lo = GR.INST[tr.inst].id === 'bass' ? 28 : 26;
+  if (!Array.isArray(P.chords)) P.chords = [];
   const rhythmA = style === 'follow' ? null : pick(BASS[style]), rhythmB = style === 'follow' ? null : pick(BASS[style]);
   bars.forEach(b => {
-    const chordDeg = prog[b % prog.length], b0 = b * TPB;
+    const b0 = b * TPB;
+    if (!P.chords[b]) { const deg = prog[b % prog.length], pc = (P.key + sc[deg % sc.length]) % 12; P.chords[b] = { r: pc, q: qualityAt(P, pc) }; }
+    const chord = P.chords[b];
+    let root = chord.r; while (root < lo) root += 12;
     let rhythm;
     if (style === 'follow') {
       let hits = kickNotes.filter(n => n.t >= b0 && n.t < b0 + TPB).map(n => Math.round((n.t - b0) / stepT));
@@ -221,7 +269,7 @@ function bassNotes(P, tr, g, cx, bars, kickNotes) {
     rhythm.forEach(([s, len, d], i) => {
       if (i > 0 && cx === 0 && d !== 0 && chance(0.5)) d = 0;
       else if (i > 0 && style !== 'follow' && chance(0.15 * cx)) d = pick([0, 4, 7, 6, 2]);   // a passing note, still in the key
-      const n = { t: b0 + s * stepT, len: len * stepT, p: degreeToPitch(P, root, chordDeg, d), vel: Math.round((i === 0 ? 0.9 : 0.8 + Math.random() * 0.1) * 100) / 100 };
+      const n = { t: b0 + s * stepT, len: len * stepT, p: chordPitch(P, root, chord, d), vel: Math.round((i === 0 ? 0.9 : 0.8 + Math.random() * 0.1) * 100) / 100 };
       if (g.bass.slide && i > 0 && GR.INST[tr.inst].mono && chance(g.bass.slide * (0.5 + cx * 0.4))) n.slide = true;
       notes.push(n);
     });

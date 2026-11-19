@@ -22,7 +22,7 @@ const server = http.createServer((req, res) => {
         const secs = inst.pitched ? 3.2 : 3;
         const ctx = new OfflineAudioContext(1, SR * secs, SR);
         const tr = { inst: inst.id, sound, pitch: 0, decay: 1 };
-        GR.voice(ctx, ctx.destination, 0, tr, { vel: 1, p: GR.KIT_ROOT, dur: inst.pitched ? 3.0 : 0.1, from: null });
+        GR.voice(ctx, ctx.destination, 0, tr, { vel: 1, p: inst.pitched ? GR.KIT_ROOT : 60, dur: inst.pitched ? 3.0 : 0.1, from: null });
         const d = (await ctx.startRendering()).getChannelData(0);
         let end = d.length; while (end > 1 && Math.abs(d[end - 1]) < 0.0003) end--;
         end = Math.min(d.length, end + Math.round(SR * 0.005));

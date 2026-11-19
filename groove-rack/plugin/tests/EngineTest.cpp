@@ -121,6 +121,30 @@ int main (int argc, char** argv)
         check (onLine && tickAfter >= 5 * 96 && tickAfter < 6 * 96, "playback moves to bar 6 exactly on the bar line (tick " + String (tickAfter, 1) + ")");
     }
 
+    // a drum hit moved up an octave in the piano roll plays twice as fast
+    {
+        auto hitLength = [&] (int p)
+        {
+            auto v = JSON::parse (json);
+            for (auto& tv : *v["tracks"].getArray()) tv.getDynamicObject()->setProperty ("notes", Array<var>());
+            auto* tr0 = v["tracks"][2].getDynamicObject();   // the snap, alone and dry
+            tr0->setProperty ("rev", 0.0); tr0->setProperty ("echo", 0.0);
+            Array<var> one; DynamicObject::Ptr n = new DynamicObject(); n->setProperty ("t", 0); n->setProperty ("vel", 1.0); n->setProperty ("p", p); one.add (var (n.get()));
+            tr0->setProperty ("notes", one);
+            gr::Engine e4; e4.prepare (sr, block); e4.setPattern (gr::parsePattern (JSON::toString (v), bank)); e4.internalPlay = true;
+            int64 last = 0;
+            for (int64 pos = 0; pos < (int64) (sr * 1.5); pos += block)
+            {
+                AudioBuffer<float> b (2, block); MidiBuffer midi; gr::Engine::Transport tp; tp.hasBpm = true; tp.bpm = 60.0;
+                e4.process (b, midi, tp);
+                for (int i = 0; i < block; ++i) if (std::abs (b.getSample (0, i)) > 0.002f) last = pos + i;
+            }
+            return (double) last;
+        };
+        const double ratio = hitLength (72) / jmax (1.0, hitLength (60));
+        check (ratio > 0.35 && ratio < 0.65, "a hit pitched up 12 rows plays an octave higher (length ratio " + String (ratio, 2) + ")");
+    }
+
     // MIDI in: a note on the kick's note plays it while the DAW is stopped
     {
         MidiBuffer midi; midi.addEvent (MidiMessage::noteOn (1, 36, (uint8) 110), 0);

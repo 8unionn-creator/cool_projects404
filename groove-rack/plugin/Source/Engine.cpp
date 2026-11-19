@@ -122,7 +122,7 @@ PatternPtr parsePattern (const String& json, SampleBank& bank)
                     note.t = num (n, "t", 0.0);
                     note.len = num (n, "len", (double) TPB / tr.res);
                     note.vel = (float) jlimit (0.0, 1.0, num (n, "vel", 0.9));
-                    note.p = (int) num (n, "p", 48.0);
+                    note.p = (int) num (n, "p", tr.pitched ? 48.0 : 60.0);   // drums: 60 = the sound as it is
                     note.roll = jlimit (1, 8, (int) num (n, "roll", 1.0));
                     note.slide = (bool) n["slide"];
                     tr.notes.push_back (note);
@@ -269,7 +269,7 @@ void Engine::startVoice (const Pattern& P, const Event& e, int fromPitch)
     v.age = ++voiceAge;
 
     const double base = s.sampleRate / sr;
-    const double target = base * std::pow (2.0, (tr.pitch + (tr.pitched ? e.p - tr.root : 0)) / 12.0);
+    const double target = base * std::pow (2.0, (tr.pitch + (tr.pitched ? e.p - tr.root : e.p - 60)) / 12.0);
     v.rate = target;
     if (fromPitch >= 0 && tr.pitched)
     {
@@ -505,7 +505,7 @@ void Engine::process (AudioBuffer<float>& out, MidiBuffer& midi, const Transport
             continue;
         Event e;
         e.at = jlimit (0, n - 1, meta.samplePosition);
-        e.track = target; e.p = note; e.live = true;
+        e.track = target; e.p = pitched ? note : 60; e.live = true;
         if (msg.isNoteOn()) { e.vel = jmax (0.03f, msg.getFloatVelocity()); e.dur = pitched ? sr * 30.0 : 0.0; }
         else if (pitched) e.liveOff = true;
         else continue;

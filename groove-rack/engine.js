@@ -457,6 +457,8 @@ function playSample(ctx, out, t, n, tr, buf, pitched) {
 GR.voice = function (ctx, out, t, tr, n) {
   const inst = I[tr.inst]; if (!inst) return;
   n.decay = tr.decay || 1; n.pitch = tr.pitch || 0;
+  // a drum hit's own pitch: 60 is the sound as it is, each step up or down is a semitone
+  if (!inst.pitched && n.p != null) n.pitch += n.p - 60;
   const buf = tr.sample && GR.samples.get(tr.sample);
   if (buf) return playSample(ctx, out, t, n, tr, buf, inst.pitched);
   const snd = inst.sounds[tr.sound] || inst.sounds[inst.def];

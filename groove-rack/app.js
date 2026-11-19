@@ -182,6 +182,7 @@ const snapBars = n => (n <= MIN_BARS ? MIN_BARS : MAX_BARS);
 function load(project, keepHistory) {
   P = sanitize(project);
   if (P.bars !== snapBars(P.bars)) extendLoop(snapBars(P.bars));
+  if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
   if (!keepHistory) { hist.undo.length = 0; hist.redo.length = 0; }
   if (!track(ui.sel)) ui.sel = (P.tracks[0] || {}).id || null;
   ui.bar = clamp(ui.bar, 0, P.bars - 1);
@@ -192,6 +193,7 @@ function sanitize(p) {
   p = Object.assign(GR.emptyProject(), { tracks: [] }, p);
   p.bpm = clamp(+p.bpm || 120, 40, 240); p.bars = clamp(p.bars | 0 || 4, 1, 8); p.swing = clamp(+p.swing || 0, 0, 100);
   p.master = clamp(p.master == null ? 0.8 : +p.master, 0, 1); p.key = clamp(p.key | 0, 0, 11);
+  p.chords = Array.isArray(p.chords) ? p.chords.slice(0, 8).map(c => (c && isFinite(c.r) ? { r: ((c.r | 0) % 12 + 12) % 12, q: String(c.q || '') } : null)) : null;
   if (!GR.SCALES[p.scale]) p.scale = 'minor';
   p.tracks = (p.tracks || []).filter(t => t && I[t.inst]).map(t => {
     const n = GR.newTrack(t.inst, t.sound, t);
@@ -413,6 +415,7 @@ function renderChan() {
     <div class="cp-side">
       <div class="seg" role="group" aria-label="Steps per bar">${[12, 16, 24, 32].map(r => `<button data-res="${r}" class="${r === tr.res ? 'on' : ''}" title="${RES_LABEL[r]}">${r}</button>`).join('')}</div>
       <div class="row"><button class="ms-btn${tr.mute ? ' mute-on' : ''}" data-cp="mute" aria-pressed="${tr.mute}">MUTE</button><button class="ms-btn${tr.solo ? ' solo-on' : ''}" data-cp="solo" aria-pressed="${tr.solo}">SOLO</button></div>
+      <div class="row"><button class="silicone-btn tool-btn${ui.rollOpen ? ' on' : ''}" data-cp="roll" aria-pressed="${ui.rollOpen}" title="Open ${esc(tr.name)} in the piano roll (P)">PIANO ROLL</button></div>
       <div class="row"><button class="silicone-btn tool-btn" data-cp="dice">${DICE} NEW</button><button class="silicone-btn tool-btn" data-cp="more">MORE…</button></div>
       <div class="cp-hint">${esc(tr.name)} · ${inst.pitched ? 'bass' : 'drums'}${tr.sample ? ' · your sample' : ''}</div>
     </div>`;
@@ -469,6 +472,11 @@ function onChanClick(e) {
   else if (a === 'solo') edit(() => { tr.solo = !tr.solo; });
   else if (a === 'dice') newPattern(tr);
   else if (a === 'more') channelSheet(tr);
+  else if (a === 'roll') toggleRoll();
+}
+function toggleRoll() {
+  ui.rollOpen = !ui.rollOpen; renderRoll(); renderChan();
+  if (ui.rollOpen) { const r = $('#roll'); if (r && r.scrollIntoView) r.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
 }
 // the panel's knobs, by delegation (the panel is redrawn on every change)
 function chanKnob(el) {
@@ -511,7 +519,7 @@ function refreshBar() {
   bassTracks().forEach(tr => { const el = $(`[data-lane="${tr.id}"] .bass-notes`); if (el) el.innerHTML = bassInner(tr); });
   $('#oledBar').textContent = `${two(ui.bar + 1)} / ${two(P.bars)}`;
   document.querySelectorAll('.bar-tile').forEach((b, i) => b.classList.toggle('active', i === ui.bar));
-  if (!$('#roll').hidden) { const t = $('#roll .ptitle span'); const tr = selTrack(); if (t && tr) t.textContent = `· ${tr.name} · bar ${ui.bar + 1}`; drawRollNotes(); }
+  document.querySelectorAll('#roll .pr-bar').forEach((x, i) => x.classList.toggle('on', i === ui.bar));
   lastStep = -1;
 }
 function light(tr) {  // cheap update of one channel during a drag
@@ -522,71 +530,94 @@ function light(tr) {  // cheap update of one channel during a drag
   if (!$('#roll').hidden) drawRollNotes();
 }
 
-/* ---------- piano roll ---------- */
-const ROWH = 20;
+/* ---------- piano roll: the whole loop, for every channel ----------
+   Bars across the top, a chord lane, a keyboard, the notes, and a velocity lane underneath.
+   Drum channels show their hits at C4 (the sound as it is); moving a hit up or down pitches it. */
+const ROWH = 13, KEYW = 58;
+const isPitched = tr => !!I[tr.inst].pitched;
+const notePitch = (tr, n) => (n.p != null ? n.p : (isPitched(tr) ? 48 : 60));
+const noteLen = (tr, n) => (isPitched(tr) ? (n.len || TPB / tr.res) : TPB / tr.res);
+function rollRange(tr) {
+  if (!isPitched(tr)) return [48, 72];
+  const lo = tr.low != null ? tr.low : 24;
+  return [lo, lo + 36];
+}
 function rollRows(tr) {
-  const rows = [];
-  for (let m = tr.low + 24; m >= tr.low; m--) if (!ui.scaleOnly || inScale(m)) rows.push(m);
+  const [lo, hi] = rollRange(tr), rows = [];
+  for (let m = hi; m >= lo; m--) if (!ui.scaleOnly || inScale(m) || (!isPitched(tr) && m === 60)) rows.push(m);
   return rows;
 }
 function renderRoll() {
   const box = $('#roll'), tr = selTrack();
-  const show = !!(tr && I[tr.inst].pitched && ui.rollOpen);
+  const show = !!(tr && ui.rollOpen);
   box.hidden = !show; if (!show) return;
-  const rows = rollRows(tr);
-  const keyName = GR.NOTE_NAMES[P.key] + ' ' + P.scale;
-  const prevScroll = box.querySelector('.rwrap') ? box.querySelector('.rwrap').scrollTop : null;
-  box.innerHTML = `<div class="phead">
-      <h2 class="ptitle">Piano roll <span>· ${esc(tr.name)} · bar ${ui.bar + 1}</span></h2>
+  const rows = rollRows(tr), L = P.bars, z = ui.rollZoom || 1;
+  const prev = $('#prScroll'), keep = prev && ui._rollFor === tr.id ? [prev.scrollLeft, prev.scrollTop] : null;
+  if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
+  const keys = rows.map(m => {
+    const pc = ((m % 12) + 12) % 12, blk = [1, 3, 6, 8, 10].includes(pc);
+    return `<button class="pk${blk ? ' blk' : ''}${pc === 0 ? ' c' : ''}" data-key="${m}" tabindex="-1" aria-label="Play ${GR.noteName(m)}">${pc === 0 ? GR.noteName(m) : ''}</button>`;
+  }).join('');
+  const bgs = rows.map(m => {
+    const pc = ((m % 12) + 12) % 12;
+    return `<div class="pr-rowbg${[1, 3, 6, 8, 10].includes(pc) ? ' blk' : ''}${(((m - P.key) % 12) + 12) % 12 === 0 ? ' root' : ''}${inScale(m) ? '' : ' out'}${!isPitched(tr) && m === 60 ? ' home' : ''}"></div>`;
+  }).join('');
+  const ruler = Array.from({ length: L }, (_, b) => `<button class="pr-bar${b === ui.bar ? ' on' : ''}" data-rbar="${b}" style="left:${b / L * 100}%;width:${100 / L}%" title="Go to bar ${b + 1}">${b + 1}</button>`).join('');
+  const chords = Array.from({ length: L }, (_, b) => {
+    const c = P.chords[b];
+    return `<button class="pr-chord${c ? '' : ' empty'}" data-cbar="${b}" style="left:${b / L * 100}%;width:${100 / L}%" title="Chord for bar ${b + 1}: the bass follows it"><span>${c ? esc(GR.chordName(c)) : '+ chord'}</span></button>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="phead">
+      <h2 class="ptitle">Piano roll <span>· ${esc(tr.name)} · ${isPitched(tr) ? GR.NOTE_NAMES[P.key] + ' ' + esc(P.scale) : 'move a hit up or down to pitch it'}</span></h2>
+      <button class="silicone-btn chip" data-act="song" title="Key and scale">${esc(keyLabel())}</button>
+      <button class="silicone-btn chip${ui.scaleOnly ? ' on' : ''}" data-act="scaleonly" aria-pressed="${ui.scaleOnly}">SCALE ONLY</button>
+      <div class="seg" role="group" aria-label="Zoom">${[1, 2, 4].map(v => `<button data-zoom="${v}" class="${v === z ? 'on' : ''}" title="${v === 1 ? 'Whole loop' : v + '× wider'}">${v === 1 ? 'FIT' : v + '×'}</button>`).join('')}</div>
       <button class="silicone-btn ib" data-act="closeroll" aria-label="Close piano roll">${ICON.x}</button>
     </div>
-    <div class="rtools">
-      <button class="silicone-btn chip" data-act="song" title="Key and scale">${esc(keyName)}</button>
-      <button class="silicone-btn chip" data-act="scaleonly" aria-pressed="${ui.scaleOnly}" style="${ui.scaleOnly ? 'color:var(--lime)' : ''}">scale only</button>
-      <span class="sp"></span>
-      <button class="silicone-btn ib" data-act="octdown" aria-label="Octave down" title="Octave down">▼</button>
-      <button class="silicone-btn ib" data-act="octup" aria-label="Octave up" title="Octave up">▲</button>
-    </div>
-    <div class="rwrap"><div class="rbody">
-      <div class="rkeys">${rows.map(m => { const pc = ((m % 12) + 12) % 12; const blk = [1, 3, 6, 8, 10].includes(pc); const root = pc === P.key;
-        return `<button data-key="${m}" class="${blk ? 'blk' : ''}${root ? ' root' : ''}" tabindex="-1">${GR.noteName(m)}</button>`; }).join('')}</div>
-      <div class="rcanvas" id="rcanvas" style="--res:${tr.res};height:${rows.length * ROWH}px">
-        ${rows.map(m => `<div class="rrow ${(((m - P.key) % 12) + 12) % 12 === 0 ? 'root' : inScale(m) ? 'ins' : 'out'}"></div>`).join('')}
-        <div id="rnotes"></div>
+    <div class="pr-scroll" id="prScroll">
+      <div class="pr-inner" id="prInner">
+        <div class="pr-row pr-top"><div class="pr-side pr-corner">BAR</div><div class="pr-lane pr-ruler">${ruler}<i class="pr-mark" id="prMark" hidden></i></div></div>
+        <div class="pr-row pr-chordrow"><div class="pr-side">CHORDS</div><div class="pr-lane">${chords}</div></div>
+        <div class="pr-row pr-mid"><div class="pr-side pr-keys">${keys}</div>
+          <div class="pr-lane pr-grid" id="rcanvas" style="--bars:${L};--res:${tr.res};height:${rows.length * ROWH}px">${bgs}<div class="pr-lines"></div><div id="rnotes"></div><i class="pr-head" id="rHead" hidden></i></div></div>
+        <div class="pr-row pr-velrow"><div class="pr-side">VEL</div><div class="pr-lane pr-vel" id="rvel" style="--bars:${L}"></div></div>
       </div>
-    </div></div>
+    </div>
     <div class="rhint" id="rhint"></div>`;
+  sizeRoll();
   drawRollNotes();
-  const wrap = box.querySelector('.rwrap');
-  if (prevScroll != null && ui._rollFor === tr.id) wrap.scrollTop = prevScroll;
+  const sc = $('#prScroll');
+  if (keep) { sc.scrollLeft = keep[0]; sc.scrollTop = keep[1]; }
   else {
-    const b0 = ui.bar * TPB, ns = tr.notes.filter(n => n.t >= b0 && n.t < b0 + TPB);
-    const top = ns.length ? Math.max(...ns.map(n => n.p)) : tr.low + 14;
-    const idx = rows.findIndex(m => m <= top);
-    wrap.scrollTop = Math.max(0, idx * ROWH - 40);
+    const ps = tr.notes.map(n => notePitch(tr, n)), mid = ps.length ? (Math.min(...ps) + Math.max(...ps)) / 2 : (isPitched(tr) ? rollRange(tr)[0] + 12 : 60);
+    const idx = rows.findIndex(m => m <= mid);
+    sc.scrollTop = Math.max(0, idx * ROWH - sc.clientHeight / 2 + 60);
   }
   ui._rollFor = tr.id;
 }
+function sizeRoll() {
+  const sc = $('#prScroll'), inner = $('#prInner'); if (!sc || !inner) return;
+  inner.style.width = Math.round(KEYW + (sc.clientWidth - KEYW) * (ui.rollZoom || 1)) + 'px';
+}
 function drawRollNotes() {
-  const tr = selTrack(), layer = $('#rnotes'); if (!tr || !layer) return;
-  const rows = rollRows(tr), b0 = ui.bar * TPB, b1 = b0 + TPB, stepT = TPB / tr.res;
-  let h = '', above = 0, below = 0, hidden = 0;
+  const tr = selTrack(), layer = $('#rnotes'), vel = $('#rvel'); if (!tr || !layer) return;
+  const rows = rollRows(tr), loopT = P.bars * TPB;
+  let h = '', v = '', hidden = 0;
   tr.notes.forEach(n => {
-    const len = n.len || stepT; if (n.t >= b1 || n.t + len <= b0) return;
-    const r = rows.indexOf(n.p);
-    if (r < 0) { if (n.p > tr.low + 24) above++; else if (n.p < tr.low) below++; else hidden++; return; }
-    const a = Math.max(n.t, b0), e = Math.min(n.t + len, b1);
-    h += `<div class="rnote${n.t < b0 ? ' cont' : ''}" style="top:${r * ROWH + 1}px;left:calc(${(a - b0) / TPB * 100}% + 1px);width:calc(${(e - a) / TPB * 100}% - 2px);--v:${n.vel}">${n.slide ? '↗' : ''}${GR.noteName(n.p)}</div>`;
+    if (n.t >= loopT) return;
+    const p = notePitch(tr, n), r = rows.indexOf(p), len = Math.min(noteLen(tr, n), loopT - n.t);
+    v += `<span class="vstalk${n.vel < 0.5 ? ' ghost' : ''}" style="left:${n.t / loopT * 100}%;height:${Math.round(6 + n.vel * 40)}px"></span>`;
+    if (r < 0) { hidden++; return; }
+    h += `<div class="rnote${n.vel < 0.5 ? ' ghost' : ''}${isPitched(tr) ? '' : ' hit'}" style="top:${r * ROWH + 1}px;left:${n.t / loopT * 100}%;width:calc(${len / loopT * 100}% - 1px);--v:${n.vel}">${n.slide ? '↗' : ''}${n.roll > 1 ? '×' + n.roll : ''}</div>`;
   });
-  layer.innerHTML = h;
+  layer.innerHTML = h; vel.innerHTML = v;
   const hint = $('#rhint');
-  if (hint) {
-    const bits = [];
-    if (above) bits.push(`${above} note${above > 1 ? 's' : ''} above — press ▲`);
-    if (below) bits.push(`${below} note${below > 1 ? 's' : ''} below — press ▼`);
-    if (hidden) bits.push(`${hidden} outside the scale — turn off “scale only”`);
-    hint.textContent = bits.length ? bits.join(' · ') : 'Tap to add a bass note and drag right to make it longer. Drag a note to move it, tap it to delete, hold it for velocity and slide.';
-  }
+  if (hint) hint.textContent = hidden
+    ? `${hidden} note${hidden > 1 ? 's are' : ' is'} outside the rows shown${ui.scaleOnly ? ': turn off SCALE ONLY' : ''}.`
+    : isPitched(tr)
+      ? 'Tap to add a note, drag right to make it longer. Drag a note to move it, its right edge to resize it, tap it to delete, hold it for slide and more. Drag the orange stalks to set velocity. Tap a chord to change it: the bass in that bar follows.'
+      : 'Each hit sits at C4, the sound as it is. Drag a hit up or down to pitch it, sideways to move it. Tap empty space to add a hit, tap a hit to delete it, hold it for rolls. Drag the orange stalks to set velocity.';
 }
 
 /* ---------- animation: playhead, pad flashes, meters, follow ---------- */
@@ -619,12 +650,14 @@ function frame() {
     if (ui.queued == null && S.landing == null && document.querySelector('.bar-tile.queued')) renderBars();
     if (ui.follow && ui.queued == null && S.landing == null && bar !== ui.bar && !dragging) { ui.bar = bar; refreshBar(); }
     const lh = $('#laneHead'); if (lh) { lh.hidden = false; lh.style.left = (p / (8 * TPB) * 100) + '%'; }
+    const rh = $('#rHead'), rm = $('#prMark'); if (rh) { const x = (p / (P.bars * TPB) * 100) + '%'; rh.hidden = false; rh.style.left = x; rm.hidden = false; rm.style.left = x; }
     document.querySelectorAll('.bar-tile').forEach((b, i) => b.classList.toggle('playing', i === bar && i < P.bars));
     const st = Math.floor((p % TPB) / 6);
     if (st !== lastStep && bar === ui.bar) { lastStep = st; showStep(p % TPB); }
   } else if (lastStep !== -2) {
     lastStep = -2; showStep(null);
     const lh = $('#laneHead'); if (lh) lh.hidden = true;
+    const rh = $('#rHead'), rm = $('#prMark'); if (rh) { rh.hidden = true; rm.hidden = true; }
     if (ui.queued != null || S.landing != null) { ui.queued = null; S.landing = null; renderBars(); }
     document.querySelectorAll('.bar-tile.playing').forEach(b => b.classList.remove('playing'));
   }
@@ -786,6 +819,7 @@ function knob(el, get, set, reset) {
 function transposeBy(d) {
   P.key = (P.key + d + 12) % 12;
   P.tracks.forEach(t => { if (I[t.inst].pitched) t.notes.forEach(n => { n.p = clamp(n.p + d, 0, 127); }); });
+  if (Array.isArray(P.chords)) P.chords.forEach(c => { if (c) c.r = ((c.r + d) % 12 + 12) % 12; });
 }
 // make the loop longer by repeating what is there: each new bar copies the bar it lines up with
 function extendLoop(to) {
@@ -799,58 +833,63 @@ function extendLoop(to) {
     }
     t.notes = t.notes.concat(add); sortNotes(t);
   });
+  if (Array.isArray(P.chords)) for (let b = L; b < to; b++) P.chords[b] = P.chords[b % L] ? Object.assign({}, P.chords[b % L]) : null;
   P.bars = to;
 }
 
 /* ---------- piano roll interactions ---------- */
 function onRollDown(e) {
+  if (e.target.closest('#rvel')) return onVelDown(e);
   const cv = e.target.closest('#rcanvas'); if (!cv) return;
   const tr = selTrack(); if (!tr) return;
   e.preventDefault();
-  const rows = rollRows(tr), rect = cv.getBoundingClientRect(), stepT = TPB / tr.res, b0 = ui.bar * TPB;
-  const colAt = x => clamp(Math.floor((x - rect.left) / rect.width * tr.res), 0, tr.res - 1);
+  const pitched = isPitched(tr), rows = rollRows(tr), rect = cv.getBoundingClientRect(), stepT = TPB / tr.res, loopT = P.bars * TPB, nSteps = P.bars * tr.res;
+  const colAt = x => clamp(Math.floor((x - rect.left) / rect.width * nSteps), 0, nSteps - 1);
   const rowAt = y => clamp(Math.floor((y - rect.top) / ROWH), 0, rows.length - 1);
-  const c0 = colAt(e.clientX), r0 = rowAt(e.clientY), p0 = rows[r0], tick0 = b0 + c0 * stepT;
-  const hit = tr.notes.find(n => n.p === p0 && n.t <= tick0 && tick0 < n.t + (n.len || stepT) && n.t + (n.len || stepT) > b0);
+  const c0 = colAt(e.clientX), r0 = rowAt(e.clientY), p0 = rows[r0], tick0 = c0 * stepT;
+  const hit = tr.notes.find(n => n.t < loopT && notePitch(tr, n) === p0 && n.t <= tick0 && tick0 < n.t + noteLen(tr, n));
   if (e.button === 2) { if (hit) noteSheet(tr, hit); return; }
   commit(); dragging = true;
-  let mode, group, moved = false;
+  const setP = (n, p) => { if (pitched || p !== 60) n.p = p; else delete n.p; };
+  let mode, note = hit, moved = false;
   if (hit) {
-    const endX = rect.left + (Math.min(hit.t + hit.len, b0 + TPB) - b0) / TPB * rect.width;
-    mode = e.clientX > endX - Math.min(12, rect.width / tr.res * 0.45) ? 'resize' : 'move';
-    group = [hit];
+    const endX = rect.left + (hit.t + noteLen(tr, hit)) / loopT * rect.width;
+    mode = pitched && e.clientX > endX - Math.min(10, rect.width / nSteps * 0.45) ? 'resize' : 'move';
+  } else if (!pitched) {
+    // drums keep one hit per step: an empty row at a step that has a hit re-pitches that hit
+    const same = tr.notes.find(n => n.t >= tick0 && n.t < tick0 + stepT);
+    if (same) { note = same; setP(same, p0); mode = 'move'; moved = true; }
+    else { note = addNote(tr, tick0, { vel: 0.9 }); setP(note, p0); mode = 'new'; }
+    audition(tr, note);
   } else {
-    mode = 'new';
-    group = [addNote(tr, tick0, { p: p0, len: tr.lastLen || stepT * 2, vel: 0.85 })];
-    audition(tr, group[0]);
-    drawRollNotes();
+    note = addNote(tr, tick0, { p: p0, len: tr.lastLen || stepT * 2, vel: 0.85 }); mode = 'new';
+    audition(tr, note);
   }
-  const orig = group.map(n => ({ t: n.t, p: n.p, len: n.len }));
-  const lp = setTimeout(() => { if (!moved && hit) { mode = 'menu'; finish(); noteSheet(tr, hit); } }, 480);
+  light(tr);
+  const orig = { t: note.t, p: notePitch(tr, note), len: note.len }, ri0 = rows.indexOf(orig.p);
+  const lp = setTimeout(() => { if (!moved && hit) { mode = 'menu'; finish(); settle(); noteSheet(tr, hit); } }, 480);
   try { cv.setPointerCapture(e.pointerId); } catch (err) {}
-  let lastP = p0;
+  let lastP = orig.p;
   const move = ev => {
     const c = colAt(ev.clientX), r = rowAt(ev.clientY);
-    if (!moved && (c !== c0 || r !== r0 || Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 8)) { moved = true; clearTimeout(lp); }
+    if (!moved && (c !== c0 || r !== r0)) { moved = true; clearTimeout(lp); }
     if (!moved) return;
-    if (mode === 'resize' || mode === 'new') {
-      group.forEach((n, i) => { n.len = Math.max(stepT, (c - Math.floor((orig[i].t - b0) / stepT) + 1) * stepT); });
-    } else if (mode === 'move') {
-      const dc = c - c0, dr = r - r0;
-      group.forEach((n, i) => {
-        n.t = clamp(orig[i].t + dc * stepT, 0, P.bars * TPB - stepT);
-        const ri = rows.indexOf(orig[i].p); n.p = ri >= 0 ? rows[clamp(ri + dr, 0, rows.length - 1)] : orig[i].p;
-      });
-      if (group[0].p !== lastP) { lastP = group[0].p; audition(tr, group[0]); }
+    if (mode === 'resize' || (mode === 'new' && pitched)) {
+      note.len = Math.max(stepT, (c - Math.floor(orig.t / stepT) + 1) * stepT);
+    } else if (mode === 'move' || mode === 'new') {
+      note.t = clamp(orig.t + (c - c0) * stepT, 0, loopT - stepT);
+      if (ri0 >= 0) setP(note, rows[clamp(ri0 + (r - r0), 0, rows.length - 1)]);
+      const np = notePitch(tr, note); if (np !== lastP) { lastP = np; audition(tr, note); }
     }
-    drawRollNotes(); light(tr);
+    light(tr);
   };
   const up = () => {
     clearTimeout(lp);
-    if (mode === 'move' && !moved) removeNote(tr, hit);
-    if (mode !== 'menu' && group[0] && tr.notes.includes(group[0])) { tr.lastLen = group[0].len; tr.lastP = group[0].p; }
-    sortNotes(tr);
-    finish(); changed(); settle();
+    if (mode === 'move' && !moved && hit) removeNote(tr, hit);
+    if (!pitched && tr.notes.includes(note)) tr.notes = tr.notes.filter(n => n === note || Math.floor(n.t / stepT) !== Math.floor(note.t / stepT));
+    if (pitched && mode !== 'menu' && tr.notes.includes(note)) { tr.lastLen = note.len; tr.lastP = note.p; }
+    sortNotes(tr); finish();
+    if (mode !== 'menu') { changed(); settle(); }
   };
   function finish() {
     dragging = false;
@@ -858,16 +897,70 @@ function onRollDown(e) {
   }
   cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 }
+// velocity lane: drag the stalks up or down; sweep across to shape several
+function onVelDown(e) {
+  const lane = e.target.closest('#rvel'), tr = selTrack(); if (!lane || !tr) return;
+  e.preventDefault();
+  const rect = lane.getBoundingClientRect(), loopT = P.bars * TPB, stepT = TPB / tr.res, nSteps = P.bars * tr.res;
+  commit(); dragging = true;
+  const setAt = (x, y) => {
+    const col = clamp(Math.floor((x - rect.left) / rect.width * nSteps), 0, nSteps - 1);
+    const v = clamp(Math.round((1 - (y - rect.top - 6) / (rect.height - 12)) * 100) / 100, 0.05, 1);
+    let any = false;
+    tr.notes.forEach(n => { if (n.t < loopT && Math.floor(n.t / stepT) === col) { n.vel = v; any = true; } });
+    if (any) { light(tr); hud(`velocity ${Math.round(v * 100)}%`); }
+  };
+  setAt(e.clientX, e.clientY);
+  try { lane.setPointerCapture(e.pointerId); } catch (err) {}
+  const move = ev => setAt(ev.clientX, ev.clientY);
+  const up = () => {
+    dragging = false; hud(null);
+    lane.removeEventListener('pointermove', move); lane.removeEventListener('pointerup', up); lane.removeEventListener('pointercancel', up);
+    changed(); settle();
+  };
+  lane.addEventListener('pointermove', move); lane.addEventListener('pointerup', up); lane.addEventListener('pointercancel', up);
+}
 function onRollClick(e) {
-  const b = e.target.closest('[data-act],[data-key]'); if (!b) return;
+  const b = e.target.closest('[data-act],[data-key],[data-zoom],[data-cbar],[data-rbar]'); if (!b) return;
   const tr = selTrack(); if (!tr) return;
   if (b.dataset.key) { audition(tr, { p: +b.dataset.key, vel: 0.85 }); return; }
+  if (b.dataset.zoom) { ui.rollZoom = +b.dataset.zoom; document.querySelectorAll('#roll [data-zoom]').forEach(x => x.classList.toggle('on', x === b)); sizeRoll(); return; }
+  if (b.dataset.cbar) { chordSheet(+b.dataset.cbar); return; }
+  if (b.dataset.rbar) { seek(+b.dataset.rbar); return; }
   const a = b.dataset.act;
-  if (a === 'closeroll') { ui.rollOpen = false; renderRoll(); }
-  else if (a === 'octup') { tr.low = Math.min(96, tr.low + 12); ui._rollFor = null; renderRoll(); autosave(); }
-  else if (a === 'octdown') { tr.low = Math.max(0, tr.low - 12); ui._rollFor = null; renderRoll(); autosave(); }
+  if (a === 'closeroll') { ui.rollOpen = false; renderRoll(); renderChan(); }
   else if (a === 'scaleonly') { ui.scaleOnly = !ui.scaleOnly; ui._rollFor = null; renderRoll(); }
   else if (a === 'song') songSheet();
+}
+// pick the chord for a bar; the bass in that bar moves with it
+function chordSheet(bar) {
+  const { triads, sevenths } = GR.diatonicChords(P), cur = P.chords && P.chords[bar];
+  const btn = (c, i, set) => `<button class="b sm${cur && cur.r === c.r && cur.q === c.q ? ' on' : ''}" data-set="${set}" data-ci="${i}"><span style="opacity:.55;font-family:var(--mono);font-size:9.5px">${c.roman}</span>&nbsp; ${esc(GR.chordName(c))}</button>`;
+  openSheet(`Bar ${bar + 1} chord`, `
+    <div class="sh-sec"><h4>In ${GR.NOTE_NAMES[P.key]} ${esc(P.scale)}</h4><div class="btns">${triads.map((c, i) => btn(c, i, 't')).join('')}</div></div>
+    ${sevenths.length ? `<div class="sh-sec"><h4>Sevenths</h4><div class="btns">${sevenths.map((c, i) => btn(c, i, 's')).join('')}</div></div>` : ''}
+    <div class="sh-sec"><div class="btns"><button class="b sm" data-clear>No chord</button><button class="b sm" data-all>Use for every bar</button></div>
+      <p class="hint" style="margin:8px 0 0">The bass notes in this bar move to the new chord. The dice and GENERATE follow these chords.</p></div>`, sh => {
+    sh.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.ci != null) { applyChord(bar, Object.assign({}, (b.dataset.set === 's' ? sevenths : triads)[+b.dataset.ci])); closeSheet(); }
+      else if (b.dataset.clear != null) { edit(() => { P.chords[bar] = null; }); closeSheet(); }
+      else if (b.dataset.all != null && cur) { commit(); for (let i = 0; i < P.bars; i++) shiftChord(i, cur); changed(); settle(); closeSheet(); toast(`Every bar is ${GR.chordName(cur)}`); }
+    });
+  });
+}
+function shiftChord(bar, c) {
+  if (!Array.isArray(P.chords)) P.chords = GR.inferChords(P);
+  const old = P.chords[bar] || GR.inferChords(P)[bar];
+  P.chords[bar] = { r: c.r, q: c.q };
+  if (!old) return;
+  const d = (((c.r - old.r) % 12) + 18) % 12 - 6;
+  if (d) P.tracks.forEach(t => { if (isPitched(t)) t.notes.forEach(n => { if (Math.floor(n.t / TPB) === bar) n.p = clamp(n.p + d, 0, 127); }); });
+}
+function applyChord(bar, c) {
+  edit(() => shiftChord(bar, c));
+  const tr = bassTracks()[0]; if (tr) audition(tr, { p: (() => { let r = c.r; while (r < 28) r += 12; return r; })(), vel: 0.85 });
+  toast(`Bar ${bar + 1}: ${GR.chordName(c)} · the bass moved with it`);
 }
 
 /* ---------- groove generator ---------- */
@@ -1289,7 +1382,7 @@ function menuSheet() {
     <div class="sh-sec"><h4>History</h4><div class="btns"><button class="b sm" data-act="undo">Undo</button><button class="b sm" data-act="redo">Redo</button></div></div>
     <div class="sh-sec"><h4>Keyboard</h4><div class="keys-list">
       <kbd>Space</kbd><span>Play / stop</span><kbd>← →</kbd><span>Previous / next bar</span><kbd>↑ ↓</kbd><span>Select track</span>
-      <kbd>G</kbd><span>Switch Drums / Audio rack</span><kbd>R</kbd><span>New pattern for the selected track</span><kbd>Shift R</kbd><span>Generate the whole groove</span><kbd>M</kbd><span>Mute selected track</span><kbd>S</kbd><span>Solo selected track</span>
+      <kbd>G</kbd><span>Switch Drums / Audio rack</span><kbd>P</kbd><span>Piano roll for the selected channel</span><kbd>R</kbd><span>New pattern for the selected track</span><kbd>Shift R</kbd><span>Generate the whole groove</span><kbd>M</kbd><span>Mute selected track</span><kbd>S</kbd><span>Solo selected track</span>
       <kbd>Delete</kbd><span>Clear the bar on the selected track</span><kbd>Ctrl Z</kbd><span>Undo (Shift for redo)</span></div></div>`, sh => {
     const nm = sh.querySelector('#m_name');
     nm.addEventListener('change', () => edit(() => { P.name = nm.value.trim() || 'Untitled beat'; }));
@@ -1613,6 +1706,7 @@ function wire() {
   roll.addEventListener('pointerdown', onRollDown);
   roll.addEventListener('click', onRollClick);
   roll.addEventListener('contextmenu', e => { if (e.target.closest('#rcanvas')) e.preventDefault(); });
+  window.addEventListener('resize', () => { if (!$('#roll').hidden) sizeRoll(); });
 
   $('#fileIn').addEventListener('change', e => onSampleFile(e.target.files[0]));
   $('#anyIn').addEventListener('change', async e => {
@@ -1659,6 +1753,7 @@ function wire() {
       select(all[clamp(i + (e.key === 'ArrowUp' ? -1 : 1), 0, all.length - 1)].id);
     }
     else if (e.key === 'R') newGroove();
+    else if ((e.key === 'p' || e.key === 'P') && tr) toggleRoll();
     else if (e.key === 'r' && tr) newPattern(tr);
     else if ((e.key === 'm' || e.key === 'M') && tr) { edit(() => { tr.mute = !tr.mute; }); toast(tr.mute ? `${tr.name} muted` : `${tr.name} on`); }
     else if ((e.key === 's' || e.key === 'S') && tr) { edit(() => { tr.solo = !tr.solo; }); toast(tr.solo ? `${tr.name} solo` : `${tr.name} solo off`); }
