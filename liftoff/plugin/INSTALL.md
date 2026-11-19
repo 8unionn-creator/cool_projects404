@@ -44,11 +44,11 @@ Copy `Liftoff.vst3` to `~/.vst3/`.
 ### SAMPLE mode (where it opens)
 
 1. Put Liftoff on the track that has the sound you want: a loop, a vocal, a synth, a snare. It passes the track through untouched and adds no latency.
-2. Press **REC**, play that part in your DAW, and press **REC** again. Liftoff keeps what came down the track (up to a minute), trimmed to the sound. Or press **Load** to pick a file, drop a file on the window, or try a demo.
+2. Press **REC**, play that part in your DAW, and press **REC** again. Liftoff keeps what came down the track (up to a minute), trimmed to the sound. Or press **LOAD** to open a file or a demo, or drop a file on the window. The riser renders and plays as soon as the sound is in.
 3. In **SOURCE**, drag across the sample to cut the part you want. Press **PART** to hear just that part.
 4. Choose the **RISER LENGTH** and shape RISE, BACKVERB, TREMOLO and CHORUS. The tempo comes from your DAW.
-5. Press **PREVIEW** (or Space) to hear it through the plugin's output, and click the screen to play from any point.
-6. Drag the riser from the clip strip at the bottom of the window onto a track, or press **EXPORT WAV** to save it.
+5. Press the gold **PLAY** button (or Space) to hear it through the plugin's output, and click the screen to play from any point.
+6. Drag the riser from the tray at the bottom of the window onto a track, or press **WAV** to save it.
 
 Takes are kept in Liftoff's folder (`~/Library/Application Support/Liftoff` on a Mac, `%APPDATA%\Liftoff` on Windows) and reopen with your session, along with the part you cut.
 

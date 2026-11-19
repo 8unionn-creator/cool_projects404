@@ -138,9 +138,10 @@ LiftoffEditor::LiftoffEditor (LiftoffProcessor& p)
 {
     addAndMakeVisible (web);
     addChildComponent (strip);
+    // the unit is drawn at 1200 x 791 and scales to the window; the tray (the drag strip) sits under it
     setResizable (true, true);
-    setResizeLimits (420, 420, 2400, 2000);
-    setSize (1140, 900);
+    setResizeLimits (600, 420, 2400, 1700);
+    setSize (1200, 791 + stripHeight);
     web.goToURL (WebBrowserComponent::getResourceProviderRoot());
     startTimerHz (30);
 }

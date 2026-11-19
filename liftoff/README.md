@@ -8,11 +8,12 @@ It runs in the browser (open `index.html`) and as a **VST3 / Audio Unit** plugin
 
 ## How it works
 
-1. **Get a sample.** Press **REC**. The browser records your microphone; the plugin records the audio coming down its own track, so play your loop, vocal or synth in the DAW and press REC again to stop. Recordings are trimmed to the sound. Or **Load** a file, drop one anywhere, or try a demo (a house loop, a snare that becomes a roll, a chord stab).
-2. **Cut the part you want.** The **SOURCE** lane under the screen shows your whole sample. Drag across it to choose the part to use, drag its edges to fine-tune, drag the bar on top to move it, and double-click for all of it. **PART** (or `A`) plays just that part.
-3. **Shape it.** Pick the **RISER LENGTH** (½ to 8 bars), then dial in RISE, BACKVERB, TREMOLO and CHORUS, or pick a preset. Every change re-renders in the background.
-4. **Hear it.** **PREVIEW** (or Space) plays the riser. In the plugin it plays through the plugin's output, so you hear it through your DAW and your interface. Click anywhere on the screen to play from there.
-5. **Use it.** In the plugin, drag the riser from the clip strip under the window straight onto a track. It shows the waveform as soon as it's rendered. In the browser, drag **DRAG OUT** into a DAW, a folder or the desktop (Chrome, Edge), or press **EXPORT WAV** for a 24-bit WAV.
+Liftoff is laid out like a piece of hardware: one panel, read top to bottom in the order the sound flows. A header bar holds the preset display and the tempo. The glass screen shows the riser, with the source you cut from built into its bottom strip. The transport runs the whole job in four steps, left to right. The control panel has five sections: RISE, BACKVERB, TREMOLO, CHORUS and OUTPUT. In the plugin the window is that unit at 1200 × 791 and it scales with the window; in a browser on a phone the sections stack.
+
+1. **Sound.** Press **REC**. The browser records your microphone; the plugin records the audio coming down its own track, so play your loop, vocal or synth in the DAW and press REC again to stop. Recordings are trimmed to the sound. Or press **LOAD** to open a file or a demo (a house loop, a snare that becomes a roll, a chord stab), or drop a file anywhere. As soon as it's in, the riser renders and plays.
+2. **Play.** The big gold button (or Space) plays the riser; in the plugin it plays through the plugin's output, so you hear it through your DAW. Click anywhere on the screen to play from there. In the **SOURCE** strip, drag across your sound to cut the part to use, drag its edges to fine-tune, drag the bar on top to move it, and double-click for all of it. **PART** (or `A`) plays just that part.
+3. **Length.** Pick how many bars the riser lasts (½ to 8) and its **CURVE**, then shape it on the panel or pick a preset. Every change re-renders in the background.
+4. **Out.** In the plugin, drag the riser from the tray under the window straight onto a track. It shows the waveform as soon as it's rendered. In the browser, drag **DRAG** into a DAW, a folder or the desktop (Chrome, Edge), or press **WAV** for a 24-bit WAV.
 
 ## The screen
 
@@ -21,8 +22,8 @@ The screen shows the riser's real waveform. It warms from dark to bright gold as
 ## The modules
 
 - **RISE:** pitch up to +24 semitones, a high-pass sweep with rising resonance, a gate that speeds up from 1/4 to 1/32 notes, a reverb wash the sound dissolves into, stereo width, and a white-noise riser. One **CURVE** shapes the whole build: late (a slow start that rushes at the end) or early (it jumps up, then hangs).
-- **BACKVERB:** a reverse reverb that lands on time. Normally that means bouncing audio, reversing it and lining it up by hand; Liftoff convolves the sound with a time-reversed reverb and pulls it back by the reverb's length. **END** swells from your sample's first hit into the end of the riser, **BUILD** puts reverse swells on everything, growing with the build, and **ALWAYS** puts them on every sound.
-- **TREMOLO:** volume pulses locked to the grid: 1/4 to 1/32 notes, and 1/8 and 1/16 triplets. Shapes: **SINE**, **SQUARE** (hard chops), **RAMP** (pumping) or **PAN** (left and right take turns). **DEPTH** sets how deep.
+- **BACKVERB:** a reverse reverb that lands on time; its **SWELL** and **LENGTH** are stepped switches. Normally that means bouncing audio, reversing it and lining it up by hand; Liftoff convolves the sound with a time-reversed reverb and pulls it back by the reverb's length. **END** swells from your sample's first hit into the end of the riser, **BUILD** puts reverse swells on everything, growing with the build, and **ALWAYS** puts them on every sound.
+- **TREMOLO:** volume pulses locked to the grid, set with two stepped switches (**RATE** and **SHAPE**): 1/4 to 1/32 notes, and 1/8 and 1/16 triplets. Shapes: **SINE**, **SQUARE** (hard chops), **RAMP** (pumping) or **PAN** (left and right take turns). **DEPTH** sets how deep.
 - **CHORUS:** two modulated voices per side for width and thickness, with **RATE**, **DEPTH** and **MIX**.
 
 ## Presets
@@ -33,8 +34,7 @@ Liftoff · Festival Build · Trap Lift · Vocal Backverb · Afro Swell · Chorus
 
 Open `liftoff/index.html`. Nothing to install. It opens with the demo loop, or with the last sample you used (kept in your browser). Set the **BPM** to your session's tempo so the bars line up; a BPM in the file name, like `vox_140bpm.wav`, is picked up. Your settings and samples stay in your browser and are never uploaded.
 
-Shortcuts: `Space` preview · `R` record · `A` play the part you cut · `←` `→` presets. On knobs: drag up/down (`Shift` for fine), scroll, arrow keys, double-click to reset.
-
+Shortcuts: `Space` play · `R` record · `A` play the part you cut · `←` `→` presets. On knobs: drag up/down (`Shift` for fine), scroll, arrow keys, double-click to reset. On stepped switches: click a position, drag, scroll or use the arrows. 
 ## As a plugin
 
 Download the installer for your computer from the [releases](https://github.com/8unionn-creator/cool_projects404/releases) and follow [`plugin/INSTALL.md`](plugin/INSTALL.md). Put Liftoff on the track you want to sample. It opens in **SAMPLE** mode, passes that track through untouched, and takes the tempo from your DAW. The riser appears as a clip under the window: drag it onto a track. [Build it yourself →](plugin/README.md)

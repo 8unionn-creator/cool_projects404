@@ -157,6 +157,41 @@ function paramSeg(host, id) {
   seg(host, id, SEG_LABEL[id] || DEFS[id].choices, SEG_TIP[id], () => V[id], i => { gesture(id, true); setParam(id, i); gesture(id, false); });
 }
 
+// a stepped rotary switch: a knob with its positions printed around it; click a position, drag, scroll or use the arrows
+const STEP_LABEL = { verbMode: ['END', 'BUILD', 'ALWAYS'], verbLen: ['1/8', '1/4', '1/2', '1 BAR'], tremRate: ['1/4', '1/8', '1/16', '1/32', '1/8T', '1/16T'],
+  tremShape: ['SINE', 'SQR', 'RAMP', 'PAN'] };
+const STEP_NAME = { verbMode: 'SWELL', verbLen: 'LENGTH', tremRate: 'RATE', tremShape: 'SHAPE' };
+function stepKnob(host, id) {
+  const d = DEFS[id], labels = STEP_LABEL[id] || d.choices, n = labels.length;
+  const span = n <= 3 ? 180 : n <= 4 ? 210 : 250, a0 = -90 - span / 2, ang = i => a0 + (n === 1 ? 0 : i / (n - 1) * span);
+  host.classList.add('step'); host.tabIndex = 0; host.setAttribute('role', 'slider'); host.setAttribute('aria-label', d.name);
+  host.setAttribute('aria-valuemin', 0); host.setAttribute('aria-valuemax', n - 1);
+  const cx = 56, cy = 40, r = 31;   // just outside the cap; each label grows away from the knob
+  host.innerHTML = labels.map((l, i) => {
+    const a = ang(i) * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+    const tx = c < -0.35 ? '-100%' : c > 0.35 ? '0%' : '-50%', ty = sn < -0.7 ? '-100%' : '-50%';
+    return `<span class="pos" data-i="${i}" style="left:${(cx + r * c).toFixed(1)}px;top:${(cy + r * sn).toFixed(1)}px;transform:translate(${tx},${ty})" title="${(SEG_TIP[id] && SEG_TIP[id][i]) || d.choices[i]}">${l}</span>`;
+  }).join('') + `<div class="kn"><div class="cap"></div><div class="ind"></div></div><span class="k-lbl">${STEP_NAME[id] || d.name.toUpperCase()}</span>`;
+  const pos = [...host.querySelectorAll('.pos')], ind = host.querySelector('.ind');
+  const choose = i => { i = clamp(i, 0, n - 1); if (i !== V[id]) { gesture(id, true); setParam(id, i); gesture(id, false); } };
+  host.addEventListener('click', e => { const p = e.target.closest('.pos'); if (p) choose(+p.dataset.i); });
+  let startY = 0, startV = 0, dragging = false;
+  host.addEventListener('pointerdown', e => { if (e.target.closest('.pos') || e.button !== 0) return; host.focus(); host.setPointerCapture(e.pointerId); dragging = true; startY = e.clientY; startV = V[id]; e.preventDefault(); });
+  host.addEventListener('pointermove', e => { if (dragging) choose(startV + Math.round((startY - e.clientY) / 22)); });
+  const end = () => { dragging = false; };
+  host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
+  host.addEventListener('wheel', e => { e.preventDefault(); choose(V[id] + (e.deltaY < 0 ? 1 : -1)); }, { passive: false });
+  host.addEventListener('keydown', e => {
+    const dir = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+    if (dir) { choose(V[id] + dir); e.preventDefault(); e.stopPropagation(); }
+  });
+  addView(id, { update(v) {
+    ind.style.transform = `rotate(${(ang(v) + 90).toFixed(1)}deg)`;
+    pos.forEach((p, i) => p.classList.toggle('on', i === v));
+    host.setAttribute('aria-valuenow', v); host.setAttribute('aria-valuetext', d.choices[v]);
+  } });
+}
+
 function toggle(btn, id) {
   btn.addEventListener('click', () => { gesture(id, true); setParam(id, V[id] ? 0 : 1); gesture(id, false); });
   const mod = btn.closest('.mod');
@@ -164,7 +199,7 @@ function toggle(btn, id) {
 }
 
 function fader(el, id) {
-  const fill = el.querySelector('i'), val = $('#buildVal');
+  const fill = el.querySelector('i'), val = $('#buildVal');   // fill and value
   let dragging = false;
   const at = e => { const r = el.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); };
   el.addEventListener('pointerdown', e => { if (V.mode !== MODE.MANUAL) return; el.setPointerCapture(e.pointerId); dragging = true; gesture(id, true); setParam(id, at(e)); });
@@ -181,6 +216,7 @@ function fader(el, id) {
 
 document.querySelectorAll('[data-knob]').forEach(el => knob(el, el.dataset.knob));
 document.querySelectorAll('.seg[data-param]').forEach(el => paramSeg(el, el.dataset.param));
+document.querySelectorAll('[data-step]').forEach(el => stepKnob(el, el.dataset.step));
 document.querySelectorAll('[data-toggle]').forEach(el => toggle(el, el.dataset.toggle));
 fader($('#buildFader'), 'build');
 
@@ -204,7 +240,7 @@ function modeChanged() {
   $('#buildFader').setAttribute('aria-disabled', !manual);
   $('#launch').disabled = !trig;
   $('#launch').title = trig ? 'Start a build on the next bar. L' : 'Switch MODE to TRIGGER to launch builds by hand or with MIDI notes';
-  document.querySelector('[data-param="phrase"]').closest('.grp').style.opacity = V.mode === MODE.AUTO ? '' : '.4';
+  document.querySelector('[data-param="phrase"]').closest('.tgroup').style.opacity = V.mode === MODE.AUTO ? '' : '.4';
 }
 let saveT = 0;
 function saveSoon() { if (HOST) return; clearTimeout(saveT); saveT = setTimeout(() => { store.set('params', V); store.set('bpm', bpm); store.set('preset', presetIdx); }, 300); }
@@ -274,7 +310,7 @@ async function setSample(s, name, source, opts = {}) {
   if (source === 'rec') s = { ...s, chans: LF.trimSilence(s.chans, s.sr) };
   const maxN = s.sr * 60;
   if (s.chans[0].length > maxN) s = { ...s, chans: s.chans.map(c => c.slice(0, maxN)) };   // a minute is plenty
-  SM.sample = s; SM.name = name; SM.source = source; SM.laneFor = null;
+  SM.sample = s; SM.name = name; SM.source = source; SM.laneFor = null; SM.autoplay = !!opts.autoplay;
   UI.sel = opts.sel && opts.sel[1] - opts.sel[0] > 0.001 ? opts.sel : [0, 1];
   if (opts.sel === undefined) saveUi();
   $('#sampleName').textContent = name;
@@ -292,8 +328,9 @@ function sampleInfo() {
   if (!SM.sample) return;
   const [a, b] = selRange(), sr = SM.sample.sr, sec = (b - a) / sr, all = SM.sample.chans[0].length / sr;
   const f = t => t < 10 ? t.toFixed(2) : t.toFixed(1);
-  $('#sampleInfo').textContent = `${f(sec)} s${b - a < SM.sample.chans[0].length ? ` of ${f(all)} s` : ''} · ${sec < 60 / bpm ? 'one-shot → roll' : 'loops through the riser'}`;
-  $('#selInfo').textContent = `${f(a / sr)} – ${f(b / sr)} s · ${f(sec)} s · ${(sec * bpm / 60).toFixed(1)} beats`;
+  const how = sec < 60 / bpm ? 'one-shot → roll' : 'loops';
+  $('#sampleInfo').textContent = `${f(all)} s`;
+  $('#selInfo').innerHTML = b - a < SM.sample.chans[0].length ? `cut ${f(a / sr)}–${f(b / sr)} s · ${(sec * bpm / 60).toFixed(1)} beats · ${how}` : `all of it · drag across it to cut · ${how}`;
 }
 
 function scheduleRender(delay = 140) {
@@ -311,6 +348,7 @@ async function doRender() {
   const pos = previewPos();
   SM.render = r; SM.rendering = false; SM.layersFor = null;
   engine.renderReady(r, pos);
+  if (SM.autoplay) { SM.autoplay = false; engine.play(0); showReady(); }
   if (!HOST) {   // ready to drag out of the browser
     if (SM.wavURL) URL.revokeObjectURL(SM.wavURL);
     SM.wavURL = URL.createObjectURL(new Blob([LF.wav24([r.L, r.R], r.sr)], { type: 'audio/wav' }));
@@ -338,6 +376,7 @@ function pluginEngine() {
   HOST.on('params', vals => { for (const k in vals) setParam(k, vals[k], true); markEdited(); });
   return {
     set(id, v) { HOST.call('setParam', id, v); },
+    unlock() {},
     gesture(id, begin) { HOST.call('gesture', id, begin); },
     launch() { HOST.call('launch'); },
     renderReady(r) {
@@ -354,11 +393,11 @@ function pluginEngine() {
       if (!HS.recording) { await HOST.call('recStart'); toast('Recording what comes into Liftoff’s track: play it in your DAW, then press REC again'); return; }
       const o = await HOST.call('recStop');
       if (!o || !o.frames) { toast('Nothing was recorded: play some audio into the track while REC is on'); return; }
-      setSample(fromPCM(o), o.name || 'Recording', 'rec', { persist: false });
+      setSample(fromPCM(o), o.name || 'Recording', 'rec', { persist: false, autoplay: true });
     },
     async load() {
       const o = await HOST.call('pickSample');
-      if (o && o.frames) setSample(fromPCM(o), o.name, 'file', { persist: false });
+      if (o && o.frames) setSample(fromPCM(o), o.name, 'file', { persist: false, autoplay: true });
     },
     async exportWav() { const p = await HOST.call('saveRender'); if (p) toast('Saved ' + p); },
     persist(bytes, name) { HOST.call('storeSample', name, bytesToB64(new Uint8Array(bytes))); },
@@ -396,6 +435,7 @@ function browserEngine() {
   function stop(quiet) { if (A.src) { const s = A.src; A.src = null; try { s.stop(); } catch (e) {} } if (!quiet) setPreviewButton(false); }
   return {
     set() {}, gesture() {}, launch() {},
+    unlock() { ensure().resume(); },
     renderReady(r, pos) { if (pos >= 0 && A.src) play(Math.min(pos, r.N - 1)); },
     play, stop, stopPart,
     playPart(s) {
@@ -426,7 +466,7 @@ function browserEngine() {
         try {
           const s = await decode(await new Blob(parts).arrayBuffer(), renderSr());
           const n = (store.get('recs') || 0) + 1; store.set('recs', n);
-          setSample(s, `Recording ${n}`, 'rec');
+          setSample(s, `Recording ${n}`, 'rec', { autoplay: true });
         } catch (e) { toast('The recording could not be decoded'); }
       };
       mr.start();
@@ -454,6 +494,12 @@ function browserEngine() {
   };
 }
 
+// after a new sound: point at the way out
+function showReady() {
+  const el = HOST ? $('#trayHint') : $('#dragOut');
+  el.classList.remove('ready'); void el.offsetWidth; el.classList.add('ready');
+}
+
 function setPreviewButton(on) {
   const b = $('#previewBtn'); if ((b.getAttribute('aria-pressed') === 'true') === on) return;
   b.setAttribute('aria-pressed', on); $('#previewIcon').setAttribute('d', on ? 'M6 5h4.5v14H6zM13.5 5H18v14h-4.5z' : 'M7 4.5v15l13-7.5z');
@@ -467,26 +513,26 @@ const idb = {
 };
 function persistSample(s, name, source) { if (!HOST) idb.put({ chans: s.chans, sr: s.sr, name, source }); }
 
-async function loadFile(file) {
+async function loadFile(file, autoplay) {
   try {
     const bytes = await file.arrayBuffer();
     const s = await decode(bytes.slice(0), renderSr());
     const m = file.name.match(/(\d{2,3}(?:\.\d+)?)\s*bpm/i);
     if (m && +m[1] >= 60 && +m[1] <= 200 && !HOST) { bpm = +m[1]; $('#bpm').value = bpm; toast(`${file.name} · ${bpm} BPM from the file name`); }
     if (HOST) engine.persist(bytes, file.name);
-    setSample(s, file.name, 'file');
+    setSample(s, file.name, 'file', { autoplay });
   } catch (e) { toast('That file could not be decoded. Try a WAV, MP3 or AIFF.'); }
 }
 
 /* ---------- demo samples, made in the browser ---------- */
-async function loadDemo(kind) {
+async function loadDemo(kind, autoplay) {
   const sr = renderSr(), B = 60 / 124;
   const make = { loop: [2 * 4 * B, demoLoop], snare: [0.32, demoSnare], chord: [2 * B, demoChord] }[kind];
   const oc = new OfflineAudioContext(2, Math.round(make[0] * sr), sr);
   make[1](oc, B);
   const b = await oc.startRendering();
   if (!HOST && bpm !== 124 && kind === 'loop') { bpm = 124; $('#bpm').value = bpm; }
-  setSample({ chans: [b.getChannelData(0).slice(), b.getChannelData(1).slice()], sr }, { loop: 'Demo · house loop', snare: 'Demo · snare', chord: 'Demo · chord stab' }[kind], 'demo');
+  setSample({ chans: [b.getChannelData(0).slice(), b.getChannelData(1).slice()], sr }, { loop: 'Demo · house loop', snare: 'Demo · snare', chord: 'Demo · chord stab' }[kind], 'demo', { autoplay });
 }
 function noiseBuf(oc) { const n = oc.createBuffer(1, oc.sampleRate, oc.sampleRate), d = n.getChannelData(0), r = LF.rng(99); for (let i = 0; i < d.length; i++) d[i] = r(); return n; }
 const envGain = (g, t, a, peak, dec) => { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); };
@@ -549,10 +595,22 @@ $('#tabSample').addEventListener('click', () => setView('sample'));
 $('#tabLive').addEventListener('click', () => setView('live'));
 
 /* ---------- sample strip ---------- */
-$('#recBtn').addEventListener('click', () => engine.record());
-$('#loadBtn').addEventListener('click', () => engine.load());
-$('#fileIn').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; });
-$('#demoSel').addEventListener('change', e => { if (e.target.value) loadDemo(e.target.value); e.target.value = ''; });
+$('#recBtn').addEventListener('click', () => { engine.unlock(); engine.record(); });
+const loadMenu = $('#loadMenu');
+const closeMenu = () => { loadMenu.hidden = true; $('#loadBtn').setAttribute('aria-expanded', 'false'); };
+$('#loadBtn').addEventListener('click', e => {
+  e.stopPropagation(); engine.unlock();
+  loadMenu.hidden = !loadMenu.hidden; $('#loadBtn').setAttribute('aria-expanded', String(!loadMenu.hidden));
+  if (!loadMenu.hidden) loadMenu.querySelector('button').focus();
+});
+loadMenu.addEventListener('click', e => {
+  const b = e.target.closest('[data-load]'); if (!b) return;
+  closeMenu();
+  if (b.dataset.load === 'file') engine.load(); else loadDemo(b.dataset.load, true);
+});
+document.addEventListener('click', e => { if (!loadMenu.hidden && !e.target.closest('#loadMenu')) closeMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !loadMenu.hidden) { closeMenu(); $('#loadBtn').focus(); } });
+$('#fileIn').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0], true); e.target.value = ''; });
 $('#previewBtn').addEventListener('click', () => engine.toggle());
 $('#dragOut').addEventListener('dragstart', e => {
   if (!SM.wavURL) { e.preventDefault(); toast('Load or record a sample first'); return; }
@@ -562,17 +620,13 @@ $('#dragOut').addEventListener('dragstart', e => {
   e.dataTransfer.setData('text/uri-list', SM.wavURL);
 });
 $('#exportBtn').addEventListener('click', () => SM.render ? engine.exportWav() : toast('Load or record a sample first'));
-$('#empty').addEventListener('click', e => {
-  const b = e.target.closest('[data-act]'); if (!b) return;
-  if (b.dataset.act === 'rec') engine.record(); else if (b.dataset.act === 'load') engine.load(); else loadDemo('loop');
-});
 $('#bpm').addEventListener('change', e => { bpm = clamp(+e.target.value || 120, 40, 300); e.target.value = +bpm.toFixed(2); saveSoon(); scheduleRender(0); });
 $('#launch').addEventListener('click', () => engine.launch());
 let dragDepth = 0;
 window.addEventListener('dragenter', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; $('#dropZone').classList.add('on'); } });
 window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#dropZone').classList.remove('on'); } });
 window.addEventListener('dragover', e => e.preventDefault());
-window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('#dropZone').classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) { if (UI.view === 'live') setView('sample'); loadFile(f); } });
+window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('#dropZone').classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) { engine.unlock(); if (UI.view === 'live') setView('sample'); loadFile(f, true); } });
 
 /* ---------- telemetry (LIVE mode) ---------- */
 const T = { st: null, at: 0, queue: [], drops: -1, dropAt: -1e9 };
@@ -774,10 +828,10 @@ function drawLane() {
     else { const x = xa + t * (xb - xa); g.fillStyle = '#fff6dc'; g.fillRect(Math.round(x), 2, 1.5, Hh - 4); }
   }
 }
-const laneT = e => { const r = lane.getBoundingClientRect(), { pad, w } = laneGeom(); return clamp((e.clientX - r.left - pad) / w, 0, 1); };
+const laneT = e => { const r = lane.getBoundingClientRect(), { pad, w } = laneGeom(); return clamp(((e.clientX - r.left) / r.width * lane.clientWidth - pad) / w, 0, 1); };
 lane.addEventListener('pointerdown', e => {
   if (!SM.sample) return;
-  const t = laneT(e), { w } = laneGeom(), near = 8 / w, y = e.clientY - lane.getBoundingClientRect().top;
+  const t = laneT(e), { w } = laneGeom(), near = 8 / w, lr = lane.getBoundingClientRect(), y = (e.clientY - lr.top) / lr.height * lane.clientHeight;
   const whole = UI.sel[0] <= 0 && UI.sel[1] >= 1;
   lane.setPointerCapture(e.pointerId);
   if (!whole && Math.abs(t - UI.sel[0]) < near) laneDrag = { kind: 'a' };
@@ -788,7 +842,7 @@ lane.addEventListener('pointerdown', e => {
 lane.addEventListener('pointermove', e => {
   const t = laneT(e), { w } = laneGeom(), near = 8 / w;
   if (!laneDrag) {
-    const y = e.clientY - lane.getBoundingClientRect().top, whole = UI.sel[0] <= 0 && UI.sel[1] >= 1;
+    const lr = lane.getBoundingClientRect(), y = (e.clientY - lr.top) / lr.height * lane.clientHeight, whole = UI.sel[0] <= 0 && UI.sel[1] >= 1;
     lane.style.cursor = !SM.sample || whole ? 'crosshair' : Math.abs(t - UI.sel[0]) < near || Math.abs(t - UI.sel[1]) < near ? 'ew-resize' : y < 16 && t > UI.sel[0] && t < UI.sel[1] ? 'grab' : 'crosshair';
     return;
   }
@@ -843,7 +897,7 @@ function drawRec(g, W, H, dpr, now) {
 cv.addEventListener('click', e => {
   if (UI.view !== 'sample' || !SM.render || !SM.layers) return;
   const rect = cv.getBoundingClientRect(), G = SM.layers.G;
-  const t = clamp((e.clientX - rect.left - G.padX) / G.w, 0, 1);
+  const t = clamp(((e.clientX - rect.left) / rect.width * cv.clientWidth - G.padX) / G.w, 0, 1);
   engine.play(Math.round(t * SM.render.N));
 });
 
@@ -975,7 +1029,7 @@ function meters() {
     for (let i = Math.max(0, n - w); i < Math.min(r.N, n); i++) { pin = Math.max(pin, Math.abs(r.dryL[i])); pout = Math.max(pout, Math.abs(r.L[i]), Math.abs(r.R[i])); }
   }
   const w = v => Math.max(0, Math.min(100, (20 * Math.log10(Math.max(1e-6, v || 0)) + 48) / 48 * 100)) + '%';
-  $('#mIn').style.width = w(pin); $('#mOut').style.width = w(pout);
+  $('#mIn').style.height = w(pin); $('#mOut').style.height = w(pout);
 }
 
 function frame(now) {
@@ -996,6 +1050,17 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'ArrowRight' && !e.target.closest('.knob, .seg, .fader')) loadPreset(presetIdx + 1);
 });
 window.addEventListener('resize', () => { SM.layersFor = null; });
+
+/* ---------- the unit scales to the window, like a plugin GUI; narrow screens stack it instead ---------- */
+function fit() {
+  const unit = $('#deck'), stage = $('#stage'), W = window.innerWidth, Hh = window.innerHeight;
+  if (!HOST && W < 760) { unit.style.transform = ''; stage.style.width = ''; stage.style.height = ''; return; }   // stacked (CSS)
+  const h = unit.offsetHeight, s = HOST ? Math.min(W / 1200, Hh / h) : Math.min(1, (W - 24) / 1200);
+  unit.style.transform = `scale(${s})`;
+  stage.style.width = `${1200 * s}px`; stage.style.height = `${h * s}px`;
+}
+window.addEventListener('resize', fit);
+fit();
 
 refreshAll();
 presetSel.value = clamp(presetIdx, 0, LIFTOFF_PRESETS.length - 1);
