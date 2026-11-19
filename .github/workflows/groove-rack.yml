@@ -140,7 +140,7 @@ jobs:
 
           Unzip it and follow **INSTALL.md** inside. In short: on Windows copy \`Groove Rack.vst3\` to \`C:\\Program Files\\Common Files\\VST3\\\`; on macOS copy the VST3 to \`~/Library/Audio/Plug-Ins/VST3/\` and the component to \`~/Library/Audio/Plug-Ins/Components/\`, then run the one Terminal command in INSTALL.md (these builds are not notarized by Apple). Rescan plugins in your DAW and load **Groove Rack** as an instrument.
 
-          **What it does:** 15 genre starters, a GENERATE key and a dice on every channel that write new drum and bass patterns in the genre's style, your own samples on any channel, tempo locked to your DAW, MIDI out of the pattern, DAW notes play the channels, and a strip to drag the loop into your DAW as MIDI.
+          **What it does:** 15 genres with 44 styles (UK, NY and Chicago drill, log drum and private school Amapiano, dembow and perreo, UK garage, jungle and more), each with its own tempo, feel, chords and bass. GENERATE and a dice on every channel write new drum and bass patterns in the style; teach a style with your own MIDI loops, or 👍 / 👎 what it makes. A piano roll on every channel (whole loop, chord lane, velocity lane, pitch any drum hit), 4 or 8 bar loops that switch bars seamlessly, your own samples on any channel, tempo locked to your DAW, MIDI out of the pattern, DAW notes play the channels, and a strip to drag the loop into your DAW as MIDI.
           EOF
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip --clobber --repo "$GITHUB_REPOSITORY"
