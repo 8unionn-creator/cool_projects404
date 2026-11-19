@@ -70,19 +70,26 @@ function knob(host, id) {
   host.setAttribute('role', 'slider'); host.setAttribute('aria-label', d.name);
   host.setAttribute('aria-valuemin', d.min); host.setAttribute('aria-valuemax', d.max);
   if (KNOB_TIP[id]) host.title = KNOB_TIP[id];
-  const R = 22, C = 29, a0 = -225, a1 = 45;
+  // a machined cap on a ring of ticks; the lit arc runs in a groove between them
+  const R = 28, C = 38, a0 = -225, a1 = 45;
   const pt = (deg, r) => [C + r * Math.cos(deg * Math.PI / 180), C + r * Math.sin(deg * Math.PI / 180)];
   const arc = (from, to, r) => {
     if (to - from < 0.5) return '';
     const [x0, y0] = pt(from, r), [x1, y1] = pt(to, r);
     return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${to - from > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
   };
+  let ticks = '';
+  for (let k = 0; k <= 30; k++) {
+    const a = a0 + k / 30 * (a1 - a0), major = k % 5 === 0, [x0, y0] = pt(a, major ? 33 : 33.5), [x1, y1] = pt(a, 37);
+    ticks += `<line class="tick${major ? ' major' : ''}" x1="${x0.toFixed(2)}" y1="${y0.toFixed(2)}" x2="${x1.toFixed(2)}" y2="${y1.toFixed(2)}" stroke-width="${major ? 1.4 : 0.9}" stroke-linecap="round"/>`;
+  }
   const bipolar = d.min < 0 && d.max > 0;
-  host.innerHTML = `<svg viewBox="0 0 58 58"><path class="trk" d="${arc(a0, a1, R)}" fill="none" stroke-width="4" stroke-linecap="round"/>
-    <path class="arc" fill="none" stroke-width="4" stroke-linecap="round"/><path class="mod-arc" fill="none" stroke-width="1.6" stroke-linecap="round"/>
-    <circle class="cap" cx="${C}" cy="${C}" r="15"/><line class="ptr" x1="${C}" y1="${C}" stroke-width="2.4" stroke-linecap="round"/></svg>
-    <span class="k-lbl">${KNOB_LABEL[id] || d.name.toUpperCase()}</span><span class="k-val mono"></span>`;
-  const [arcEl, modEl, ptr, val] = [host.querySelector('.arc'), host.querySelector('.mod-arc'), host.querySelector('.ptr'), host.querySelector('.k-val')];
+  host.innerHTML = `<div class="kn"><svg viewBox="0 0 76 76">${ticks}
+    <path class="trk" d="${arc(a0, a1, R)}" fill="none" stroke-width="5" stroke-linecap="round"/>
+    <path class="arc" fill="none" stroke-width="3.2" stroke-linecap="round"/><path class="mod-arc" fill="none" stroke-width="1.3" stroke-linecap="round"/></svg>
+    <div class="cap"><div class="ind"></div></div></div>
+    <span class="k-lbl">${KNOB_LABEL[id] || d.name.toUpperCase()}</span><span class="k-val"></span>`;
+  const [arcEl, modEl, ind, val] = [host.querySelector('.arc'), host.querySelector('.mod-arc'), host.querySelector('.ind'), host.querySelector('.k-val')];
   const toDeg = v => a0 + (v - d.min) / span * (a1 - a0);
   const zeroDeg = bipolar ? toDeg(0) : a0;
   let shownMod = -1;
@@ -90,12 +97,12 @@ function knob(host, id) {
     update(v) {
       const deg = toDeg(v);
       arcEl.setAttribute('d', deg >= zeroDeg ? arc(zeroDeg, deg, R) : arc(deg, zeroDeg, R));
-      const [x, y] = pt(deg, 11); ptr.setAttribute('x2', x.toFixed(2)); ptr.setAttribute('y2', y.toFixed(2));
+      ind.style.transform = `rotate(${(deg + 90).toFixed(2)}deg)`;
       val.textContent = fmt(id, v); host.setAttribute('aria-valuenow', v.toFixed(3)); host.setAttribute('aria-valuetext', fmt(id, v));
     },
     mod(m) {   // live modulation: how much of the knob's amount is in play right now
       const q = Math.round(m * 200) / 200; if (q === shownMod) return; shownMod = q;
-      modEl.setAttribute('d', q > 0 ? arc(a0, a0 + q * (a1 - a0), R + 5) : '');
+      modEl.setAttribute('d', q > 0 ? arc(a0, a0 + q * (a1 - a0), R - 4.5) : '');
     }
   };
   views[id] = view;
@@ -471,7 +478,7 @@ async function demoLoop(sr) {
 /* ---------- flight path display ---------- */
 const cv = $('#path'), g2 = cv.getContext('2d');
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const COL = { amber: css('--amber'), pink: css('--pink'), violet: css('--violet'), cyan: css('--cyan'), text: css('--text'), dim: css('--dim'), faint: css('--faint') };
+const COL = { gold: css('--gold'), goldHi: css('--gold-hi'), goldLo: css('--gold-lo'), pink: css('--pink'), violet: css('--violet'), text: css('--text'), muted: css('--muted'), dim: css('--dim'), faint: css('--faint') };
 
 function live(now) {
   // where we are right now, carried forward smoothly between engine updates
@@ -559,10 +566,10 @@ function draw(now) {
     const bars = PHRASE_BARS[V.phrase], cw = gw / bars, buildBars = buildB / bpb;
     for (let k = 0; k < bars; k++) {
       const inBuild = k >= bars - buildBars - 1e-6 || (buildBars < 1 && k === bars - 1);
-      g.fillStyle = k === s.barInPhrase ? COL.text : inBuild ? 'rgba(255,77,141,.45)' : 'rgba(255,255,255,.08)';
+      g.fillStyle = k === s.barInPhrase ? COL.goldHi : inBuild ? 'rgba(227,176,98,.38)' : 'rgba(255,240,210,.07)';
       g.fillRect(padX + k * cw + 1, stripY, Math.max(1, cw - 2), stripH * (k === s.barInPhrase ? 1 : 0.6));
     }
-    g.fillStyle = COL.dim; g.textAlign = 'left';
+    g.fillStyle = COL.muted; g.textAlign = 'left';
     g.fillText(`PHRASE · ${bars} BARS${s.barInPhrase >= 0 ? ` · BAR ${s.barInPhrase + 1}` : ''}`, padX, stripY + stripH + 9);
     if (W > 560) g.textAlign = 'right', g.fillText(`DROP ON BAR ${bars + 1} · ${bars * 2 + 1} · …`, W - padX, stripY + stripH + 9);
   } else {
@@ -578,22 +585,22 @@ function draw(now) {
     if (b > span) break;
     const bar = b % bpb === 0;
     if (!bar && buildB > 32) continue;
-    g.fillStyle = bar ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.04)';
+    g.fillStyle = bar ? 'rgba(255,240,210,.10)' : 'rgba(255,240,210,.035)';
     g.fillRect(Math.round(x(b)), gy0, 1, gh);
     if (bar && b < buildB) { g.fillStyle = COL.faint; g.textAlign = 'left'; g.fillText(V.mode === MODE.MANUAL ? `${Math.round(b / buildB * 100)}%` : `${b / bpb + 1}`, x(b) + 4, gy1 + 13); }
   }
-  g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(padX, gy1, gw, 1);
+  g.fillStyle = 'rgba(255,240,210,.14)'; g.fillRect(padX, gy1, gw, 1);
 
   // the build curve
   const curvePath = () => { g.beginPath(); g.moveTo(x(0), gy1); for (let i = 0; i <= 120; i++) { const r = i / 120; g.lineTo(x(r * buildB), gy1 - LF.shape(r, V.curve) * gh * 0.92); } };
-  const grad = g.createLinearGradient(x(0), 0, xd, 0); grad.addColorStop(0, COL.amber); grad.addColorStop(0.6, COL.pink); grad.addColorStop(1, COL.violet);
+  const grad = g.createLinearGradient(x(0), 0, xd, 0); grad.addColorStop(0, COL.goldLo); grad.addColorStop(0.55, COL.gold); grad.addColorStop(1, COL.goldHi);
   curvePath(); g.lineTo(xd, gy1); g.closePath();
-  const fill = g.createLinearGradient(0, gy0, 0, gy1); fill.addColorStop(0, 'rgba(255,77,141,.20)'); fill.addColorStop(1, 'rgba(255,181,71,.02)');
+  const fill = g.createLinearGradient(0, gy0, 0, gy1); fill.addColorStop(0, 'rgba(227,176,98,.16)'); fill.addColorStop(1, 'rgba(227,176,98,.01)');
   g.fillStyle = fill; g.fill();
   if (s.cur > 0) {   // the part already flown, brighter
     g.save(); g.beginPath(); g.rect(x(0), gy0 - 10, x(s.cur) - x(0), gh + 10); g.clip();
     curvePath(); g.lineTo(xd, gy1); g.closePath();
-    const f2 = g.createLinearGradient(0, gy0, 0, gy1); f2.addColorStop(0, 'rgba(255,77,141,.55)'); f2.addColorStop(1, 'rgba(255,181,71,.10)');
+    const f2 = g.createLinearGradient(0, gy0, 0, gy1); f2.addColorStop(0, 'rgba(247,217,150,.42)'); f2.addColorStop(1, 'rgba(227,176,98,.06)');
     g.fillStyle = f2; g.fill(); g.restore();
   }
   curvePath(); g.strokeStyle = grad; g.lineWidth = 2.5; g.globalAlpha = V.rise ? 1 : 0.35; g.stroke(); g.globalAlpha = 1;
@@ -601,7 +608,7 @@ function draw(now) {
   // backverb: the reverse swell rising into the drop
   if (V.verb) {
     const vb = VERB_BEATS[V.verbLen];
-    g.strokeStyle = COL.violet; g.lineWidth = 2; g.fillStyle = 'rgba(139,108,255,.18)';
+    g.strokeStyle = 'rgba(157,130,255,.85)'; g.lineWidth = 1.6; g.fillStyle = 'rgba(157,130,255,.16)';
     const swell = (end, len, hgt) => {
       const tail = Math.pow(10, (-60 + 48 * V.verbSize) / 20);
       g.beginPath(); g.moveTo(x(end - len), gy1);
@@ -622,33 +629,34 @@ function draw(now) {
   if (s.gapB > 0) {
     const xg = x(buildB - s.gapB);
     g.save(); g.beginPath(); g.rect(xg, gy0, xd - xg, gh); g.clip();
-    g.fillStyle = s.inGap ? 'rgba(255,77,141,.28)' : 'rgba(255,77,141,.10)'; g.fillRect(xg, gy0, xd - xg, gh);
-    g.strokeStyle = 'rgba(255,77,141,.35)'; g.lineWidth = 1;
+    g.fillStyle = s.inGap ? 'rgba(227,176,98,.22)' : 'rgba(227,176,98,.06)'; g.fillRect(xg, gy0, xd - xg, gh);
+    g.strokeStyle = 'rgba(227,176,98,.30)'; g.lineWidth = 1;
     for (let k = -gh; k < xd - xg; k += 7) { g.beginPath(); g.moveTo(xg + k, gy1); g.lineTo(xg + k + gh, gy0); g.stroke(); }
     g.restore();
-    g.fillStyle = COL.pink; g.textAlign = 'center';
+    g.fillStyle = COL.gold; g.textAlign = 'center';
     if (xd - xg > 34) g.fillText(['CUT', 'TAPE', 'FILTER', 'STUTTER'][V.gapStyle], (xg + xd) / 2, gy0 + 10);
   }
 
   // the drop and the impact
-  g.fillStyle = COL.pink; g.fillRect(Math.round(xd) - 1, gy0 - 6, 2, gh + 6);
-  g.textAlign = 'left'; g.font = `800 11px ${css('--mono')}`; g.fillText('DROP', xd + 6, gy0 + 2);
+  g.fillStyle = COL.goldHi; g.fillRect(Math.round(xd) - 1, gy0 - 6, 2, gh + 6);
+  g.textAlign = 'left'; g.font = `800 11px ${css('--mono')}`; g.fillStyle = COL.goldHi; g.fillText('DROP', xd + 6, gy0 + 2);
+  g.beginPath(); g.arc(xd, gy1 - gh * 0.92, 4.5, 0, Math.PI * 2); g.fillStyle = COL.goldHi; g.fill();
   if (V.drop && V.impact > 0) {
     g.beginPath(); g.moveTo(xd, gy1);
     for (let i = 0; i <= 40; i++) { const r = i / 40; g.lineTo(x(buildB + r * after), gy1 - gh * 0.7 * V.impact * Math.exp(-r * 3.5)); }
-    g.lineTo(x(span), gy1); g.closePath(); g.fillStyle = 'rgba(255,77,141,.22)'; g.fill();
+    g.lineTo(x(span), gy1); g.closePath(); g.fillStyle = 'rgba(255,240,210,.07)'; g.fill();
   }
 
   // playhead
   const ph = s.cur >= 0 ? s.cur : s.after >= 0 ? buildB + Math.min(s.after, after) : -1;
   if (ph >= 0) {
     const px = x(ph), py = s.cur >= 0 ? gy1 - s.p * gh * 0.92 : gy1;
-    g.fillStyle = 'rgba(255,255,255,.55)'; g.fillRect(Math.round(px), gy0 - 4, 1, gh + 4);
-    g.shadowColor = COL.pink; g.shadowBlur = 16; g.fillStyle = '#fff';
+    g.fillStyle = 'rgba(255,240,210,.55)'; g.fillRect(Math.round(px), gy0 - 4, 1, gh + 4);
+    g.shadowColor = COL.gold; g.shadowBlur = 16; g.fillStyle = COL.goldHi;
     g.beginPath(); g.arc(px, py, 5, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0;
   }
   if (s.idle) {
-    g.fillStyle = 'rgba(7,8,15,.35)'; g.fillRect(padX, gy0, gw, gh);
+    g.fillStyle = 'rgba(10,9,8,.35)'; g.fillRect(padX, gy0, gw, gh);
   }
 }
 

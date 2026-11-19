@@ -5,20 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Liftoff</title>
 <meta name="description" content="Liftoff: riser, reverse reverb and pre-drop cut in one effect, locked to your bars.">
-<meta name="theme-color" content="#07080f">
+<meta name="theme-color" content="#0b0a09">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap">
 <style>
-/* Liftoff: a flight deck for drops. A header (brand, presets, transport) over the flight path display (the build,
-   the gap, the reverse swell and the drop, with a countdown), a timing strip, three modules and a footer. */
+/* Liftoff: a black-and-gold hardware unit. Brushed-metal panels held by screws, a recessed flight path screen with
+   the build, the gap, the reverse swell and the drop, machined knobs with tick rings and lit arcs, LED switches
+   and LED meters. Gold for the build, violet for the backverb, pink for the drop. */
 :root {
   color-scheme: dark;
-  --bg: #07080f; --bg-hi: #151a30;
-  --panel: #0f1220; --panel-hi: #161a2c; --well: #0a0c16; --edge: #262b42; --edge-hi: #353b58;
-  --text: #f2f3f8; --muted: #9aa0b8; --dim: #6b7190; --faint: #464b66;
-  --amber: #ffb547; --pink: #ff4d8d; --violet: #8b6cff; --cyan: #4fd8ff; --green: #5cf2a8;
-  --burn: linear-gradient(90deg, var(--amber), var(--pink) 55%, var(--violet));
+  --bg: #0b0a09;
+  --metal-hi: #2a2826; --metal: #1b1a18; --metal-lo: #121110; --screen: #0a0908; --well: #0d0c0b;
+  --edge: #34312c; --edge-hi: #4a463f; --edge-lo: #050505;
+  --text: #efe8da; --muted: #a69e8f; --dim: #7b7468; --faint: #4c4740;
+  --gold: #e3b062; --gold-hi: #f7d996; --gold-lo: #8f6426;
+  --violet: #9d82ff; --pink: #ff5aa8; --cyan: #f7d996; --green: #9be37a;
+  --amber: var(--gold);
+  --burn: linear-gradient(180deg, var(--gold-hi), var(--gold) 55%, #b98232);
+  --brushed: repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, rgba(0,0,0,.035) 1px 2px, transparent 2px 4px);
+  --screws: radial-gradient(circle at 13px 13px, #8a857c 0 1.4px, #3b3833 2.2px, #0006 3.6px, transparent 4.4px),
+            radial-gradient(circle at calc(100% - 13px) 13px, #8a857c 0 1.4px, #3b3833 2.2px, #0006 3.6px, transparent 4.4px),
+            radial-gradient(circle at 13px calc(100% - 13px), #8a857c 0 1.4px, #3b3833 2.2px, #0006 3.6px, transparent 4.4px),
+            radial-gradient(circle at calc(100% - 13px) calc(100% - 13px), #8a857c 0 1.4px, #3b3833 2.2px, #0006 3.6px, transparent 4.4px);
+  --serif: 'Cinzel', 'Trajan Pro', Georgia, serif;
   --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -26,195 +36,247 @@
 html, body { margin: 0; }
 body {
   min-height: 100vh; font-family: var(--sans); color: var(--text); font-size: 14px;
-  background: radial-gradient(ellipse 90% 60% at 50% -10%, #2a1f45 0%, var(--bg-hi) 30%, var(--bg) 70%) fixed, var(--bg);
+  background: radial-gradient(ellipse 90% 70% at 50% 0%, #26221d 0%, #12100e 45%, var(--bg) 80%) fixed, var(--bg);
   display: flex; flex-direction: column; align-items: center; gap: 14px;
   padding: clamp(10px, 2.4vw, 32px) max(12px, env(safe-area-inset-right, 0px)) 24px max(12px, env(safe-area-inset-left, 0px));
   -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
 }
 button { font: inherit; color: inherit; cursor: pointer; }
-:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
 .mono { font-family: var(--mono); }
 .vis { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
+/* ---------- chassis ---------- */
 .deck {
-  width: 100%; max-width: 1120px; user-select: none; -webkit-user-select: none;
-  border: 1px solid var(--edge); border-radius: 22px; padding: 18px 20px 16px;
-  background: linear-gradient(180deg, #141829 0%, #0d101c 40%, #0a0c15 100%);
-  box-shadow: 0 40px 90px #000c, inset 0 1px 0 #ffffff14;
-  display: flex; flex-direction: column; gap: 14px;
+  width: 100%; max-width: 1140px; user-select: none; -webkit-user-select: none;
+  border: 1px solid var(--edge-lo); border-radius: 18px; padding: 16px 16px 14px;
+  background: var(--brushed), linear-gradient(180deg, #24221f 0%, #171614 35%, #0f0e0d 100%);
+  box-shadow: 0 40px 90px #000d, 0 0 0 1px #3a362f inset, 0 1px 0 #ffffff12 inset, 0 -2px 0 #0009 inset;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.plate {
+  position: relative; border-radius: 12px; border: 1px solid var(--edge-lo);
+  background: var(--screws), var(--brushed), linear-gradient(180deg, var(--metal-hi), var(--metal) 40%, var(--metal-lo));
+  box-shadow: inset 0 1px 0 #ffffff14, inset 0 -1px 0 #0008, 0 2px 6px #0008, 0 0 0 1px #2d2a25;
 }
 html.in-plugin body { background: var(--bg); padding: 0; gap: 0; }
 html.in-plugin .deck { max-width: none; border: 0; border-radius: 0; box-shadow: none; min-height: 100vh; }
 html.in-plugin .web-only, html:not(.in-plugin) .plugin-only { display: none !important; }
 
 /* ---------- header ---------- */
-.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
-.brand svg { width: 34px; height: 34px; flex: none; }
-.brand b { font-weight: 800; letter-spacing: .22em; font-size: 17px; background: var(--burn); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.brand small { display: block; color: var(--dim); font-size: 11px; letter-spacing: .04em; margin-top: 1px; }
-.presets { display: flex; align-items: center; gap: 4px; background: var(--well); border: 1px solid var(--edge); border-radius: 12px; padding: 3px; }
-.presets select { appearance: none; -webkit-appearance: none; background: transparent; border: 0; color: var(--text); font: 600 13px var(--sans); padding: 7px 8px; min-width: 150px; cursor: pointer; }
-.presets select option { background: #12152a; }
-.icon-btn { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; border: 0; background: transparent; color: var(--muted); }
-.icon-btn:hover { background: #ffffff0d; color: var(--text); }
+.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 4px 6px 2px; }
+.brand { display: flex; align-items: center; gap: 14px; margin-right: auto; }
+.brand svg { width: 52px; height: 44px; flex: none; filter: drop-shadow(0 2px 3px #000a); }
+.brand .sep { width: 1px; height: 40px; background: linear-gradient(180deg, transparent, #4a463f, transparent); }
+.brand b { display: block; font: 600 30px/1 var(--serif); letter-spacing: .14em;
+  background: linear-gradient(180deg, #fbf3e2 0%, #d9cfbc 55%, #9d9282 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 #000); }
+.brand small { display: block; color: var(--muted); font: 500 13px var(--sans); letter-spacing: .12em; margin-top: 5px; }
+.box { background: linear-gradient(180deg, #0d0c0b, #161513); border: 1px solid #3a3731; border-radius: 12px; box-shadow: inset 0 2px 6px #000c, 0 1px 0 #ffffff0d; }
+.presets { display: flex; align-items: center; gap: 4px; padding: 3px; }
+.presets select { appearance: none; -webkit-appearance: none; background: transparent; border: 0; color: var(--text); font: 600 14px var(--sans); padding: 8px 10px; min-width: 170px; text-align: center; text-align-last: center; cursor: pointer; }
+.presets select option { background: #1a1816; }
+.icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; border: 0; background: transparent; color: var(--muted); }
+.icon-btn:hover { background: #ffffff0a; color: var(--gold-hi); }
 .icon-btn svg { width: 16px; height: 16px; }
 .transport { display: flex; align-items: center; gap: 8px; }
-.play { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--edge-hi); background: linear-gradient(180deg, #232842, #151a2e); display: grid; place-items: center; box-shadow: 0 4px 14px #0008; }
+.play { width: 50px; height: 50px; border-radius: 50%; border: 0; display: grid; place-items: center; color: var(--gold-hi);
+  background: radial-gradient(circle at 50% 35%, #2f2c27, #141311 70%);
+  box-shadow: 0 0 0 2px #0a0908, 0 0 0 4px #8f6426, 0 0 0 5px #e3b06255, 0 0 14px #e3b06233, 0 4px 10px #000a; }
 .play svg { width: 18px; height: 18px; }
-.play[aria-pressed="true"] { border-color: var(--pink); box-shadow: 0 0 0 3px #ff4d8d33, 0 4px 14px #0008; }
-.field { display: flex; align-items: center; gap: 6px; background: var(--well); border: 1px solid var(--edge); border-radius: 10px; padding: 0 10px; height: 36px; color: var(--muted); font-size: 12px; }
-.field input { width: 50px; background: transparent; border: 0; color: var(--text); font: 700 14px var(--mono); text-align: right; }
+.play[aria-pressed="true"] { box-shadow: 0 0 0 2px #0a0908, 0 0 0 4px var(--gold), 0 0 0 5px #f7d99688, 0 0 22px #e3b06566, 0 4px 10px #000a; }
+.field { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 40px; color: var(--muted); font: 600 12px var(--sans); letter-spacing: .06em; }
+.field input { width: 52px; background: transparent; border: 0; color: var(--text); font: 700 15px var(--mono); text-align: right; }
 .field input:focus { outline: none; }
-.src-btn { height: 36px; border-radius: 10px; border: 1px solid var(--edge); background: var(--well); color: var(--muted); padding: 0 12px; font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; max-width: 220px; }
+.src-btn { height: 40px; padding: 0 14px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; max-width: 220px; color: var(--text); }
 .src-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.src-btn:hover { color: var(--text); border-color: var(--edge-hi); }
-.host-info { color: var(--muted); font: 600 12px var(--mono); background: var(--well); border: 1px solid var(--edge); border-radius: 10px; padding: 10px 12px; }
+.src-btn svg { color: var(--gold); }
+.src-btn:hover { border-color: #5a554b; }
+.host-info { color: var(--muted); font: 600 12px var(--mono); padding: 11px 14px; }
 
 /* ---------- flight path display ---------- */
-.display { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 0; border-radius: 16px; overflow: hidden;
-  border: 1px solid var(--edge); background: radial-gradient(ellipse at 30% 0%, #1a1533 0%, #0a0b16 60%); box-shadow: inset 0 2px 18px #000a; }
-.display canvas { display: block; width: 100%; height: 230px; }
-.readout { border-left: 1px solid var(--edge); padding: 16px 18px; display: flex; flex-direction: column; justify-content: space-between; background: #ffffff04; }
-.readout .lbl { color: var(--dim); font: 700 10.5px var(--mono); letter-spacing: .16em; }
-.count { font: 800 34px/1.05 var(--mono); letter-spacing: -.02em; margin-top: 6px; white-space: nowrap; }
-.count.hot { background: var(--burn); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.count-sub { color: var(--muted); font-size: 12px; margin-top: 4px; min-height: 16px; }
-.alt { display: flex; align-items: baseline; gap: 8px; }
-.alt b { font: 800 26px var(--mono); }
-.alt span { color: var(--dim); font: 600 11px var(--mono); }
-.altbar { height: 6px; border-radius: 3px; background: #ffffff10; overflow: hidden; margin-top: 6px; }
-.altbar i { display: block; height: 100%; width: 0; background: var(--burn); border-radius: 3px; }
-.flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 70% 50%, #ff4d8d55, transparent 60%); opacity: 0; transition: opacity .5s ease-out; }
+.display { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 10px; padding: 12px 28px; }
+.screen { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid #000;
+  background: radial-gradient(ellipse at 60% 0%, #1b1813 0%, #0b0a09 60%), var(--screen);
+  box-shadow: inset 0 3px 14px #000, inset 0 0 0 1px #2a2722, 0 1px 0 #ffffff10; }
+.screen canvas { display: block; width: 100%; height: 236px; }
+.readout { padding: 14px 18px; display: flex; flex-direction: column; justify-content: space-between; }
+.readout .lbl { color: var(--muted); font: 700 11px var(--mono); letter-spacing: .18em; }
+.count { font: 800 46px/1 var(--mono); letter-spacing: -.02em; margin-top: 8px; white-space: nowrap; color: var(--text); }
+.count.hot { background: var(--burn); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 10px #e3b06240); }
+.count-sub { color: var(--muted); font-size: 13px; margin-top: 6px; min-height: 16px; }
+.alt { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.alt b { font: 800 30px var(--mono); }
+.alt span { color: var(--dim); font: 600 12px var(--mono); }
+.altbar { height: 7px; border-radius: 4px; background: #000; box-shadow: inset 0 1px 2px #000, 0 1px 0 #ffffff0d; overflow: hidden; margin-top: 8px; }
+.altbar i { display: block; height: 100%; width: 0; background: var(--burn); border-radius: 4px; box-shadow: 0 0 8px #e3b06288; }
+.flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 75% 50%, #f7d99640, transparent 60%); opacity: 0; transition: opacity .6s ease-out; }
 .flash.on { opacity: 1; transition: none; }
 
 /* ---------- timing strip ---------- */
-.timing { display: grid; grid-template-columns: auto auto auto auto minmax(160px, 1fr) auto; gap: 14px; align-items: end; padding: 0 2px; }
-.grp { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.grp > label, .grp > .lbl { color: var(--dim); font: 700 10.5px var(--mono); letter-spacing: .14em; }
-.seg { display: inline-flex; background: var(--well); border: 1px solid var(--edge); border-radius: 10px; padding: 3px; gap: 2px; }
-.seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 9px; border-radius: 7px; font: 600 12px var(--sans); white-space: nowrap; }
+.timing { display: grid; grid-template-columns: auto auto auto auto minmax(160px, 1fr) auto; gap: 16px; align-items: end; padding: 8px 28px 16px; }
+.grp { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.grp > .lbl { color: var(--muted); font: 700 11px var(--mono); letter-spacing: .16em; }
+.seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 11px; background: linear-gradient(180deg, #0b0a09, #151412); border: 1px solid #36332d; box-shadow: inset 0 2px 5px #000b, 0 1px 0 #ffffff0d; }
+.seg button { --acc: var(--gold); border: 1px solid transparent; background: linear-gradient(180deg, #24221f, #1a1917); color: var(--muted); padding: 6px 11px; border-radius: 8px; font: 600 12.5px var(--sans); white-space: nowrap; letter-spacing: .02em;
+  box-shadow: inset 0 1px 0 #ffffff0c, 0 1px 2px #0008; }
 .seg button:hover { color: var(--text); }
-.seg button[aria-checked="true"] { background: linear-gradient(180deg, #2a2f4c, #1d2138); color: var(--text); box-shadow: inset 0 1px 0 #ffffff14, 0 1px 3px #0008; }
-.seg.small button { padding: 5px 7px; font-size: 11.5px; }
-.fader { position: relative; height: 34px; border-radius: 10px; background: var(--well); border: 1px solid var(--edge); cursor: ew-resize; touch-action: none; overflow: hidden; }
-.fader i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--burn); opacity: .85; }
-.fader b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font: 700 12px var(--mono); letter-spacing: .1em; text-shadow: 0 1px 2px #000a; }
-.fader[aria-disabled="true"] { opacity: .45; cursor: default; }
-.launch { height: 34px; border-radius: 10px; border: 0; padding: 0 18px; font: 800 12.5px var(--mono); letter-spacing: .14em; color: #1a0b14;
-  background: var(--burn); box-shadow: 0 6px 18px #ff4d8d44; }
+.seg button[aria-checked="true"] { color: var(--acc); border-color: var(--acc); background: linear-gradient(180deg, #2a2620, #1b1915);
+  box-shadow: inset 0 0 10px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 8px color-mix(in srgb, var(--acc) 35%, transparent); text-shadow: 0 0 8px color-mix(in srgb, var(--acc) 50%, transparent); }
+.seg.fill button[aria-checked="true"] { color: #1d1407; text-shadow: none; border-color: #f7d996aa; background: var(--burn); box-shadow: inset 0 1px 0 #fff6, 0 0 10px #e3b06255; }
+.seg.small button { padding: 6px 9px; font-size: 12px; }
+.fader { position: relative; height: 40px; border-radius: 11px; cursor: ew-resize; touch-action: none; overflow: hidden;
+  background: linear-gradient(180deg, #0b0a09, #151412); border: 1px solid #36332d; box-shadow: inset 0 2px 6px #000c, 0 1px 0 #ffffff0d; }
+.fader i { position: absolute; top: 4px; bottom: 4px; left: 4px; width: 0; min-width: 0; border-radius: 8px; background: var(--burn); box-shadow: inset 0 1px 0 #fff6, 0 0 10px #e3b06244; }
+.fader b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font: 700 13px var(--mono); letter-spacing: .1em; color: var(--text); mix-blend-mode: normal; }
+.fader b span:first-child { color: #1d1407; background: var(--burn); padding: 4px 10px; border-radius: 6px; margin-left: -8px; box-shadow: inset 0 1px 0 #fff6, 0 1px 3px #000a; }
+.fader[aria-disabled="true"] { cursor: default; }
+.fader[aria-disabled="true"] b span:first-child { filter: saturate(.6) brightness(.8); }
+.launch { height: 44px; border-radius: 11px; border: 1px solid #f7d996aa; padding: 0 26px; font: 800 14px var(--sans); letter-spacing: .1em; color: #1d1407;
+  background: var(--burn); box-shadow: inset 0 1px 0 #fff8, inset 0 -2px 0 #0003, 0 0 0 3px #0a0908, 0 0 0 4px #5a4320, 0 4px 14px #000a, 0 0 18px #e3b06233; }
 .launch:active { transform: translateY(1px); }
 .launch.armed { animation: pulse .6s ease-in-out infinite alternate; }
-@keyframes pulse { to { box-shadow: 0 0 0 4px #ff4d8d55, 0 6px 18px #ff4d8d66; } }
-.launch[disabled] { opacity: .35; box-shadow: none; cursor: default; }
+@keyframes pulse { to { box-shadow: inset 0 1px 0 #fff8, 0 0 0 3px #0a0908, 0 0 0 4px var(--gold), 0 0 26px #e3b06299; } }
+.launch[disabled] { filter: saturate(.75) brightness(.62); cursor: default; }
 
 /* ---------- modules ---------- */
-.modules { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 12px; }
-.mod { border: 1px solid var(--edge); border-radius: 16px; padding: 12px 14px 14px; background: linear-gradient(180deg, var(--panel-hi), var(--panel)); position: relative; }
-.mod::before { content: ''; position: absolute; left: 14px; right: 14px; top: 0; height: 2px; border-radius: 2px; background: var(--accent); opacity: .8; }
-.mod.off::before { opacity: .15; }
-.mod.off .body { opacity: .38; }
-.mod header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.mod h2 { margin: 0; font: 800 12.5px var(--mono); letter-spacing: .18em; }
-.mod header p { margin: 0 0 0 auto; color: var(--dim); font-size: 11.5px; text-align: right; }
-.power { width: 28px; height: 16px; border-radius: 8px; border: 0; background: #ffffff18; position: relative; padding: 0; flex: none; }
-.power::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
-.power[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 40%, transparent); }
-.power[aria-checked="true"]::after { transform: translateX(12px); background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-.mod.rise { --accent: var(--amber); }
-.mod.verb { --accent: var(--violet); }
-.mod.drop { --accent: var(--pink); }
-.knobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 6px; }
-.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+.modules { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 12px; }
+.mod { --acc: var(--gold); padding: 16px 20px 18px; }
+.mod.verb { --acc: var(--violet); }
+.mod.drop { --acc: var(--pink); }
+.mod .seg button { --acc: inherit; }
+.mod.verb .seg button { --acc: var(--violet); }
+.mod.drop .seg button { --acc: var(--pink); }
+.mod.off .body { opacity: .38; filter: saturate(.3); }
+.mod header { display: flex; align-items: center; gap: 12px; margin: 0 0 14px 8px; }
+.mod h2 { margin: 0; font: 700 18px var(--sans); letter-spacing: .04em; color: var(--text); }
+.mod header p { margin: 0 4px 0 auto; color: var(--muted); font-size: 12.5px; text-align: right; }
+/* an LED you press: lit in the module's colour when it is on */
+.power { width: 20px; height: 20px; border-radius: 50%; border: 0; padding: 0; flex: none;
+  background: radial-gradient(circle at 50% 40%, #3a3631, #141210 70%); box-shadow: 0 0 0 2px #0a0908, 0 0 0 3px #3e3a33, inset 0 1px 2px #000; }
+.power[aria-checked="true"] { background: radial-gradient(circle at 45% 35%, #fff 0 8%, var(--acc) 35%, color-mix(in srgb, var(--acc) 55%, #000) 100%);
+  box-shadow: 0 0 0 2px #0a0908, 0 0 0 3px #3e3a33, 0 0 12px var(--acc), 0 0 24px color-mix(in srgb, var(--acc) 50%, transparent); }
+.knobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 6px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
 
-/* knob */
-.knob { display: flex; flex-direction: column; align-items: center; gap: 2px; outline: none; touch-action: none; cursor: ns-resize; min-width: 0; }
-.knob svg { width: 58px; height: 58px; overflow: visible; }
-.knob .k-lbl { color: var(--muted); font: 700 10px var(--mono); letter-spacing: .12em; }
-.knob .k-val { color: var(--text); font: 600 11.5px var(--mono); min-height: 15px; }
-.knob:focus-visible svg { filter: drop-shadow(0 0 4px var(--cyan)); }
-.knob .trk { stroke: #ffffff14; }
-.knob .arc { stroke: var(--accent, var(--cyan)); }
-.knob .mod-arc { stroke: #fff; opacity: .9; }
-.knob .cap { fill: url(#capGrad); stroke: #ffffff1c; }
-.knob .ptr { stroke: var(--text); }
-.knob.big svg { width: 66px; height: 66px; }
+/* ---------- knobs: machined caps on a tick ring, with a lit arc ---------- */
+.knob { --acc: inherit; display: flex; flex-direction: column; align-items: center; gap: 4px; outline: none; touch-action: none; cursor: ns-resize; min-width: 0; }
+.knob .kn { position: relative; width: 76px; height: 76px; }
+.knob .kn svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.knob .tick { stroke: #5b564d; }
+.knob .tick.major { stroke: #8a8478; }
+.knob .trk { stroke: #050505; }
+.knob .arc { stroke: var(--acc); filter: drop-shadow(0 0 3px var(--acc)); }
+.knob .mod-arc { stroke: #fff4dc; opacity: .85; }
+.knob .cap { position: absolute; left: 50%; top: 50%; width: 52%; height: 52%; transform: translate(-50%, -50%); border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 58%, #0007 61%, transparent 64%),
+    radial-gradient(ellipse at 35% 25%, #ffffff40, transparent 45%),
+    conic-gradient(from 0deg, #4a4844, #a9a59d 11%, #3d3b38 24%, #8d8981 37%, #353330 50%, #9a968e 62%, #3f3d3a 75%, #b3afa6 88%, #4a4844),
+    #55524d;
+  box-shadow: 0 0 0 2px #121110, 0 0 0 3.5px #2b2925, 0 3px 6px #000c, 0 6px 14px #0009, inset 0 -2px 3px #0006, inset 0 1px 1px #fff8; }
+.knob .cap::before { content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: repeating-radial-gradient(circle at 50% 50%, #ffffff08 0 1px, transparent 1px 2.5px); }
+.knob .ind { position: absolute; inset: 0; border-radius: 50%; }
+.knob .ind::after { content: ''; position: absolute; left: 50%; top: 6%; width: 3px; height: 38%; transform: translateX(-50%); border-radius: 2px;
+  background: linear-gradient(180deg, #1a1816, #3a3631); box-shadow: 0 1px 0 #fff6; }
+.knob .k-lbl { color: var(--muted); font: 700 12px var(--sans); letter-spacing: .12em; margin-top: 2px; }
+.knob .k-val { color: var(--text); font: 600 13px var(--sans); min-height: 16px; }
+.knob:focus-visible .cap { box-shadow: 0 0 0 2px #121110, 0 0 0 4px var(--gold-hi), 0 3px 6px #000c; }
+.knob.small .kn { width: 64px; height: 64px; }
+.timing .knob .kn { width: 64px; height: 64px; }
+.timing .knob { margin-bottom: -6px; }
 
 /* ---------- footer ---------- */
-.foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 2px 2px 0; }
-.foot .knobs { display: flex; gap: 14px; --accent: var(--cyan); }
-.meters { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
-.meter { display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 8px; color: var(--dim); font: 700 10px var(--mono); letter-spacing: .1em; }
-.meter div { height: 6px; border-radius: 3px; background: #ffffff10; overflow: hidden; }
-.meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--amber) 80%, var(--pink)); }
-.export { margin-left: auto; display: flex; gap: 8px; }
-.btn { height: 36px; border-radius: 10px; border: 1px solid var(--edge-hi); background: linear-gradient(180deg, #1f2440, #161a2e); color: var(--text); padding: 0 14px; font: 600 12.5px var(--sans); display: flex; align-items: center; gap: 7px; }
-.btn:hover { border-color: var(--muted); }
-.btn svg { width: 15px; height: 15px; }
+.foot { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; padding: 12px 22px 14px; }
+.foot .knobs { display: flex; gap: 18px; --acc: var(--gold); }
+.foot .knob .kn { width: 64px; height: 64px; }
+.meters { display: flex; flex-direction: column; gap: 9px; min-width: 260px; }
+.meter { display: grid; grid-template-columns: 36px 1fr; align-items: center; gap: 10px; color: var(--muted); font: 700 12px var(--mono); letter-spacing: .12em; }
+.meter div { position: relative; height: 12px; padding: 2px; border-radius: 3px; background: #050505; box-shadow: inset 0 1px 3px #000, 0 1px 0 #ffffff10; overflow: hidden; }
+.meter div::before { content: ''; position: absolute; inset: 2px; background: repeating-linear-gradient(90deg, #2a2216 0 9px, transparent 9px 12px); }
+.meter i { position: relative; display: block; height: 100%; width: 0; transition: width .06s linear;
+  background: repeating-linear-gradient(90deg, var(--gold) 0 9px, transparent 9px 12px); filter: drop-shadow(0 0 3px #e3b06288); }
+.export { margin-left: auto; display: flex; gap: 10px; }
+.btn { height: 42px; border-radius: 11px; color: var(--text); padding: 0 18px; font: 600 14px var(--sans); display: flex; align-items: center; gap: 9px;
+  border: 1px solid #4a463f; background: linear-gradient(180deg, #2a2724, #191816); box-shadow: inset 0 1px 0 #ffffff14, 0 0 0 2px #0a0908, 0 3px 8px #0009; }
+.btn:hover { border-color: #6e675b; }
+.btn svg { width: 16px; height: 16px; color: var(--gold-hi); }
 .btn[disabled] { opacity: .5; cursor: progress; }
-.hint { color: var(--dim); font-size: 12px; max-width: 1120px; text-align: center; line-height: 1.5; }
+.hint { color: var(--dim); font-size: 12px; max-width: 1140px; text-align: center; line-height: 1.5; }
 .hint b { color: var(--muted); }
-.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #1d2138; border: 1px solid var(--edge-hi); color: var(--text); padding: 10px 16px; border-radius: 12px; font-size: 13px; opacity: 0; transition: .2s; pointer-events: none; box-shadow: 0 10px 30px #000a; z-index: 10; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #1d1b18; border: 1px solid #4a463f; color: var(--text); padding: 10px 16px; border-radius: 12px; font-size: 13px; opacity: 0; transition: .2s; pointer-events: none; box-shadow: 0 10px 30px #000c; z-index: 10; }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
-.drop-zone { position: fixed; inset: 0; display: none; place-items: center; background: #07080fcc; z-index: 20; font: 700 18px var(--sans); color: var(--text); border: 3px dashed var(--pink); }
+.drop-zone { position: fixed; inset: 0; display: none; place-items: center; background: #0b0a09d0; z-index: 20; font: 600 20px var(--serif); letter-spacing: .08em; color: var(--gold-hi); border: 3px dashed var(--gold); }
 .drop-zone.on { display: grid; }
 
-@media (max-width: 960px) {
+@media (max-width: 980px) {
   .timing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .timing .grp-build { grid-column: 1 / -1; }
   .modules { grid-template-columns: 1fr; }
   .display { grid-template-columns: 1fr; }
-  .readout { border-left: 0; border-top: 1px solid var(--edge); flex-direction: row; align-items: center; gap: 16px; }
+  .readout { flex-direction: row; align-items: center; gap: 16px; }
   .readout > div { flex: 1; }
 }
 @media (max-width: 560px) {
-  .deck { padding: 14px 12px; border-radius: 16px; }
-  .display canvas { height: 180px; }
-  .count { font-size: 24px; }
-  .knob svg { width: 50px; height: 50px; }
-  .timing { grid-template-columns: 1fr; }
-  .seg button { padding: 6px 7px; }
+  .display { padding: 10px; }
+  .deck { padding: 10px; border-radius: 14px; }
+  .brand b { font-size: 24px; }
+  .brand .sep, .brand svg { display: none; }
+  .screen canvas { height: 180px; }
+  .count { font-size: 30px; }
+  .knob .kn, .foot .knob .kn { width: 62px; height: 62px; }
+  .timing { grid-template-columns: 1fr; padding: 14px; }
+  .mod { padding: 14px 12px 16px; }
+  .seg button { padding: 6px 8px; }
+  .meters { min-width: 0; flex: 1; }
   .export { margin-left: 0; width: 100%; }
-  .export .btn { flex: 1; justify-content: center; }
+  .export .btn { flex: 1; justify-content: center; padding: 0 10px; }
 }
 </style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <radialGradient id="capGrad" cx="40%" cy="30%" r="75%"><stop offset="0" stop-color="#3a405c"/><stop offset=".6" stop-color="#1d2135"/><stop offset="1" stop-color="#10131f"/></radialGradient>
-    <linearGradient id="burnGrad" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ffb547"/><stop offset=".55" stop-color="#ff4d8d"/><stop offset="1" stop-color="#8b6cff"/></linearGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7d996"/><stop offset=".5" stop-color="#e3b062"/><stop offset="1" stop-color="#8f6426"/></linearGradient>
+    <radialGradient id="planetGrad" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#4a4640"/><stop offset=".6" stop-color="#1e1c19"/><stop offset="1" stop-color="#0c0b0a"/></radialGradient>
   </defs>
 </svg>
 
 <main class="deck" id="deck">
   <div class="top">
     <div class="brand">
-      <svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="11" fill="#151a2e" stroke="#353b58"/>
-        <path d="M7 31 C16 30 24 24 29 9" fill="none" stroke="url(#burnGrad)" stroke-width="3.2" stroke-linecap="round"/>
-        <path d="M24 10.5 29 8l1.6 5.4" fill="none" stroke="#ff4d8d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="8" cy="31" r="2.2" fill="#ffb547"/></svg>
+      <svg viewBox="0 0 52 44" aria-hidden="true">
+        <circle cx="27" cy="23" r="13" fill="url(#planetGrad)" stroke="#5c574e" stroke-width=".8"/>
+        <ellipse cx="27" cy="23" rx="22" ry="7.5" transform="rotate(-28 27 23)" fill="none" stroke="url(#goldGrad)" stroke-width="2.4"/>
+        <path d="M8 9l1 2.6 2.6 1-2.6 1L8 16.2l-1-2.6-2.6-1 2.6-1z" fill="#f7d996"/>
+        <path d="M45 35l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" fill="#e3b062"/>
+      </svg>
+      <span class="sep"></span>
       <div><b>LIFTOFF</b><small>riser · backverb · drop</small></div>
     </div>
 
-    <div class="presets" role="group" aria-label="Presets">
+    <div class="presets box" role="group" aria-label="Presets">
       <button class="icon-btn" id="prevPreset" aria-label="Previous preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
       <select id="preset" aria-label="Preset"></select>
       <button class="icon-btn" id="nextPreset" aria-label="Next preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
     </div>
 
     <div class="transport web-only">
-      <button class="src-btn" id="srcBtn" title="Load a loop or a whole song (or drop a file anywhere)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg><span id="srcName">Demo loop</span></button>
+      <button class="src-btn box" id="srcBtn" title="Load a loop or a whole song (or drop a file anywhere)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg><span id="srcName">Demo loop</span></button>
       <input type="file" id="fileIn" accept="audio/*" class="vis" tabindex="-1">
-      <label class="field">BPM <input id="bpm" class="mono" type="number" min="40" max="300" step="0.1" value="124" inputmode="decimal"></label>
+      <label class="field box">BPM <input id="bpm" class="mono" type="number" min="40" max="300" step="0.1" value="124" inputmode="decimal"></label>
       <button class="play" id="play" aria-label="Play" aria-pressed="false"><svg viewBox="0 0 24 24" fill="currentColor"><path id="playIcon" d="M7 4.5v15l13-7.5z"/></svg></button>
     </div>
-    <div class="host-info plugin-only" id="hostInfo">DAW · — BPM</div>
+    <div class="host-info box plugin-only" id="hostInfo">DAW · — BPM</div>
   </div>
 
-  <section class="display" aria-label="Flight path">
-    <canvas id="path" aria-hidden="true"></canvas>
-    <div class="readout">
+  <section class="display plate" aria-label="Flight path">
+    <div class="screen">
+      <canvas id="path" aria-hidden="true"></canvas>
+      <div class="flash" id="flash"></div>
+    </div>
+    <div class="screen readout">
       <div>
         <div class="lbl" id="countLbl">NEXT DROP</div>
         <div class="count" id="count" aria-live="off">—</div>
@@ -226,38 +288,39 @@ html.in-plugin .web-only, html:not(.in-plugin) .plugin-only { display: none !imp
         <div class="altbar"><i id="altBar"></i></div>
       </div>
     </div>
-    <div class="flash" id="flash"></div>
   </section>
 
-  <section class="timing" aria-label="Timing">
-    <div class="grp"><span class="lbl">MODE</span><div class="seg" data-param="mode" role="radiogroup" aria-label="Mode"></div></div>
-    <div class="grp"><span class="lbl">PHRASE</span><div class="seg small" data-param="phrase" role="radiogroup" aria-label="Phrase"></div></div>
+  <section class="timing plate" aria-label="Timing">
+    <div class="grp"><span class="lbl">MODE</span><div class="seg fill" data-param="mode" role="radiogroup" aria-label="Mode"></div></div>
+    <div class="grp"><span class="lbl">PHRASE</span><div class="seg fill small" data-param="phrase" role="radiogroup" aria-label="Phrase"></div></div>
     <div class="grp"><span class="lbl">BUILD LENGTH</span><div class="seg small" data-param="length" role="radiogroup" aria-label="Build length"></div></div>
-    <div class="grp" data-knob="curve"></div>
+    <div class="grp" data-knob="curve" style="--acc: var(--gold)"></div>
     <div class="grp grp-build"><span class="lbl" id="buildLbl">BUILD</span>
       <div class="fader" id="buildFader" role="slider" tabindex="0" aria-label="Build" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i><b><span>BUILD</span><span id="buildVal">0%</span></b></div></div>
     <div class="grp"><span class="lbl">&nbsp;</span><button class="launch" id="launch" title="Start a build on the next bar (Trigger mode). L">LAUNCH</button></div>
   </section>
 
   <section class="modules">
-    <div class="mod rise" id="mod-rise">
+    <div class="mod rise plate" id="mod-rise">
       <header><button class="power" data-toggle="rise" role="switch" aria-label="Rise on"></button><h2>RISE</h2><p>turns the sound itself into the riser</p></header>
       <div class="body knobs">
         <div data-knob="pitch"></div><div data-knob="filter"></div><div data-knob="wash"></div>
         <div data-knob="stutter"></div><div data-knob="noise"></div><div data-knob="width"></div>
       </div>
     </div>
-    <div class="mod verb" id="mod-verb">
+    <div class="mod verb plate" id="mod-verb">
       <header><button class="power" data-toggle="verb" role="switch" aria-label="Backverb on"></button><h2>BACKVERB</h2><p>reverse reverb that lands on the hit</p></header>
       <div class="body">
         <div class="row">
           <div class="grp"><span class="lbl">SWELL FROM</span><div class="seg small" data-param="verbMode" role="radiogroup" aria-label="Backverb mode"></div></div>
+        </div>
+        <div class="row">
           <div class="grp"><span class="lbl">LENGTH</span><div class="seg small" data-param="verbLen" role="radiogroup" aria-label="Backverb length"></div></div>
         </div>
         <div class="knobs"><div data-knob="verbSize"></div><div data-knob="verbTone"></div><div data-knob="verbMix"></div></div>
       </div>
     </div>
-    <div class="mod drop" id="mod-drop">
+    <div class="mod drop plate" id="mod-drop">
       <header><button class="power" data-toggle="drop" role="switch" aria-label="Drop on"></button><h2>DROP</h2><p>the moment before, and the hit</p></header>
       <div class="body">
         <div class="row">
@@ -271,14 +334,14 @@ html.in-plugin .web-only, html:not(.in-plugin) .plugin-only { display: none !imp
     </div>
   </section>
 
-  <footer class="foot">
+  <footer class="foot plate">
     <div class="knobs"><div data-knob="mix"></div><div data-knob="output"></div></div>
     <div class="meters">
       <div class="meter">IN<div><i id="mIn"></i></div></div>
       <div class="meter">OUT<div><i id="mOut"></i></div></div>
     </div>
     <div class="export web-only">
-      <button class="btn" id="exportTrans" title="Render the build, the gap and the first bar of the drop as a WAV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export transition</button>
+      <button class="btn" id="exportTrans" title="Render the build, the gap and the first bar of the drop as a WAV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg>Export transition</button>
       <button class="btn" id="exportPhrase" title="Render a whole phrase into the drop as a WAV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export phrase</button>
     </div>
   </footer>
