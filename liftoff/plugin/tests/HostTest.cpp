@@ -54,12 +54,13 @@ int main (int argc, char** argv)
     plugin->setPlayHead (&head);
     plugin->setPlayConfigDetails (2, 2, sr, block);
     plugin->prepareToPlay (sr, block);
-    check ("it reports the backverb length as latency (1/2 note at 120 BPM)", plugin->getLatencySamples() == 48000, String (plugin->getLatencySamples()));
+    check ("a new instance opens in SAMPLE mode, with no latency", plugin->getLatencySamples() == 0, String (plugin->getLatencySamples()));
 
+    // SAMPLE mode: the track passes through untouched (REC and PREVIEW work on top of it)
     AudioBuffer<float> buf (2, block);
     MidiBuffer midi;
-    bool finite = true; float peak = 0; double energy = 0;
-    const int blocks = (int) (sr * 10 / block);
+    bool finite = true; double maxErr = 0;
+    const int blocks = (int) (sr * 4 / block);
     for (int b = 0; b < blocks; ++b)
     {
         for (int i = 0; i < block; ++i)
@@ -69,14 +70,14 @@ int main (int argc, char** argv)
         }
         head.ppq = (double) b * block / sr * head.bpm / 60.0;
         plugin->processBlock (buf, midi);
-        for (int c = 0; c < 2; ++c)
-            for (int i = 0; i < block; ++i)
-            {
-                const float v = buf.getSample (c, i);
-                finite &= std::isfinite (v); peak = jmax (peak, std::abs (v)); energy += (double) v * v;
-            }
+        for (int i = 0; i < block; ++i)
+        {
+            const float v = 0.3f * std::sin (6.2831853f * 220.0f * (float) (b * block + i) / (float) sr);
+            finite &= std::isfinite (buf.getSample (0, i));
+            maxErr = jmax (maxErr, (double) std::abs (buf.getSample (0, i) - v));
+        }
     }
-    check ("10 seconds of audio come out finite and bounded", finite && peak < 4 && energy > 1, String (peak));
+    check ("4 seconds of audio pass through untouched", finite && maxErr < 1e-6, String (maxErr));
 
     MemoryBlock state;
     plugin->getStateInformation (state);

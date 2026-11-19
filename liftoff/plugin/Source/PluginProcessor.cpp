@@ -73,6 +73,7 @@ LiftoffProcessor::LiftoffProcessor()
             ids.add (wp->getParameterID());
             raw.push_back (apvts.getRawParameterValue (wp->getParameterID()));
         }
+    formats.registerBasicFormats();
     startTimerHz (10);
 }
 
@@ -93,14 +94,21 @@ void LiftoffProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     engine.core.setParams (p);
     engine.core.snapSmoothing();
     engine.loadIR (p, lastBpm.load(), true);
-    setLatencySamples (engine.irLatency.load());
+    setLatencySamples (sampleView ? 0 : engine.irLatency.load());
     irKey = {};
+    recBuffer.setSize (2, (int) (sampleRate * 60.0));
+    recPos = 0; recording = false;
 }
 
 // the reversed reverb is as long as the backverb (at the DAW's tempo), and that length is the plugin's latency:
 // rebuild it off the audio thread when the length, size, tone or tempo change
 void LiftoffProcessor::timerCallback()
 {
+    retired.reset();   // a render the audio thread has let go of
+    // SAMPLE mode adds no latency; LIVE mode is late by the backverb length
+    const int wantLatency = sampleView ? 0 : engine.irLatency.load();
+    if (getLatencySamples() != wantLatency)
+        setLatencySamples (wantLatency);
     const auto p = readParams();
     const double bpm = lastBpm.load();
     const int want = engine.latencyFor (p, bpm);
@@ -109,8 +117,44 @@ void LiftoffProcessor::timerCallback()
         return;
     irKey = key;
     engine.loadIR (p, bpm);
-    if (getLatencySamples() != engine.irLatency.load())
+    if (! sampleView && getLatencySamples() != engine.irLatency.load())
         setLatencySamples (engine.irLatency.load());
+}
+
+File LiftoffProcessor::dataDir()
+{
+    auto d = File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile ("Liftoff");
+    d.createDirectory();
+    return d;
+}
+
+void LiftoffProcessor::startRecording()
+{
+    recPos = 0;
+    recLevel = 0;
+    recording = true;
+}
+
+AudioBuffer<float> LiftoffProcessor::stopRecording()
+{
+    recording = false;
+    const int n = jmin (recPos.load(), recBuffer.getNumSamples());
+    AudioBuffer<float> out (2, jmax (0, n));
+    for (int c = 0; c < 2 && n > 0; ++c)
+        out.copyFrom (c, 0, recBuffer, c, 0, n);
+    return out;
+}
+
+void LiftoffProcessor::setRender (std::shared_ptr<Render> r)
+{
+    retired = std::atomic_load (&render);
+    std::atomic_store (&render, std::move (r));
+}
+
+void LiftoffProcessor::preview (bool on, int64 fromSample)
+{
+    previewPos = jmax ((int64) 0, fromSample);
+    previewing = on && currentRender() != nullptr;
 }
 
 bool LiftoffProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -137,6 +181,41 @@ void LiftoffProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& mid
         }
     tp.bpm = jlimit (20.0, 400.0, tp.bpm);
     lastBpm = tp.bpm;
+    ui.bpm = tp.bpm; ui.bpb = tp.bpb; ui.hostPlaying = hostPlaying;
+
+    if (sampleView)
+    {
+        // SAMPLE mode: the track passes through; REC captures it; the transition plays on top
+        const int n = buffer.getNumSamples(), chans = buffer.getNumChannels();
+        float peakIn = 0.0f;
+        for (int c = 0; c < chans; ++c)
+            peakIn = jmax (peakIn, buffer.getMagnitude (c, 0, n));
+        if (recording)
+        {
+            const int at = recPos.load(), room = recBuffer.getNumSamples() - at, k = jmin (n, room);
+            for (int c = 0; c < 2 && k > 0; ++c)
+                recBuffer.copyFrom (c, at, buffer, jmin (c, chans - 1), 0, k);
+            recPos = at + jmax (0, k);
+            recLevel = jmax (recLevel.load() * 0.9f, peakIn);
+            if (room <= n) recording = false;   // full: 60 s
+        }
+        if (previewing)
+            if (auto r = currentRender())
+            {
+                const int64 pos = previewPos.load(), len = r->audio.getNumSamples();
+                const int k = (int) jlimit ((int64) 0, (int64) n, len - pos);
+                for (int c = 0; c < chans && k > 0; ++c)
+                    buffer.addFrom (c, 0, r->audio, jmin (c, r->audio.getNumChannels() - 1), (int) pos, k);
+                previewPos = pos + n;
+                if (pos + n >= len) previewing = false;
+            }
+        float peakOut = 0.0f;
+        for (int c = 0; c < chans; ++c)
+            peakOut = jmax (peakOut, buffer.getMagnitude (c, 0, n));
+        ui.peakIn = jmax (ui.peakIn.load(), peakIn); ui.peakOut = jmax (ui.peakOut.load(), peakOut);
+        midi.clear();
+        return;
+    }
 
     const auto p = readParams();
     engine.core.setParams (p);
@@ -178,6 +257,9 @@ void LiftoffProcessor::getStateInformation (MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty ("preset", preset.load(), nullptr);
+    state.setProperty ("ui", uiJson, nullptr);
+    state.setProperty ("sample", samplePath, nullptr);
+    state.setProperty ("sampleView", sampleView.load(), nullptr);
     state.setProperty ("version", JucePlugin_VersionString, nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -190,6 +272,9 @@ void LiftoffProcessor::setStateInformation (const void* data, int sizeInBytes)
         {
             auto state = ValueTree::fromXml (*xml);
             preset = (int) state.getProperty ("preset", 0);
+            uiJson = state.getProperty ("ui", "").toString();
+            samplePath = state.getProperty ("sample", "").toString();
+            sampleView = (bool) state.getProperty ("sampleView", true);
             apvts.replaceState (state);
         }
 }

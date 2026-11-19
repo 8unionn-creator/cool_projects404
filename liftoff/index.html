@@ -94,24 +94,64 @@ html.in-plugin .web-only, html:not(.in-plugin) .plugin-only { display: none !imp
 .src-btn:hover { border-color: #5a554b; }
 .host-info { color: var(--muted); font: 600 12px var(--mono); padding: 11px 14px; }
 
-/* ---------- flight path display ---------- */
-.display { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 10px; padding: 12px 28px; }
-.screen { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid #000;
-  background: radial-gradient(ellipse at 60% 0%, #1b1813 0%, #0b0a09 60%), var(--screen);
-  box-shadow: inset 0 3px 14px #000, inset 0 0 0 1px #2a2722, 0 1px 0 #ffffff10; }
-.screen canvas { display: block; width: 100%; height: 236px; }
-.readout { padding: 14px 18px; display: flex; flex-direction: column; justify-content: space-between; }
-.readout .lbl { color: var(--muted); font: 700 11px var(--mono); letter-spacing: .18em; }
-.count { font: 800 46px/1 var(--mono); letter-spacing: -.02em; margin-top: 8px; white-space: nowrap; color: var(--text); }
-.count.hot { background: var(--burn); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 10px #e3b06240); }
-.count-sub { color: var(--muted); font-size: 13px; margin-top: 6px; min-height: 16px; }
-.alt { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
-.alt b { font: 800 30px var(--mono); }
+/* ---------- the screen: a glass display in a metal bezel ---------- */
+.display { padding: 14px 28px; }
+.screen { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid #000; background: #060504;
+  box-shadow: inset 0 3px 16px #000, inset 0 0 0 1px #2a2722, 0 1px 0 #ffffff12, 0 0 0 4px #0a0908, 0 0 0 5px #3a362f; }
+.screen canvas { display: block; width: 100%; height: 300px; cursor: pointer; }
+.screen::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 10px;
+  background: linear-gradient(165deg, #ffffff10 0%, #ffffff05 18%, transparent 40%), radial-gradient(ellipse at 50% 120%, transparent 55%, #0008 100%); }
+.hud { position: absolute; top: 14px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; z-index: 2; }
+.hud.tl { left: 18px; } .hud.tr { right: 18px; align-items: flex-end; }
+.hud .lbl { color: var(--muted); font: 700 10.5px var(--mono); letter-spacing: .2em; }
+.count { font: 800 34px/1.05 var(--mono); letter-spacing: -.02em; white-space: nowrap; color: var(--text); text-shadow: 0 0 18px #0009; }
+.count.hot { background: var(--burn); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 12px #e3b06266); }
+.count.rec { color: #ff5a5a; filter: drop-shadow(0 0 10px #ff3b3b88); }
+.count-sub { color: var(--muted); font-size: 12px; min-height: 15px; }
+.alt { display: flex; align-items: baseline; gap: 4px; }
+.alt b { font: 800 26px var(--mono); text-shadow: 0 0 14px #0009; }
 .alt span { color: var(--dim); font: 600 12px var(--mono); }
-.altbar { height: 7px; border-radius: 4px; background: #000; box-shadow: inset 0 1px 2px #000, 0 1px 0 #ffffff0d; overflow: hidden; margin-top: 8px; }
-.altbar i { display: block; height: 100%; width: 0; background: var(--burn); border-radius: 4px; box-shadow: 0 0 8px #e3b06288; }
-.flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 75% 50%, #f7d99640, transparent 60%); opacity: 0; transition: opacity .6s ease-out; }
+.altbar { width: 120px; height: 5px; border-radius: 3px; background: #000a; box-shadow: inset 0 1px 2px #000, 0 1px 0 #ffffff0d; overflow: hidden; margin-top: 4px; }
+.altbar i { display: block; height: 100%; width: 0; background: var(--burn); border-radius: 3px; box-shadow: 0 0 8px #e3b06288; }
+.flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 60% 50%, #f7d99640, transparent 60%); opacity: 0; transition: opacity .6s ease-out; z-index: 1; }
 .flash.on { opacity: 1; transition: none; }
+.empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 3; text-align: center; padding: 20px; }
+.empty[hidden] { display: none; }
+.empty h3 { margin: 0; font: 600 22px var(--serif); letter-spacing: .08em; color: var(--text); }
+.empty p { margin: 0; color: var(--muted); font-size: 13px; }
+.empty .row { margin: 0; justify-content: center; }
+.drop-target .screen { box-shadow: inset 0 0 0 2px var(--gold), 0 0 24px #e3b06255; }
+
+/* ---------- strips: the sample strip, and the live strip in the plugin ---------- */
+.strip { display: flex; flex-direction: column; gap: 14px; padding: 16px 24px; }
+.srow { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; }
+.srow .spacer { flex: 1; }
+.srow + .srow { padding-top: 14px; border-top: 1px solid #0007; box-shadow: 0 -1px 0 #ffffff0a; align-items: flex-end; }
+.knob-inline { flex-direction: row !important; align-items: center; gap: 10px !important; }
+.knob-inline .kn { width: 56px !important; height: 56px !important; }
+.knob-inline .k-lbl, .knob-inline .k-val { order: -1; }
+.knob.knob-inline { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 12px; align-items: center; cursor: ns-resize; }
+.knob.knob-inline .kn { grid-row: 1 / 3; grid-column: 2; }
+.knob.knob-inline .k-lbl { grid-column: 1; align-self: end; text-align: right; }
+.knob.knob-inline .k-val { grid-column: 1; align-self: start; text-align: right; }
+.rec-btn { width: 46px; height: 46px; border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; flex: none;
+  background: radial-gradient(circle at 50% 35%, #2f2c27, #141311 70%); box-shadow: 0 0 0 2px #0a0908, 0 0 0 3px #4a463f, 0 3px 8px #0009; }
+.rec-btn i { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ff8a8a, #c51f2a 60%, #5a0b10); box-shadow: inset 0 1px 1px #fff5; }
+.rec-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px #0a0908, 0 0 0 3px #ff4b4b, 0 0 18px #ff3b3b88; }
+.rec-btn[aria-pressed="true"] i { border-radius: 3px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+.sample-chip { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 260px; padding: 7px 12px; }
+.sample-chip b { font: 600 13px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sample-chip span { color: var(--muted); font: 600 11px var(--mono); white-space: nowrap; }
+.demo-sel { appearance: none; -webkit-appearance: none; height: 40px; padding: 0 12px; width: 120px; color: var(--muted); font: 600 12.5px var(--sans); cursor: pointer; }
+.demo-sel option { background: #1a1816; color: var(--text); }
+.btn.gold { color: #1d1407; border-color: #f7d996aa; background: var(--burn); box-shadow: inset 0 1px 0 #fff8, 0 0 0 2px #0a0908, 0 0 0 3px #5a4320, 0 4px 14px #000a, 0 0 18px #e3b06233; font-weight: 800; letter-spacing: .06em; }
+.btn.gold svg { color: #1d1407; }
+.btn.gold[aria-pressed="true"] { filter: brightness(1.1); box-shadow: inset 0 1px 0 #fff8, 0 0 0 2px #0a0908, 0 0 0 3px var(--gold), 0 0 24px #e3b06288; }
+.viewtabs { display: flex; padding: 3px; gap: 3px; }
+.viewtabs button { border: 0; background: transparent; color: var(--muted); font: 700 12px var(--sans); letter-spacing: .1em; padding: 8px 14px; border-radius: 9px; }
+.viewtabs button[aria-selected="true"] { color: #1d1407; background: var(--burn); box-shadow: inset 0 1px 0 #fff6; }
+html:not(.view-live) .live-only, html.view-live .sample-only { display: none !important; }
 
 /* ---------- timing strip ---------- */
 .timing { display: grid; grid-template-columns: auto auto auto auto minmax(160px, 1fr) auto; gap: 16px; align-items: end; padding: 8px 28px 16px; }
@@ -214,24 +254,22 @@ html.in-plugin .web-only, html:not(.in-plugin) .plugin-only { display: none !imp
   .timing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .timing .grp-build { grid-column: 1 / -1; }
   .modules { grid-template-columns: 1fr; }
-  .display { grid-template-columns: 1fr; }
-  .readout { flex-direction: row; align-items: center; gap: 16px; }
-  .readout > div { flex: 1; }
 }
 @media (max-width: 560px) {
-  .display { padding: 10px; }
   .deck { padding: 10px; border-radius: 14px; }
+  .display { padding: 10px; }
   .brand b { font-size: 24px; }
   .brand .sep, .brand svg { display: none; }
-  .screen canvas { height: 180px; }
-  .count { font-size: 30px; }
+  .screen canvas { height: 230px; }
+  .count { font-size: 24px; } .alt b { font-size: 20px; } .altbar { width: 80px; }
   .knob .kn, .foot .knob .kn { width: 62px; height: 62px; }
   .timing { grid-template-columns: 1fr; padding: 14px; }
+  .strip { padding: 12px 14px; gap: 12px; }
+  .srow .spacer { display: none; }
+  .sample-chip { max-width: 100%; flex: 1; }
   .mod { padding: 14px 12px 16px; }
   .seg button { padding: 6px 8px; }
   .meters { min-width: 0; flex: 1; }
-  .export { margin-left: 0; width: 100%; }
-  .export .btn { flex: 1; justify-content: center; padding: 0 10px; }
 }
 </style>
 </head>
@@ -262,35 +300,53 @@ html.in-plugin .web-only, html:not(.in-plugin) .plugin-only { display: none !imp
       <button class="icon-btn" id="nextPreset" aria-label="Next preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
     </div>
 
-    <div class="transport web-only">
-      <button class="src-btn box" id="srcBtn" title="Load a loop or a whole song (or drop a file anywhere)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg><span id="srcName">Demo loop</span></button>
-      <input type="file" id="fileIn" accept="audio/*" class="vis" tabindex="-1">
-      <label class="field box">BPM <input id="bpm" class="mono" type="number" min="40" max="300" step="0.1" value="124" inputmode="decimal"></label>
-      <button class="play" id="play" aria-label="Play" aria-pressed="false"><svg viewBox="0 0 24 24" fill="currentColor"><path id="playIcon" d="M7 4.5v15l13-7.5z"/></svg></button>
+    <div class="viewtabs box plugin-only" role="tablist" aria-label="Mode">
+      <button role="tab" id="tabSample" aria-selected="true" title="Load or record a sample and turn it into a transition">SAMPLE</button>
+      <button role="tab" id="tabLive" aria-selected="false" title="Liftoff as a live effect that follows your DAW's bars">LIVE</button>
     </div>
+    <label class="field box web-only">BPM <input id="bpm" class="mono" type="number" min="40" max="300" step="0.1" value="124" inputmode="decimal"></label>
     <div class="host-info box plugin-only" id="hostInfo">DAW · — BPM</div>
   </div>
 
-  <section class="display plate" aria-label="Flight path">
-    <div class="screen">
-      <canvas id="path" aria-hidden="true"></canvas>
+  <section class="display plate" aria-label="Screen">
+    <div class="screen" id="screen">
+      <canvas id="path" aria-label="Waveform of the transition: click to play from there"></canvas>
+      <div class="hud tl"><span class="lbl" id="countLbl">READY</span><span class="count" id="count" aria-live="off">—</span><span class="count-sub" id="countSub"></span></div>
+      <div class="hud tr"><span class="lbl">BUILD</span><span class="alt"><b id="alt">0</b><span>%</span></span><span class="altbar"><i id="altBar"></i></span></div>
       <div class="flash" id="flash"></div>
-    </div>
-    <div class="screen readout">
-      <div>
-        <div class="lbl" id="countLbl">NEXT DROP</div>
-        <div class="count" id="count" aria-live="off">—</div>
-        <div class="count-sub" id="countSub"></div>
-      </div>
-      <div>
-        <div class="lbl">BUILD</div>
-        <div class="alt"><b id="alt">0</b><span>%</span></div>
-        <div class="altbar"><i id="altBar"></i></div>
+      <div class="empty sample-only" id="empty" hidden>
+        <h3>Load or record a sample</h3>
+        <p>a loop, a vocal, a chord, a snare… Liftoff turns it into the riser and the drop</p>
+        <div class="row">
+          <button class="btn" data-act="rec"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="#ff4b4b"/></svg>Record</button>
+          <button class="btn" data-act="load"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg>Load sample</button>
+          <button class="btn" data-act="demo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>Try a demo</button>
+        </div>
+        <p>or drop an audio file anywhere</p>
       </div>
     </div>
   </section>
 
-  <section class="timing plate" aria-label="Timing">
+  <section class="strip plate sample-only" aria-label="Sample">
+    <div class="srow">
+      <button class="rec-btn" id="recBtn" aria-pressed="false" aria-label="Record a sample" title="Record a sample (R). In the plugin it records the audio coming into Liftoff's track"><i></i></button>
+      <button class="src-btn box" id="loadBtn" title="Load an audio file (or drop one anywhere)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg><span>Load</span></button>
+      <select class="demo-sel box" id="demoSel" aria-label="Demo samples"><option value="">Demos</option><option value="loop">House loop</option><option value="snare">Snare (becomes a roll)</option><option value="chord">Chord stab</option></select>
+      <div class="sample-chip box" id="sampleChip"><b id="sampleName">No sample</b><span id="sampleInfo">load or record one</span></div>
+      <input type="file" id="fileIn" accept="audio/*" class="vis" tabindex="-1">
+      <span class="spacer"></span>
+      <button class="btn gold" id="previewBtn" aria-pressed="false" title="Play the transition (Space)"><svg viewBox="0 0 24 24" fill="currentColor"><path id="previewIcon" d="M7 4.5v15l13-7.5z"/></svg>PREVIEW</button>
+      <button class="btn" id="exportBtn" title="Save the transition as a 24-bit WAV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>EXPORT WAV</button>
+    </div>
+    <div class="srow">
+      <div class="grp"><span class="lbl">BUILD</span><div class="seg small" data-param="length" role="radiogroup" aria-label="Build length in bars"></div></div>
+      <div class="grp"><span class="lbl">AFTER THE DROP</span><div class="seg small" id="afterSeg" role="radiogroup" aria-label="Bars after the drop"></div></div>
+      <span class="spacer"></span>
+      <div class="grp knob-inline" data-knob="curve" style="--acc: var(--gold)"></div>
+    </div>
+  </section>
+
+  <section class="timing plate live-only" aria-label="Timing">
     <div class="grp"><span class="lbl">MODE</span><div class="seg fill" data-param="mode" role="radiogroup" aria-label="Mode"></div></div>
     <div class="grp"><span class="lbl">PHRASE</span><div class="seg fill small" data-param="phrase" role="radiogroup" aria-label="Phrase"></div></div>
     <div class="grp"><span class="lbl">BUILD LENGTH</span><div class="seg small" data-param="length" role="radiogroup" aria-label="Build length"></div></div>
@@ -340,20 +396,16 @@ html.in-plugin .web-only, html:not(.in-plugin) .plugin-only { display: none !imp
       <div class="meter">IN<div><i id="mIn"></i></div></div>
       <div class="meter">OUT<div><i id="mOut"></i></div></div>
     </div>
-    <div class="export web-only">
-      <button class="btn" id="exportTrans" title="Render the build, the gap and the first bar of the drop as a WAV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg>Export transition</button>
-      <button class="btn" id="exportPhrase" title="Render a whole phrase into the drop as a WAV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export phrase</button>
-    </div>
   </footer>
 </main>
 
-<p class="hint web-only">Drop a loop or a song anywhere and set its BPM. <b>Space</b> play · <b>L</b> launch · <b>← →</b> presets. In a DAW, Liftoff follows your bars: the build always ends on the drop.</p>
+<p class="hint web-only">Record or drop a sample, set the BPM, press <b>Space</b> to preview and <b>Export WAV</b>. <b>R</b> record · <b>← →</b> presets. Also a VST3 / AU plugin that records straight from your track.</p>
 <div class="toast" id="toast" role="status"></div>
-<div class="drop-zone" id="dropZone">Drop audio to load it</div>
+<div class="drop-zone" id="dropZone">Drop audio to turn it into a transition</div>
 
 <script src="params.js"></script>
 <script src="dsp.js"></script>
-<script src="worklet.js"></script>
+<script src="transition.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

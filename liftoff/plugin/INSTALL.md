@@ -41,11 +41,25 @@ Copy `Liftoff.vst3` to `~/.vst3/`.
 
 ## Using it
 
-- **AUTO** (default): press play. The build fills the end of every phrase (16 bars by default, the last 4 of them) and drops on the next phrase's first bar: bars 17, 33, 49… Set **PHRASE** and **BUILD LENGTH** to match your song. The countdown shows how far away the drop is.
+### SAMPLE mode (where it opens)
+
+1. Put Liftoff on the track that has the sound you want: a loop, a vocal, a synth, a snare. It passes the track through untouched and adds no latency.
+2. Press **REC**, play that part in your DAW, and press **REC** again. Liftoff keeps what came down the track (up to a minute), trimmed to the sound. Or press **Load** to pick a file, drop a file on the window, or try a demo.
+3. Choose the **BUILD** length and how long it goes on **AFTER THE DROP**, and shape RISE, BACKVERB and DROP. The tempo comes from your DAW.
+4. Press **PREVIEW** (or Space) to hear it through the plugin's output, and click the screen to play from any point.
+5. Drag the transition from the strip at the bottom of the window onto a track, or press **EXPORT WAV** to save it.
+
+Takes are kept in Liftoff's folder (`~/Library/Application Support/Liftoff` on a Mac, `%APPDATA%\Liftoff` on Windows) and reopen with your session.
+
+### LIVE mode
+
+Switch to **LIVE** to use Liftoff as an insert effect that builds into every drop.
+
+- **AUTO**: press play. The build fills the end of every phrase (16 bars by default, the last 4 of them) and drops on the next phrase's first bar: bars 17, 33, 49… Set **PHRASE** and **BUILD LENGTH** to match your song. The countdown shows how far away the drop is.
 - **MANUAL**: automate **Build** from 0 up to 100% over your build, hold it at 100% for the gap, and drop it to 0 on the drop.
 - **TRIGGER**: send Liftoff a MIDI note where a build should start (or press **LAUNCH**): it drops *BUILD LENGTH* later.
   - **FL Studio:** in Liftoff's wrapper settings, give it a MIDI input port, and point a MIDI Out channel at the same port. Notes in that channel's pattern then launch builds.
   - **Logic:** Liftoff is a MIDI-controlled effect: in the side-chain menu in the Liftoff window's header, pick the Software Instrument track whose notes should launch builds.
   - **Ableton Live** does not send MIDI to audio effects: use AUTO or automate Build.
 
-Liftoff reports its backverb length as latency, from 1/8 note up to a bar. Your DAW compensates, so everything stays in time. Turn **BACKVERB** off for zero latency, for example while recording.
+In LIVE mode Liftoff reports its backverb length as latency, from 1/8 note up to a bar. Your DAW compensates, so everything stays in time. Turn **BACKVERB** off for zero latency, for example while recording.
