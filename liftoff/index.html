@@ -58,7 +58,7 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
 .silk { display: block; color: var(--muted); font: 700 10px var(--mono); letter-spacing: .2em; text-transform: uppercase; white-space: nowrap; }
 
 /* ---------- header bar ---------- */
-.bar { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 14px; height: 52px; padding: 0 18px 0 20px; }
+.bar { display: grid; grid-template-columns: 1fr auto auto auto auto; align-items: center; gap: 12px; height: 52px; padding: 0 18px 0 20px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand svg { width: 44px; height: 38px; flex: none; filter: drop-shadow(0 2px 3px #000a); }
 .brand b { display: block; font: 600 25px/1 var(--serif); letter-spacing: .14em;
@@ -66,9 +66,22 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
 .brand small { display: block; color: var(--dim); font: 600 10px var(--mono); letter-spacing: .18em; margin-top: 4px; text-transform: uppercase; }
 .lcd { display: flex; align-items: center; gap: 4px; height: 38px; padding: 0 6px; border-radius: 8px; color: #f7d996;
   background: linear-gradient(180deg, #120f08, #1c170c); border: 1px solid #000; box-shadow: inset 0 2px 8px #000, inset 0 0 0 1px #3a2f17, 0 1px 0 #ffffff10; }
-.lcd select { appearance: none; -webkit-appearance: none; background: transparent; border: 0; color: #f7d996; font: 700 13px var(--mono); letter-spacing: .06em;
-  width: 220px; text-align: center; text-align-last: center; cursor: pointer; text-shadow: 0 0 8px #e3b06288; }
-.lcd select option { background: #1a1816; color: var(--text); }
+.lcd select, .lcd .preset-name { appearance: none; -webkit-appearance: none; background: transparent; border: 0; color: #f7d996; font: 700 13px var(--mono); letter-spacing: .06em;
+  width: 210px; text-align: center; text-align-last: center; cursor: pointer; text-shadow: 0 0 8px #e3b06288; }
+.lcd .preset-name { cursor: text; border-bottom: 1px dashed #e3b06288; outline: none; padding: 2px 0; }
+.lcd select option, .lcd select optgroup { background: #1a1816; color: var(--text); }
+.lcd.preset { position: relative; }
+.lcd-sep { width: 1px; height: 20px; background: #3a2f17; }
+/* undo, redo, A/B: small keys */
+.edit { display: flex; align-items: center; gap: 5px; }
+.key { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border-radius: 7px; border: 1px solid #000; color: var(--text);
+  background: linear-gradient(180deg, #3a3631, #24211e); box-shadow: inset 0 1px 0 #ffffff1f, 0 2px 3px #000b; }
+.key svg { width: 14px; height: 14px; }
+.key:active:not([disabled]) { transform: translateY(1px); box-shadow: inset 0 2px 3px #000c; }
+.key[disabled] { color: #5b564d; cursor: default; }
+.ab { display: flex; margin-left: 4px; padding: 2px; gap: 2px; border-radius: 8px; background: #0b0a09; border: 1px solid #000; box-shadow: inset 0 2px 5px #000b, 0 1px 0 #ffffff0d; }
+.ab button { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 800 12px var(--mono); }
+.ab button[aria-checked="true"] { color: #1d1407; background: var(--burn); box-shadow: inset 0 1px 0 #fff6; }
 .lcd .icon-btn { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; border: 0; background: transparent; color: #c99a52; }
 .lcd .icon-btn:hover { color: #f7d996; background: #ffffff08; }
 .lcd .icon-btn svg { width: 14px; height: 14px; }
@@ -110,7 +123,7 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
 .empty[hidden] { display: none; }
 .empty h3 { margin: 0; font: 600 20px var(--serif); letter-spacing: .1em; color: var(--text); }
 .empty p { margin: 0; color: var(--muted); font-size: 12.5px; }
-.source { display: grid; grid-template-columns: 168px 1fr; border-top: 1px solid #000; box-shadow: 0 -1px 0 #ffffff0a; background: #050403; }
+.source { display: grid; grid-template-columns: 196px 1fr; border-top: 1px solid #000; box-shadow: 0 -1px 0 #ffffff0a; background: #050403; }
 .source-side { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 8px 12px; border-right: 1px solid #1d1a16; min-width: 0; }
 .src-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .src-name b { font: 700 11.5px var(--mono); color: #f7d996; text-shadow: 0 0 8px #e3b06266; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -118,16 +131,59 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
 .lane-wrap { position: relative; min-width: 0; }
 .lane-wrap .sel-info { position: absolute; right: 10px; bottom: 4px; pointer-events: none; background: #050403cc; padding: 1px 6px; border-radius: 4px; }
 .source-side .silk { color: var(--gold); }
+.src-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.src-bpm { display: inline-flex; align-items: baseline; gap: 4px; color: var(--dim); font: 700 9.5px var(--mono); letter-spacing: .12em; cursor: text; }
+.src-bpm input { width: 46px; padding: 1px 4px; border-radius: 4px; border: 1px solid #000; background: #120f08; color: #f7d996; font: 700 11px var(--mono); text-align: right;
+  box-shadow: inset 0 1px 3px #000; -moz-appearance: textfield; }
+.src-bpm input::-webkit-inner-spin-button, .src-bpm input::-webkit-outer-spin-button, .cue input::-webkit-inner-spin-button, .cue input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.src-bpm input:focus { outline: 1px solid var(--gold); }
 .source-side .row { display: flex; gap: 6px; }
 .sel-info { color: var(--muted); font: 600 10px var(--mono); line-height: 1.35; }
 .mini-btn { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 5px; border: 1px solid #000; color: var(--text); font: 800 10px var(--mono); letter-spacing: .1em;
   background: linear-gradient(180deg, #34312c, #22201d); box-shadow: inset 0 1px 0 #ffffff1a, 0 1px 2px #000a; }
 .mini-btn svg { width: 10px; height: 10px; color: var(--gold-hi); }
 .mini-btn:active { transform: translateY(1px); }
+.mini-btn.led i, .hw-btn.led i, .pill i, .led-key i { width: 6px; height: 6px; border-radius: 50%; background: #2c2418; box-shadow: inset 0 1px 1px #000; flex: none; }
+.mini-btn.led[aria-pressed="true"] i, .hw-btn.led[aria-pressed="true"] i, .pill[aria-pressed="true"] i, .led-key[aria-pressed="true"] i { background: var(--acc, var(--gold-hi)); box-shadow: 0 0 6px var(--acc, var(--gold)); }
+.hw-btn.led[aria-pressed="true"] { transform: none; background: linear-gradient(180deg, #3a3631, #26231f 55%, #1d1b18); box-shadow: inset 0 1px 0 #ffffff22, inset 0 -2px 0 #0006, 0 2px 4px #000c; color: var(--gold-hi); }
+/* a small switch in a section's header */
+.pill { position: absolute; right: 12px; top: 12px; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 10px; border: 1px solid #000;
+  color: var(--muted); font: 800 9px var(--mono); letter-spacing: .12em; background: linear-gradient(180deg, #2e2b27, #1e1c19); box-shadow: inset 0 1px 0 #ffffff14, 0 1px 2px #000a; }
+.pill[aria-pressed="true"] { color: var(--text); }
+/* IN SONG: plays the riser with the DAW, ending on a bar */
+.lcd.cue { height: 40px; padding: 0 10px 0 4px; gap: 8px; font: 700 10px var(--mono); letter-spacing: .14em; color: #b8935a; }
+.led-key { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #000; color: var(--text); font: 800 10.5px var(--mono); letter-spacing: .12em;
+  background: linear-gradient(180deg, #34312c, #22201d); box-shadow: inset 0 1px 0 #ffffff1a, 0 1px 2px #000a; }
+.led-key[aria-pressed="true"] { color: var(--gold-hi); }
+.lcd.cue label { display: inline-flex; align-items: baseline; gap: 6px; }
+.lcd.cue input { width: 44px; background: transparent; border: 0; color: #f7d996; font: 700 15px var(--mono); text-align: right; text-shadow: 0 0 8px #e3b06288; -moz-appearance: textfield; }
+.lcd.cue input:focus { outline: none; }
+/* VARY: four takes over the screen */
+.vary { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px 12px; background: #060504; }
+.vary[hidden] { display: none; }
+.vary-head { display: flex; align-items: center; gap: 12px; }
+.vary-head .silk { color: var(--gold); }
+.vary-tip { color: var(--dim); font: 600 11px var(--mono); flex: 1; }
+.vary-tip b { color: var(--muted); }
+.vary-grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; min-height: 0; }
+.take { position: relative; display: grid; grid-template-columns: 1fr auto; grid-template-rows: 1fr auto; gap: 2px 10px; padding: 7px 9px; border-radius: 7px; cursor: pointer; outline: none;
+  border: 1px solid #2a2620; background: #0d0b09; opacity: .55; transition: opacity .2s; }
+.take.ready { opacity: 1; }
+.take:hover, .take:focus-visible { border-color: #e3b06266; }
+.take.playing { border-color: var(--gold); box-shadow: 0 0 14px #e3b06233; }
+.take-wave { position: relative; grid-column: 1 / -1; min-height: 0; }
+.take-wave canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.take .head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #fff6dc; box-shadow: 0 0 8px var(--gold); display: none; }
+.take.playing .head { display: block; }
+.take-meta { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.take-meta b { font: 800 10px var(--mono); letter-spacing: .14em; color: var(--gold-hi); }
+.take-meta span { font: 600 10.5px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.take .use { align-self: end; height: 20px; }
+.take .use[disabled] { opacity: .4; }
 #srcLane { display: block; width: 100%; height: 84px; cursor: crosshair; touch-action: none; }
 
 /* ---------- transport ---------- */
-.transport { display: flex; align-items: center; gap: 26px; height: 84px; padding: 0 22px; }
+.transport { display: flex; align-items: center; gap: 20px; height: 84px; padding: 0 20px; }
 .tgroup { display: flex; flex-direction: column; gap: 8px; }
 .tgroup .row { display: flex; align-items: center; gap: 10px; }
 .tsep { width: 1px; align-self: stretch; margin: 14px 0; background: #000; box-shadow: 1px 0 0 #ffffff0d; }
@@ -148,12 +204,14 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
   background: radial-gradient(circle at 50% 30%, #fff1c9, #e3b062 55%, #9c6d2c); box-shadow: 0 0 0 2px #0a0908, 0 0 0 4px #5a4320, 0 4px 12px #000a, 0 0 18px #e3b06233, inset 0 1px 0 #fff8; }
 .play-btn svg { width: 20px; height: 20px; }
 .play-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px #0a0908, 0 0 0 4px var(--gold), 0 0 26px #e3b06299, inset 0 1px 0 #fff8; }
-.menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 290px; white-space: nowrap; padding: 6px; border-radius: 10px; border: 1px solid #000;
+.menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 290px; white-space: nowrap; padding: 6px; border-radius: 10px; border: 1px solid #000;
   background: linear-gradient(180deg, #24211e, #171614); box-shadow: 0 16px 40px #000d, inset 0 0 0 1px #3a362f; }
 .menu[hidden] { display: none; }
 .menu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: 600 13px var(--sans); text-align: left; }
 .menu button:hover, .menu button:focus-visible { background: #e3b06218; }
 .menu button small { color: var(--dim); font: 600 11px var(--sans); margin-left: auto; }
+.menu.right { left: auto; right: 0; min-width: 220px; }
+.menu button[disabled] { color: var(--faint); cursor: default; background: transparent; }
 .menu hr { border: 0; border-top: 1px solid #000; box-shadow: 0 1px 0 #ffffff0a; margin: 4px 0; }
 .drag-pad { display: inline-flex; align-items: center; gap: 9px; height: 40px; padding: 0 16px; border-radius: 8px; cursor: grab; font: 800 11.5px var(--mono); letter-spacing: .14em; color: var(--gold-hi);
   border: 1.5px dashed #e3b06288; background: #e3b06210; }
@@ -162,8 +220,7 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
 .drag-pad[aria-disabled="true"] { opacity: .4; cursor: default; }
 .ready { animation: ready 1s ease-in-out 3 alternate; }
 @keyframes ready { to { box-shadow: 0 0 0 3px #e3b06266, 0 0 24px #e3b06266; } }
-.tray-hint { color: var(--gold); font: 700 10.5px var(--mono); letter-spacing: .12em; display: inline-flex; align-items: center; gap: 6px; }
-.tray-hint svg { width: 14px; height: 14px; }
+
 /* LED button rows (riser length, live mode) */
 .seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 8px; background: #0b0a09; border: 1px solid #000; box-shadow: inset 0 2px 5px #000b, 0 1px 0 #ffffff0d; }
 .seg button { --acc: var(--gold); position: relative; border: 1px solid #000; min-width: 34px; height: 30px; padding: 8px 9px 0; border-radius: 5px; color: var(--muted); font: 800 11px var(--mono);
@@ -186,6 +243,7 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
 .sec + .sec { border-left: 1px solid #000; box-shadow: inset 1px 0 0 #ffffff0c; }
 .sec.verb { --acc: var(--violet); } .sec.trem { --acc: var(--pink); } .sec.chorus { --acc: var(--teal); } .sec.out { --acc: var(--gold); }
 .sec header { display: flex; align-items: center; justify-content: center; gap: 9px; height: 22px; }
+.sec.rise .pill { --acc: var(--gold-hi); }
 .sec h2 { margin: 0; font: 800 12px var(--mono); letter-spacing: .26em; color: var(--text); }
 .sec.off .body { opacity: .38; filter: saturate(.3); }
 .body { flex: 1; display: grid; align-content: space-around; justify-items: center; gap: 4px; }
@@ -252,8 +310,12 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
   html:not(.in-plugin) .bar .lcd.preset { grid-column: 1 / -1; order: 3; justify-content: space-between; }
   html:not(.in-plugin) .brand svg { display: none; }
   html:not(.in-plugin) .source { grid-template-columns: 1fr; }
-  html:not(.in-plugin) .source-side { flex-direction: row; align-items: center; border-right: 0; border-bottom: 1px solid #1d1a16; }
-  html:not(.in-plugin) .screen canvas { height: 200px; }
+  html:not(.in-plugin) .source-side { flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 6px; border-right: 0; border-bottom: 1px solid #1d1a16; }
+  html:not(.in-plugin) .src-top { justify-content: flex-start; gap: 12px; }
+  html:not(.in-plugin) .src-name { order: 3; flex: 1 1 100%; }
+  html:not(.in-plugin) .vary-tip { display: none; }
+  html:not(.in-plugin) .vary-grid { grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); gap: 5px; }
+  html:not(.in-plugin) .screen canvas { height: 230px; }
   html:not(.in-plugin) .transport { flex-wrap: wrap; height: auto; padding: 12px; gap: 14px; }
   html:not(.in-plugin) .tsep, html:not(.in-plugin) .spacer { display: none; }
   html:not(.in-plugin) .panel { grid-template-columns: 1fr; }
@@ -283,10 +345,27 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
       </svg>
       <div><b>LIFTOFF</b><small>sample → riser</small></div>
     </div>
+    <div class="edit" role="group" aria-label="Undo, redo and compare">
+      <button class="key" id="undoBtn" aria-label="Undo" title="Undo (Ctrl/Cmd+Z)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg></button>
+      <button class="key" id="redoBtn" aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg></button>
+      <div class="ab" role="radiogroup" aria-label="Compare two settings" title="Two settings to compare: edit one, switch to hear the other. B starts as a copy of A">
+        <button role="radio" id="abA" aria-checked="true">A</button><button role="radio" id="abB" aria-checked="false">B</button>
+      </div>
+    </div>
     <div class="lcd preset" role="group" aria-label="Presets">
       <button class="icon-btn" id="prevPreset" aria-label="Previous preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
       <select id="preset" aria-label="Preset"></select>
+      <input id="presetName" class="preset-name" maxlength="40" aria-label="Preset name" hidden>
       <button class="icon-btn" id="nextPreset" aria-label="Next preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+      <span class="lcd-sep"></span>
+      <button class="icon-btn" id="presetMenuBtn" aria-label="Save, rename or delete presets" aria-haspopup="menu" aria-expanded="false" title="Save your own presets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12v17l-6-4.2-6 4.2z"/></svg></button>
+      <div class="menu right" id="presetMenu" role="menu" hidden>
+        <button role="menuitem" data-act="save">Save <small></small></button>
+        <button role="menuitem" data-act="saveas">Save as new…</button>
+        <hr>
+        <button role="menuitem" data-act="rename">Rename…</button>
+        <button role="menuitem" data-act="delete">Delete</button>
+      </div>
     </div>
     <div class="viewtabs plugin-only" role="tablist" aria-label="Mode">
       <button role="tab" id="tabSample" aria-selected="true" title="Turn a sample into a riser">SAMPLE</button>
@@ -304,6 +383,12 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
         <div class="hud tl"><span class="lbl" id="countLbl">READY</span><span class="count" id="count" aria-live="off">—</span><span class="count-sub" id="countSub"></span></div>
         <div class="hud tr"><span class="lbl">BUILD</span><span class="alt"><b id="alt">0</b><span>%</span></span><span class="altbar"><i id="altBar"></i></span></div>
         <div class="flash" id="flash"></div>
+        <div class="vary" id="vary" hidden>
+          <div class="vary-head"><span class="silk">VARY · 4 takes</span><span class="vary-tip">click a take to hear it · <b>USE</b> keeps it</span>
+            <button class="mini-btn" id="varyAgain" title="Four new takes (V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/></svg>AGAIN</button>
+            <button class="mini-btn" id="varyClose" aria-label="Close" title="Close (Esc)">✕</button></div>
+          <div class="vary-grid" id="varyGrid"></div>
+        </div>
         <div class="empty sample-only" id="empty" hidden>
           <h3>Record or load a sound</h3>
           <p>press <b>REC</b> or <b>LOAD</b> below, or drop an audio file anywhere</p>
@@ -311,14 +396,16 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
       </div>
       <div class="source sample-only" id="source">
         <div class="source-side">
-          <span class="silk">SOURCE</span>
+          <div class="src-top"><span class="silk">SOURCE</span>
+            <label class="src-bpm" id="srcBpmWrap"><input id="srcBpm" type="number" min="30" max="300" step="0.1" placeholder="—" inputmode="decimal" aria-label="The sample's tempo">BPM</label></div>
           <span class="src-name"><b id="sampleName">No sample</b> <span id="sampleInfo"></span></span>
           <div class="row">
             <button class="mini-btn" id="selPlay" title="Hear the part you cut (A)"><svg viewBox="0 0 24 24" fill="currentColor"><path id="selPlayIcon" d="M7 4.5v15l13-7.5z"/></svg>PART</button>
             <button class="mini-btn" id="selAll" title="Use the whole sample">ALL</button>
+            <button class="mini-btn led" id="syncBtn" aria-pressed="true" title="Stretch loops to the session's tempo, without changing their pitch"><i></i>SYNC</button>
           </div>
         </div>
-        <div class="lane-wrap"><canvas id="srcLane" aria-label="Your sample: drag across it to cut the part to use; drag the edges to fine-tune, the bar on top to move it"></canvas><span class="sel-info" id="selInfo"></span></div>
+        <div class="lane-wrap"><canvas id="srcLane" aria-label="Your sample: drag across it to cut the part to use; drag the edges to fine-tune, the bar on top to move it. Cuts snap to the beats; hold Shift to cut freely"></canvas><span class="sel-info" id="selInfo"></span></div>
       </div>
     </div>
   </section>
@@ -343,17 +430,24 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
     </div>
     <span class="tsep"></span>
     <div class="tgroup"><span class="silk">2 · Play</span>
-      <button class="play-btn" id="previewBtn" aria-pressed="false" aria-label="Play the riser" title="Play the riser (Space)"><svg viewBox="0 0 24 24" fill="currentColor"><path id="previewIcon" d="M7 4.5v15l13-7.5z"/></svg></button>
+      <div class="row">
+        <button class="play-btn" id="previewBtn" aria-pressed="false" aria-label="Play the riser" title="Play the riser (Space)"><svg viewBox="0 0 24 24" fill="currentColor"><path id="previewIcon" d="M7 4.5v15l13-7.5z"/></svg></button>
+        <button class="hw-btn" id="varyBtn" aria-pressed="false" title="Four takes on your settings: hear them, keep the best (V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>VARY</button>
+      </div>
     </div>
     <span class="tsep"></span>
     <div class="tgroup"><span class="silk">3 · Length · bars</span><div class="seg" data-param="length" role="radiogroup" aria-label="Riser length in bars"></div></div>
     <div class="sm" data-knob="curve"></div>
+    <div class="tgroup"><span class="silk">&nbsp;</span><button class="hw-btn led" id="revBtn" aria-pressed="false" title="Play it backwards: a downlifter that falls away from the drop"><i></i>REV</button></div>
     <span class="spacer"></span>
     <span class="tsep"></span>
     <div class="tgroup"><span class="silk">4 · Out</span>
       <div class="row">
         <span class="drag-pad web-only" id="dragOut" draggable="true" aria-disabled="true" title="Drag the riser out as a WAV (Chrome, Edge): into a DAW, a folder or the desktop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12h3l2-5 3 10 2-6 2 3h4"/></svg>DRAG</span>
-        <span class="tray-hint plugin-only" id="trayHint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>DRAG FROM THE TRAY</span>
+        <div class="lcd cue plugin-only" id="trayHint" title="Play the riser along with your DAW, ending on this bar: hear it in your song before you drag it in">
+          <button class="led-key" id="cueBtn" aria-pressed="false"><i></i>IN SONG</button>
+          <label>BAR <input id="cueBar" type="number" min="1" max="9999" value="17" aria-label="The bar your drop is on"></label>
+        </div>
         <button class="hw-btn" id="exportBtn" title="Save the riser as a 24-bit WAV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>WAV</button>
       </div>
     </div>
@@ -372,7 +466,8 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
   <!-- the panel -->
   <section class="panel plate" aria-label="Controls">
     <div class="sec rise" id="mod-rise">
-      <header><button class="power" data-toggle="rise" role="switch" aria-label="Rise on"></button><h2>RISE</h2></header>
+      <header><button class="power" data-toggle="rise" role="switch" aria-label="Rise on"></button><h2>RISE</h2>
+        <button class="pill" id="snapBtn" aria-pressed="false" title="PITCH in musical steps (4ths, 5ths, octaves), so the riser's top note stays in key"><i></i>SNAP</button></header>
       <div class="body k3"><div data-knob="pitch"></div><div data-knob="filter"></div><div data-knob="wash"></div><div data-knob="stutter"></div><div data-knob="noise"></div><div data-knob="width"></div></div>
     </div>
     <div class="sec verb" id="mod-verb">
@@ -391,7 +486,7 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
       <div class="body"><div data-knob="chorusMix"></div></div>
     </div>
     <div class="sec out">
-      <header><h2>OUTPUT</h2></header>
+      <header><h2>OUTPUT</h2><button class="pill" id="normBtn" aria-pressed="false" title="Normalize: every render peaks at -1 dBFS"><i></i>NORM</button></header>
       <div class="body k2"><div class="sm" data-knob="mix"></div><div class="sm" data-knob="output"></div></div>
       <div class="meters"><div class="meter"><div><i id="mIn"></i></div>IN</div><div class="meter"><div><i id="mOut"></i></div>OUT</div></div>
     </div>
@@ -399,7 +494,7 @@ html.in-plugin .unit { border-radius: 0; box-shadow: inset 0 0 0 1px #3a362f; }
 </main>
 </div>
 
-<p class="hint web-only"><b>1</b> record or load a sound · <b>2</b> cut the part you want in SOURCE · <b>3</b> set the length and shape it · <b>4</b> drag it out. <b>Space</b> play · <b>R</b> record · <b>A</b> hear the part · <b>← →</b> presets. Also a VST3 / AU plugin that records straight from your track.</p>
+<p class="hint web-only"><b>1</b> record or load a sound · <b>2</b> cut the part you want in SOURCE · <b>3</b> set the length and shape it · <b>4</b> drag it out. <b>Space</b> play · <b>V</b> vary · <b>R</b> record · <b>A</b> hear the part · <b>← →</b> presets · <b>Ctrl/Cmd+Z</b> undo. Also a VST3 / AU plugin that records straight from your track.</p>
 <div class="toast" id="toast" role="status"></div>
 <div class="drop-zone" id="dropZone">Drop audio to turn it into a riser</div>
 

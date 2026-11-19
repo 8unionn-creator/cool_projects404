@@ -12,6 +12,10 @@ static var object (std::initializer_list<std::pair<const char*, var>> props)
     return var (o.get());
 }
 
+// names and other text to and from the page travel URL-encoded (see enc/dec in app.js)
+static String fromPage (const var& v) { return URL::removeEscapeChars (v.toString()); }
+static String toPage (const String& t) { return URL::addEscapeChars (t, true); }
+
 static MemoryBlock fromBase64 (const String& b64)
 {
     MemoryOutputStream out;
@@ -28,18 +32,8 @@ static var toPCM (const AudioBuffer<float>& b, double sr, const String& name)
     for (int i = 0; i < n; ++i)
         for (int c = 0; c < ch; ++c)
             out[i * ch + c] = (int16) jlimit (-32767, 32767, roundToInt (b.getSample (c, i) * 32767.0f));
-    return object ({ { "sampleRate", sr }, { "channels", ch }, { "frames", n }, { "name", name },
+    return object ({ { "sampleRate", sr }, { "channels", ch }, { "frames", n }, { "name", toPage (name) },
                      { "data", Base64::toBase64 (pcm.getData(), pcm.getSize()) } });
-}
-
-static bool writeWav (const File& f, const AudioBuffer<float>& b, double sr)
-{
-    f.deleteFile();
-    std::unique_ptr<OutputStream> os = f.createOutputStream();
-    if (os == nullptr) return false;
-    WavAudioFormat wav;
-    auto w = wav.createWriterFor (os, AudioFormatWriterOptions{}.withSampleRate (sr).withNumChannels (b.getNumChannels()).withBitsPerSample (24));
-    return w != nullptr && w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
 }
 
 static File renderFile (const LiftoffProcessor::Render& r)
@@ -126,7 +120,7 @@ void WavDragStrip::mouseDrag (const MouseEvent& e)
         return;
     dragging = true;
     const auto file = renderFile (*r);
-    if (! writeWav (file, r->audio, r->sampleRate)) { dragging = false; return; }
+    if (! LiftoffProcessor::writeWav (file, r->audio, r->sampleRate)) { dragging = false; return; }
     DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this, [this] { dragging = false; });
 }
 
@@ -159,6 +153,29 @@ void LiftoffEditor::resized()
     web.setBounds (r);
 }
 
+/* The page as plain ASCII. JUCE's Linux web view doesn't tell WebKit the type of what it serves, so WebKit reads it as
+   Windows-1252 whatever its <meta charset> says, and "·" comes out as "Â·". Escaping everything past ASCII (an entity
+   in the page, a backslash-u escape in scripts, harmless in comments) reads the same everywhere. The page has no non-ASCII in
+   its CSS outside comments, and no inline scripts. */
+static std::vector<std::byte> asAscii (const char* data, int size, bool html)
+{
+    const auto text = String::fromUTF8 (data, size);
+    std::string out;
+    out.reserve ((size_t) size + 64);
+    for (auto p = text.getCharPointer(); ! p.isEmpty();)
+    {
+        const auto c = (uint32) p.getAndAdvance();
+        if (c < 0x80) { out += (char) c; continue; }
+        if (html) { out += "&#x" + String::toHexString ((int) c).toStdString() + ";"; continue; }
+        auto u = [&out] (uint32 v) { out += "\\u" + String::toHexString ((int) v).paddedLeft ('0', 4).toStdString(); };
+        if (c > 0xffff) { u (0xd800 + ((c - 0x10000) >> 10)); u (0xdc00 + ((c - 0x10000) & 0x3ff)); }
+        else u (c);
+    }
+    std::vector<std::byte> bytes (out.size());
+    std::memcpy (bytes.data(), out.data(), out.size());
+    return bytes;
+}
+
 std::optional<WebBrowserComponent::Resource> LiftoffEditor::resource (const String& url)
 {
     auto path = url.upToFirstOccurrenceOf ("?", false, false).trimCharactersAtStart ("/");
@@ -169,10 +186,16 @@ std::optional<WebBrowserComponent::Resource> LiftoffEditor::resource (const Stri
     if (data == nullptr)
         return std::nullopt;
     WebBrowserComponent::Resource res;
-    res.data.resize ((size_t) size);
-    std::memcpy (res.data.data(), data, (size_t) size);
     const auto ext = path.fromLastOccurrenceOf (".", false, false).toLowerCase();
-    res.mimeType = ext == "html" ? "text/html" : ext == "js" ? "text/javascript" : ext == "css" ? "text/css" : "application/octet-stream";
+    if (ext == "html" || ext == "js")
+        res.data = asAscii (data, size, ext == "html");
+    else
+    {
+        res.data.resize ((size_t) size);
+        std::memcpy (res.data.data(), data, (size_t) size);
+    }
+    res.mimeType = ext == "html" ? "text/html; charset=utf-8" : ext == "js" ? "text/javascript; charset=utf-8"
+                 : ext == "css" ? "text/css; charset=utf-8" : "application/octet-stream";
     return res;
 }
 
@@ -228,7 +251,7 @@ WebBrowserComponent::Options LiftoffEditor::makeOptions()
             if (auto* o = v.getDynamicObject())
                 for (auto& nv : o->getProperties())
                     sent[nv.name.toString()] = (float) (double) nv.value;
-            done (object ({ { "values", v }, { "preset", proc.preset.load() }, { "ui", proc.uiJson },
+            done (object ({ { "values", v }, { "preset", proc.presetKey }, { "ui", proc.uiJson }, { "cue", proc.cueOn.load() }, { "cueBar", proc.cueBar.load() },
                             { "sr", proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000.0 }, { "bpm", proc.ui.bpm.load() } }));
         })
         .withNativeFunction ("setParam", [this] (const Array<var>& a, Completion done)
@@ -252,7 +275,26 @@ WebBrowserComponent::Options LiftoffEditor::makeOptions()
             done (var());
         })
         .withNativeFunction ("launch", [this] (const Array<var>&, Completion done) { proc.launchRequest = true; done (var()); })
-        .withNativeFunction ("setPreset", [this] (const Array<var>& a, Completion done) { if (a.size() > 0) proc.preset = (int) a[0]; done (var()); })
+        .withNativeFunction ("setPreset", [this] (const Array<var>& a, Completion done) { if (a.size() > 0) proc.presetKey = a[0].toString(); done (var()); })
+        // your own presets, shared by every session: User Presets.json in Liftoff's folder
+        .withNativeFunction ("getUserPresets", [] (const Array<var>&, Completion done)
+        {
+            const auto f = LiftoffProcessor::userPresetsFile();
+            done (toPage (f.existsAsFile() ? f.loadFileAsString() : String ("[]")));
+        })
+        .withNativeFunction ("setUserPresets", [] (const Array<var>& a, Completion done)
+        {
+            const auto json = a.size() > 0 ? fromPage (a[0]) : String();
+            if (JSON::parse (json).isArray())
+                LiftoffProcessor::userPresetsFile().replaceWithText (json);
+            done (var());
+        })
+        .withNativeFunction ("setCue", [this] (const Array<var>& a, Completion done)
+        {
+            proc.cueOn = a.size() > 0 && (bool) a[0];
+            if (a.size() > 1) proc.cueBar = jlimit (1, 9999, (int) a[1]);
+            done (var());
+        })
         .withNativeFunction ("setUi", [this] (const Array<var>& a, Completion done) { if (a.size() > 0) proc.uiJson = a[0].toString(); done (var()); })
         .withNativeFunction ("setView", [this] (const Array<var>& a, Completion done)
         {
@@ -273,7 +315,7 @@ WebBrowserComponent::Options LiftoffEditor::makeOptions()
             auto recs = dir.getChildFile ("Recordings");
             recs.createDirectory();
             const auto f = recs.getNonexistentChildFile ("Recording " + Time::getCurrentTime().formatted ("%Y-%m-%d %H.%M.%S"), ".wav");
-            if (writeWav (f, b, sr))
+            if (LiftoffProcessor::writeWav (f, b, sr))
                 proc.samplePath = f.getFullPathName();
             done (toPCM (b, sr, f.getFileNameWithoutExtension()));
         })
@@ -293,7 +335,7 @@ WebBrowserComponent::Options LiftoffEditor::makeOptions()
         {
             // a file dropped on the page: keep a copy so the session can find it again
             if (a.size() < 2) { done (var()); return; }
-            const String name = File::createLegalFileName (a[0].toString());
+            const String name = File::createLegalFileName (fromPage (a[0]));
             auto samples = dir.getChildFile ("Samples");
             samples.createDirectory();
             auto f = samples.getNonexistentChildFile (name.upToLastOccurrenceOf (".", false, false), name.fromLastOccurrenceOf (".", true, false));
@@ -316,7 +358,8 @@ WebBrowserComponent::Options LiftoffEditor::makeOptions()
             const int n = (int) (bytes.getSize() / 4);   // stereo 16-bit
             auto r = std::make_shared<LiftoffProcessor::Render>();
             r->sampleRate = (double) a[1];
-            r->name = a[2].toString();
+            r->name = fromPage (a[2]);
+            r->endAt = a.size() > 3 ? (int64) (double) a[3] : 0;
             r->audio.setSize (2, n);
             const auto* pcm = static_cast<const int16*> (bytes.getData());
             for (int i = 0; i < n; ++i)
@@ -355,7 +398,7 @@ WebBrowserComponent::Options LiftoffEditor::makeOptions()
                     FileBrowserComponent::saveMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::warnAboutOverwriting,
                     [r, done] (const File& f)
                     {
-                        done (f != File() && writeWav (f.withFileExtension ("wav"), r->audio, r->sampleRate) ? f.getFullPathName() : String());
+                        done (f != File() && LiftoffProcessor::writeWav (f.withFileExtension ("wav"), r->audio, r->sampleRate) ? toPage (f.getFullPathName()) : String());
                     });
         });
 }
@@ -394,5 +437,6 @@ void LiftoffEditor::timerCallback()
         { "previewing", proc.previewing.load() && ! proc.auditioning.load() },
         { "previewPos", r != nullptr ? (double) proc.previewPos.load() / r->sampleRate : 0.0 },
         { "recording", proc.recording.load() }, { "recSeconds", (double) proc.recPos.load() / sr },
+        { "cueing", proc.cueing.load() }, { "cuePos", proc.cuePos.load() },
         { "recLevel", proc.recLevel.exchange (0.0f) } }));
 }

@@ -83,6 +83,43 @@ const loop = (sec, f) => { const n = Math.round(sec * SR), a = new Float32Array(
     check('a render can be cancelled', (await p) === null);
   }
 
+  // a drum loop: kick on every beat, a snare on 2 and 4, hats on the off-beats
+  const drums = (bpm, bars, start = 0) => {
+    const spb = 60 / bpm * SR, n = Math.round(bars * 4 * spb), a = new Float32Array(n), r = LF.rng(5);
+    const hit = (at, dec, amp, tone) => { for (let i = 0; i < dec * 6 && at + i < n; i++) a[at + i] += amp * Math.exp(-i / dec) * (tone ? Math.sin(2 * Math.PI * 55 * i / SR * (1 + 2 * Math.exp(-i / 800))) : r()); };
+    for (let b = 0; b < bars * 4; b++) { const t = Math.round(start + b * spb); hit(t, 4000, 0.9, true); if (b % 2) hit(t, 3000, 0.5, false); hit(Math.round(t + spb / 2), 300, 0.25, false); }
+    return [a, a];
+  };
+
+  { // tempo: a 2 bar loop at 128 BPM
+    const d = LF.detectBpm(drums(128, 2), SR);
+    check('tempo: a 2 bar loop at 128 BPM reads 128, beats from its start', d && d.bpm === 128 && d.offset === 0 && d.exact, JSON.stringify(d));
+    const d2 = LF.detectBpm(drums(87, 2), SR, 174);
+    check('tempo: half time is read as the session’s double time (87 → 174)', d2 && d2.bpm === 174, JSON.stringify(d2));
+    const d3 = LF.detectBpm(drums(120, 2, 6000).map(c => c.subarray(0, Math.round(8 * SPB))), SR);
+    check('tempo: the beat grid follows a loop that starts late', d3 && d3.bpm === 120 && Math.abs(d3.offset - 6000) < 500, JSON.stringify(d3));
+    check('tempo: too short to tell, nothing', LF.detectBpm([new Float32Array(SR)], SR) === null);
+  }
+
+  { // time-stretch: longer, same pitch, same level
+    const n = SR, a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = 0.5 * Math.sin(2 * Math.PI * 440 * i / SR);
+    const [y] = LF.stretch([a], 128 / 120, SR);
+    let z = 0; for (let i = 2001; i < y.length - 2000; i++) if ((y[i - 1] < 0) !== (y[i] < 0)) z++;
+    const f = z / 2 / ((y.length - 4001) / SR), lv = db(rms(y, 2000, y.length - 2000)) - db(rms(a, 0, n));
+    check('time-stretch 120 → 128 BPM: 6.7% longer, same pitch and level', y.length === Math.round(n * 128 / 120) && Math.abs(f - 440) < 1 && Math.abs(lv) < 0.3,
+      `${y.length} samples, ${f.toFixed(1)} Hz, ${lv.toFixed(2)} dB`);
+  }
+
+  { // REVERSE: a downlifter, one beat of swell into the drop, then the riser backwards; NORMALIZE: peak at -1 dBFS
+    const P = { ...DEF, length: 2 }, fwd = await LF.renderTransition(loop(1, 220), P, { bpm: BPM, async: false });
+    const rev = await LF.renderTransition(loop(1, 220), P, { bpm: BPM, async: false, reverse: true });
+    let err = 0; for (let i = 1000; i < rev.N - 1000; i++) err = Math.max(err, Math.abs(rev.L[i] - fwd.L[fwd.endAt + Math.round(SPB) - 1 - i]));
+    check('REVERSE: the drop one beat in, the riser backwards after it', rev.reversed && rev.endAt === Math.round(SPB) && rev.N === Math.round(SPB) + fwd.buildN && err < 1e-6, `max error ${err}`);
+    const nm = await LF.renderTransition(loop(1, 220), P, { bpm: BPM, async: false, normalize: true });
+    let pk = 0; for (let i = 0; i < nm.N; i++) pk = Math.max(pk, Math.abs(nm.L[i]), Math.abs(nm.R[i]));
+    check('NORMALIZE: the peak at -1 dBFS', Math.abs(db(pk) + 1) < 0.01, `${db(pk).toFixed(2)} dBFS`);
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

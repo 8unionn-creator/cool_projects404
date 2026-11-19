@@ -3,6 +3,7 @@
 # It puts the Audio Unit (Logic, GarageBand) and the VST3 in /Library/Audio/Plug-Ins and the app in /Applications,
 # then has macOS pick up the new Audio Unit, so there is nothing to copy or type in Terminal.
 # usage: make-pkg.sh <folder with the built bundles> <version> <output .pkg>
+# With LF_INSTALLER_IDENTITY set (a "Developer ID Installer" identity in the keychain) the package is signed.
 set -euo pipefail
 src="$1" ver="$2" out="$3"
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -28,6 +29,8 @@ chmod +x "$work/scripts/postinstall"
 pkgbuild --root "$root" --component-plist "$plist" --identifier com.coolprojects404.liftoff --version "$ver" \
   --install-location / --scripts "$work/scripts" "$work/pkgs/Liftoff-core.pkg"
 sed "s/@VERSION@/$ver/g" "$here/distribution.xml" > "$work/distribution.xml"
-productbuild --distribution "$work/distribution.xml" --resources "$here/resources" --package-path "$work/pkgs" "$out"
+sign=()
+if [ -n "${LF_INSTALLER_IDENTITY:-}" ]; then sign=(--sign "$LF_INSTALLER_IDENTITY" --timestamp); fi
+productbuild --distribution "$work/distribution.xml" --resources "$here/resources" --package-path "$work/pkgs" ${sign[@]+"${sign[@]}"} "$out"
 rm -rf "$work"
 echo "built $out"

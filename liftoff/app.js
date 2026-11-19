@@ -20,20 +20,30 @@ const HOST = (() => {
   };
 })();
 if (HOST) document.documentElement.classList.add('in-plugin');
+// text that crosses into the plugin and back (names, your presets) goes URL-encoded: not every platform's web view
+// passes anything past ASCII through unharmed
+const enc = t => encodeURIComponent(t);
+const dec = t => { try { return decodeURIComponent(t); } catch (e) { return t; } };
 
 /* ---------- state ---------- */
 const V = {}; for (const p of LIFTOFF_PARAMS) V[p.id] = p.def;
-const UI = { view: 'sample', sel: [0, 1] };        // settings of the page, not DAW parameters (sel: the part of the sample used, 0..1)
+// settings of the page, not DAW parameters. sel: the part of the sample used (0..1). reverse, norm: how the riser is rendered.
+// snap: PITCH in musical steps. sync: stretch a loop to the session tempo; srcBpm/srcGrid: the loop's tempo and first beat (s).
+// cue/cueBar: play the riser with the DAW so it ends on that bar (plugin). ab: the A/B slots.
+const UI = { view: 'sample', sel: [0, 1], reverse: false, norm: false, snap: false, sync: true, srcBpm: 0, srcGrid: 0, srcFrom: '', cue: false, cueBar: 17, ab: null };
+const UI_KEYS = Object.keys(UI);
+const takeUi = u => { if (!u) return; for (const k of UI_KEYS) if (k in u && k !== 'view') UI[k] = u[k]; if (u.view) UI.view = u.view; if (!Array.isArray(UI.sel)) UI.sel = [0, 1]; };
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem('liftoff.' + k)); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem('liftoff.' + k, JSON.stringify(v)); } catch (e) {} }
 };
-let bpm = 124, bpb = 4, presetIdx = 0;
+let bpm = 124, bpb = 4, presetKey = 'f:0', bpmByUser = false;
 const HS = { sr: 48000, previewPos: 0, previewing: false, recording: false, recSeconds: 0, recLevel: 0, at: 0, hostBpm: 0 };
 if (!HOST) {
   const saved = store.get('params'); if (saved) for (const k in saved) if (k in V) V[k] = saved[k];
-  bpm = store.get('bpm') || bpm; presetIdx = store.get('preset') ?? 0;
-  const ui = store.get('ui'); if (ui && Array.isArray(ui.sel)) UI.sel = ui.sel;
+  bpm = store.get('bpm') || bpm; bpmByUser = !!store.get('bpmByUser');
+  const pk = store.get('preset'); presetKey = typeof pk === 'number' ? 'f:' + pk : pk || presetKey;
+  takeUi(store.get('ui'));
 }
 
 /* ---------- formatting ---------- */
@@ -116,6 +126,9 @@ function knob(host, id) {
       modEl.setAttribute('d', q > 0 ? arc(a0, a0 + q * (a1 - a0), R - 4.5) : '');
     }
   });
+  // SNAP: PITCH lands on 4ths, 5ths and octaves only
+  const q = v => (id === 'pitch' && UI.snap ? snapPitch(v) : v);
+  const nudge = dir => { if (id === 'pitch' && UI.snap) { const i = SNAP_STEPS.indexOf(snapPitch(V[id])); return SNAP_STEPS[clamp(i + dir, 0, SNAP_STEPS.length - 1)]; } return null; };
   let startY = 0, startV = 0, dragging = false;
   host.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
@@ -125,16 +138,16 @@ function knob(host, id) {
   host.addEventListener('pointermove', e => {
     if (!dragging) return;
     const k = e.shiftKey ? 900 : 220;
-    setParam(id, clamp(startV + (startY - e.clientY) / k * span, d.min, d.max));
+    setParam(id, q(clamp(startV + (startY - e.clientY) / k * span, d.min, d.max)));
   });
   const end = () => { if (dragging) { dragging = false; gesture(id, false); } };
   host.addEventListener('pointerup', end); host.addEventListener('pointercancel', end);
-  host.addEventListener('dblclick', () => { gesture(id, true); setParam(id, d.def); gesture(id, false); });
-  host.addEventListener('wheel', e => { e.preventDefault(); setParam(id, clamp(V[id] + (e.deltaY < 0 ? 1 : -1) * span / (e.shiftKey ? 200 : 50), d.min, d.max)); }, { passive: false });
+  host.addEventListener('dblclick', () => { gesture(id, true); setParam(id, q(d.def)); gesture(id, false); });
+  host.addEventListener('wheel', e => { e.preventDefault(); const dir = e.deltaY < 0 ? 1 : -1; setParam(id, nudge(dir) ?? clamp(V[id] + dir * span / (e.shiftKey ? 200 : 50), d.min, d.max)); }, { passive: false });
   host.addEventListener('keydown', e => {
     const step = span / (e.shiftKey ? 200 : 40);
-    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setParam(id, clamp(V[id] + step, d.min, d.max)); e.preventDefault(); e.stopPropagation(); }
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setParam(id, clamp(V[id] - step, d.min, d.max)); e.preventDefault(); e.stopPropagation(); }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setParam(id, nudge(1) ?? clamp(V[id] + step, d.min, d.max)); e.preventDefault(); e.stopPropagation(); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setParam(id, nudge(-1) ?? clamp(V[id] - step, d.min, d.max)); e.preventDefault(); e.stopPropagation(); }
     else if (e.key === 'Home') { setParam(id, d.min); e.preventDefault(); } else if (e.key === 'End') { setParam(id, d.max); e.preventDefault(); }
   });
 }
@@ -229,12 +242,12 @@ function setParam(id, v, fromHost) {
   if (V[id] === v) return;
   V[id] = v;
   showValue(id, v);
-  if (!fromHost) { engine.set(id, v); markEdited(); }
+  if (!fromHost) { engine.set(id, v); markEdited(); commitSoon(); }
   if (id === 'mode') modeChanged();
   if (!LIVE_ONLY.has(id)) scheduleRender();
   saveSoon();
 }
-function gesture(id, begin) { engine.gesture(id, begin); }
+function gesture(id, begin) { engine.gesture(id, begin); hist.busy = Math.max(0, hist.busy + (begin ? 1 : -1)); if (!begin) commitSoon(0); }
 function modeChanged() {
   const manual = V.mode === MODE.MANUAL, trig = V.mode === MODE.TRIGGER;
   $('#buildFader').setAttribute('aria-disabled', !manual);
@@ -243,33 +256,152 @@ function modeChanged() {
   document.querySelector('[data-param="phrase"]').closest('.tgroup').style.opacity = V.mode === MODE.AUTO ? '' : '.4';
 }
 let saveT = 0;
-function saveSoon() { if (HOST) return; clearTimeout(saveT); saveT = setTimeout(() => { store.set('params', V); store.set('bpm', bpm); store.set('preset', presetIdx); }, 300); }
-function saveUi() { if (HOST) HOST.call('setUi', JSON.stringify(UI)); else store.set('ui', UI); }
-function refreshAll() { for (const id in views) showValue(id, V[id]); modeChanged(); }
+function saveSoon() { if (HOST) return; clearTimeout(saveT); saveT = setTimeout(() => { store.set('params', V); store.set('bpm', bpm); store.set('bpmByUser', bpmByUser); store.set('preset', presetKey); }, 300); }
+function saveUi() { if (HOST) HOST.call('setUi', enc(JSON.stringify(UI))); else store.set('ui', UI); }
+function refreshAll() { for (const id in views) showValue(id, V[id]); modeChanged(); toggles(); }
 
-/* ---------- presets ---------- */
-const presetSel = $('#preset');
-presetSel.innerHTML = LIFTOFF_PRESETS.map((p, i) => `<option value="${i}" title="${p.tag}">${p.name}</option>`).join('');
-let edited = false;
+/* ---------- presets: the factory set and your own (User) ---------- */
+const PRESET_KEYS = Object.keys(LIFTOFF_PRESETS[0].values);
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const presetSel = $('#preset'), presetName = $('#presetName'), presetMenu = $('#presetMenu');
+let userPresets = (!HOST && store.get('userPresets')) || [], edited = false;
+const presetList = () => [...LIFTOFF_PRESETS.map((p, i) => ({ ...p, key: 'f:' + i })), ...userPresets.map((p, i) => ({ ...p, tag: '', key: 'u:' + i }))];
+const presetOf = key => presetList().find(p => p.key === key);
+const soundValues = () => { const o = {}; for (const k of PRESET_KEYS) o[k] = V[k]; return o; };
+function fillPresets() {
+  if (!presetOf(presetKey)) presetKey = 'f:0';
+  presetSel.innerHTML = `<optgroup label="Factory">${LIFTOFF_PRESETS.map((p, i) => `<option value="f:${i}" title="${esc(p.tag)}">${esc(p.name)}</option>`).join('')}</optgroup>` +
+    (userPresets.length ? `<optgroup label="User">${userPresets.map((p, i) => `<option value="u:${i}">${esc(p.name)}</option>`).join('')}</optgroup>` : '');
+  presetSel.value = presetKey; presetSel.title = (presetOf(presetKey) || {}).tag || '';
+  edited = false; markEdited();
+}
 function markEdited() {
-  const p = LIFTOFF_PRESETS[presetIdx]; if (!p) return;
-  const same = Object.keys(p.values).every(k => Math.abs(V[k] - p.values[k]) < 1e-6);
+  const p = presetOf(presetKey); if (!p) return;
+  const same = PRESET_KEYS.every(k => !(k in p.values) || Math.abs(V[k] - p.values[k]) < 1e-6);
   if (same === !edited) return;
   edited = !same;
-  presetSel.options[presetIdx].textContent = p.name + (edited ? ' *' : '');
+  const o = presetSel.querySelector(`option[value="${presetKey}"]`); if (o) o.textContent = p.name + (edited ? ' *' : '');
 }
-function loadPreset(i) {
-  presetIdx = (i + LIFTOFF_PRESETS.length) % LIFTOFF_PRESETS.length;
-  const p = LIFTOFF_PRESETS[presetIdx];
+function loadPreset(key) {
+  const p = presetOf(key); if (!p) return;
+  presetKey = key;
   for (const k in p.values) { gesture(k, true); setParam(k, p.values[k]); gesture(k, false); }
-  for (const o of presetSel.options) o.textContent = LIFTOFF_PRESETS[o.value].name;
-  edited = false; presetSel.value = presetIdx; presetSel.title = p.tag;
-  toast(`${p.name}: ${p.tag}`);
-  saveSoon(); if (HOST) HOST.call('setPreset', presetIdx);
+  fillPresets();
+  toast(p.tag ? `${p.name}: ${p.tag}` : p.name);
+  saveSoon(); if (HOST) HOST.call('setPreset', presetKey);
+  commitSoon(0);
 }
-presetSel.addEventListener('change', () => loadPreset(+presetSel.value));
-$('#prevPreset').addEventListener('click', () => loadPreset(presetIdx - 1));
-$('#nextPreset').addEventListener('click', () => loadPreset(presetIdx + 1));
+function stepPreset(d) { const L = presetList(), i = Math.max(0, L.findIndex(p => p.key === presetKey)); loadPreset(L[(i + d + L.length) % L.length].key); }
+presetSel.addEventListener('change', () => loadPreset(presetSel.value));
+$('#prevPreset').addEventListener('click', () => stepPreset(-1));
+$('#nextPreset').addEventListener('click', () => stepPreset(1));
+
+// your own presets: Save, Save as new, Rename, Delete. They live in the browser, or in the plugin's folder for every session.
+function storeUserPresets() { if (HOST) HOST.call('setUserPresets', enc(JSON.stringify(userPresets))); else store.set('userPresets', userPresets); }
+function presetAct(act) {
+  const user = presetKey.startsWith('u:'), i = +presetKey.slice(2);
+  if (act === 'save' && user) { userPresets[i].values = soundValues(); storeUserPresets(); fillPresets(); toast(`Saved ${userPresets[i].name}`); }
+  else if (act === 'save' || act === 'saveas') nameField('new');
+  else if (act === 'rename' && user) nameField('rename');
+  else if (act === 'delete' && user) {
+    const gone = userPresets.splice(i, 1)[0]; presetKey = 'f:0'; storeUserPresets(); fillPresets(); toast(`Deleted ${gone.name}`);
+    if (HOST) HOST.call('setPreset', presetKey);
+  }
+}
+function nameField(mode) {
+  const base = mode === 'rename' ? userPresets[+presetKey.slice(2)].name : (presetOf(presetKey) || { name: 'My riser' }).name.replace(/\s\d+$/, '');
+  let name = base, n = 2; if (mode === 'new') while (userPresets.some(p => p.name === name)) name = `${base} ${n++}`;
+  presetName.value = name; presetName.dataset.mode = mode;
+  presetName.hidden = false; presetSel.hidden = true; presetName.focus(); presetName.select();
+}
+function nameDone(keep) {
+  if (presetName.hidden) return;
+  const name = presetName.value.trim().slice(0, 40), mode = presetName.dataset.mode;
+  presetName.hidden = true; presetSel.hidden = false;
+  if (!keep || !name) return;
+  if (mode === 'rename') userPresets[+presetKey.slice(2)].name = name;
+  else { userPresets.push({ name, values: soundValues() }); presetKey = 'u:' + (userPresets.length - 1); if (HOST) HOST.call('setPreset', presetKey); }
+  storeUserPresets(); fillPresets(); saveSoon(); toast(mode === 'rename' ? `Renamed to ${name}` : `Saved ${name} in User`);
+}
+presetName.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') nameDone(true); else if (e.key === 'Escape') nameDone(false); });
+presetName.addEventListener('blur', () => nameDone(true));
+$('#presetMenuBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  const user = presetKey.startsWith('u:');
+  presetMenu.querySelector('[data-act="save"] small').textContent = user ? '' : 'as a new preset';
+  presetMenu.querySelectorAll('[data-act="rename"], [data-act="delete"]').forEach(b => { b.disabled = !user; });
+  openMenu(presetMenu, $('#presetMenuBtn'));
+});
+presetMenu.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) { closeMenus(); presetAct(b.dataset.act); } });
+
+/* ---------- history: undo / redo, and A/B ---------- */
+const HIST_KEYS = LIFTOFF_PARAMS.map(p => p.id).filter(k => k !== 'build');
+const hist = { undo: [], redo: [], at: null, t: 0, busy: 0, applying: false };
+const snapshot = () => JSON.stringify({ v: Object.fromEntries(HIST_KEYS.map(k => [k, V[k]])), sel: UI.sel, reverse: UI.reverse, norm: UI.norm, sync: UI.sync, preset: presetKey });
+function commitSoon(ms = 400) { if (hist.applying) return; clearTimeout(hist.t); hist.t = setTimeout(commit, ms); }
+function commit() {
+  clearTimeout(hist.t);
+  if (hist.applying) return;
+  if (hist.busy > 0) { commitSoon(); return; }   // a knob is still held
+  const now = snapshot();
+  if (hist.at !== null && now !== hist.at) { hist.undo.push(hist.at); if (hist.undo.length > 200) hist.undo.shift(); hist.redo.length = 0; }
+  hist.at = now; histButtons();
+}
+function applySnap(json) {
+  const o = JSON.parse(json);
+  hist.applying = true;
+  for (const k in o.v) if (k in V && V[k] !== o.v[k]) { gesture(k, true); setParam(k, o.v[k]); gesture(k, false); }
+  const renderWise = JSON.stringify([UI.sel, UI.reverse, UI.norm, UI.sync]) !== JSON.stringify([o.sel, o.reverse, o.norm, o.sync]);
+  UI.sel = o.sel; UI.reverse = o.reverse; UI.norm = o.norm; UI.sync = o.sync;
+  if (o.preset && o.preset !== presetKey && presetOf(o.preset)) { presetKey = o.preset; if (HOST) HOST.call('setPreset', presetKey); }
+  fillPresets(); toggles(); if (SM.sample) sampleInfo(); saveUi();
+  if (renderWise) scheduleRender(0);
+  hist.applying = false; hist.at = snapshot(); histButtons();
+}
+function undo() { commit(); const s = hist.undo.pop(); if (s === undefined) return; hist.redo.push(hist.at); applySnap(s); toast('Undo'); }
+function redo() { commit(); const s = hist.redo.pop(); if (s === undefined) return; hist.undo.push(hist.at); applySnap(s); toast('Redo'); }
+function histButtons() { $('#undoBtn').disabled = !hist.undo.length; $('#redoBtn').disabled = !hist.redo.length; }
+$('#undoBtn').addEventListener('click', undo);
+$('#redoBtn').addEventListener('click', redo);
+
+// A/B: two settings to compare. The lit letter is the one you are editing; B starts as a copy of A.
+function abSwitch(to) {
+  if (!UI.ab) UI.ab = { cur: 'A', A: null, B: null };
+  if (to === UI.ab.cur) return;
+  commit();
+  UI.ab[UI.ab.cur] = snapshot();
+  const first = !UI.ab[to];
+  if (first) UI.ab[to] = UI.ab[UI.ab.cur];
+  UI.ab.cur = to;
+  applySnap(UI.ab[to]);
+  hist.undo.push(UI.ab[to === 'A' ? 'B' : 'A']); hist.redo.length = 0; histButtons();
+  abButtons(); saveUi();
+  toast(first ? `${to}: a copy of ${to === 'A' ? 'B' : 'A'} to change and compare` : `Now on ${to}`);
+}
+function abButtons() { const cur = UI.ab ? UI.ab.cur : 'A'; for (const k of ['A', 'B']) $('#ab' + k).setAttribute('aria-checked', cur === k); }
+$('#abA').addEventListener('click', () => abSwitch('A'));
+$('#abB').addEventListener('click', () => abSwitch('B'));
+
+/* ---------- switches on the page: REV, NORM, SNAP, SYNC, IN SONG ---------- */
+const SNAP_STEPS = [0, 5, 7, 12, 17, 19, 24];   // 4ths, 5ths and octaves: the top note stays in key
+const snapPitch = v => SNAP_STEPS.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a);
+function toggles() {
+  const on = (id, v) => { const b = $(id); if (b) b.setAttribute('aria-pressed', String(!!v)); };
+  on('#revBtn', UI.reverse); on('#normBtn', UI.norm); on('#snapBtn', UI.snap); on('#syncBtn', UI.sync); on('#cueBtn', UI.cue);
+  abButtons();
+}
+function flip(key, after) {
+  UI[key] = !UI[key]; toggles(); saveUi();
+  if (after) after();
+  commitSoon(0);
+}
+$('#revBtn').addEventListener('click', () => flip('reverse', () => { scheduleRender(0); toast(UI.reverse ? 'REVERSE: a downlifter, falling away from the drop' : 'Forward: a riser into the drop'); }));
+$('#normBtn').addEventListener('click', () => flip('norm', () => { scheduleRender(0); toast(UI.norm ? 'NORMALIZE: every render peaks at -1 dBFS' : 'NORMALIZE off: OUTPUT sets the level'); }));
+$('#snapBtn').addEventListener('click', () => flip('snap', () => {
+  if (UI.snap && snapPitch(V.pitch) !== V.pitch) { gesture('pitch', true); setParam('pitch', snapPitch(V.pitch)); gesture('pitch', false); }
+  toast(UI.snap ? 'SNAP: PITCH moves in 4ths, 5ths and octaves, so the top note stays in key' : 'SNAP off: PITCH moves freely');
+}));
+$('#syncBtn').addEventListener('click', () => flip('sync', () => { if (SM.sample) { sampleInfo(); scheduleRender(0); } toast(UI.sync ? `SYNC: loops are stretched to ${fmtBpm(bpm)} BPM` : 'SYNC off: loops play at their own speed'); }));
 
 /* ---------- toast ---------- */
 let toastT = 0;
@@ -310,15 +442,56 @@ async function setSample(s, name, source, opts = {}) {
   if (source === 'rec') s = { ...s, chans: LF.trimSilence(s.chans, s.sr) };
   const maxN = s.sr * 60;
   if (s.chans[0].length > maxN) s = { ...s, chans: s.chans.map(c => c.slice(0, maxN)) };   // a minute is plenty
-  SM.sample = s; SM.name = name; SM.source = source; SM.laneFor = null; SM.autoplay = !!opts.autoplay;
+  SM.sample = s; SM.name = name; SM.source = source; SM.laneFor = null; SM.autoplay = !!opts.autoplay; SM.id = (SM.id || 0) + 1;
   UI.sel = opts.sel && opts.sel[1] - opts.sel[0] > 0.001 ? opts.sel : [0, 1];
+  if (!opts.keepTempo) sourceTempo(s, name, opts.bpm, source);
   if (opts.sel === undefined) saveUi();
-  $('#sampleName').textContent = name;
+  $('#sampleName').textContent = name; $('#sampleName').title = name;
   sampleInfo();
   $('#empty').hidden = true;
+  closeVary();
   if (opts.persist !== false) persistSample(s, name, source);
   stopPreview();
+  if (!opts.keepTempo) commitSoon(0);
   scheduleRender(0);
+}
+
+/* ---------- the loop's tempo: from its name, from the demo, or heard; SYNC stretches it to the session's ---------- */
+const fmtBpm = b => (Math.round(b * 10) / 10).toFixed(b % 1 ? 1 : 0);
+function sourceTempo(s, name, given, source) {
+  const m = name.match(/(\d{2,3}(?:\.\d+)?)\s*bpm/i);
+  UI.srcGrid = 0;
+  if (given !== undefined) { UI.srcBpm = given; UI.srcFrom = given ? (source === 'demo' ? 'demo' : 'set') : ''; }
+  // a take from the plugin's track was played by the DAW, at the session's tempo; a microphone take has none
+  else if (source === 'rec') { UI.srcBpm = HOST ? bpm : 0; UI.srcFrom = HOST ? 'rec' : ''; }
+  else if (m && +m[1] >= 50 && +m[1] <= 250) { UI.srcBpm = +m[1]; UI.srcFrom = 'name'; }
+  else {
+    const d = LF.detectBpm(s.chans.map(c => c.subarray(0, Math.min(c.length, s.sr * 30))), s.sr, bpm);
+    if (d && d.confidence >= 0.2) { UI.srcBpm = d.bpm; UI.srcGrid = d.offset / s.sr; UI.srcFrom = 'heard'; }
+    else { UI.srcBpm = 0; UI.srcFrom = ''; }
+  }
+  // the browser has no DAW: until you set a tempo, the first loop's tempo becomes the session's
+  if (!HOST && !bpmByUser && source !== 'rec' && UI.srcBpm && UI.srcBpm !== bpm) { bpm = UI.srcBpm; $('#bpm').value = fmtBpm(bpm); saveSoon(); }
+  showTempo();
+}
+function showTempo() {
+  const el = $('#srcBpm');
+  if (document.activeElement !== el) el.value = UI.srcBpm ? fmtBpm(UI.srcBpm) : '';
+  $('#srcBpmWrap').title = UI.srcBpm ? `The sample's tempo (${{ name: 'from its file name', heard: 'heard in it', set: 'set by you', demo: 'the demo', rec: 'recorded from your DAW' }[UI.srcFrom] || 'set by you'}). Type another to fix it.` : 'Type the sample’s tempo to sync it and snap the cut to its beats';
+}
+$('#srcBpm').addEventListener('change', e => {
+  const v = +e.target.value;
+  UI.srcBpm = v >= 30 && v <= 300 ? v : 0; UI.srcFrom = UI.srcBpm ? 'set' : ''; if (!UI.srcBpm) UI.srcGrid = 0;
+  showTempo(); saveUi(); SM.laneFor = null; if (SM.sample) { sampleInfo(); scheduleRender(0); }
+});
+$('#srcBpm').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); });
+// how much the cut is stretched: the session over the loop's tempo, taking half or double time if that is closer
+function stretchRatio() {
+  if (!UI.sync || !UI.srcBpm || !SM.sample) return 1;
+  const [a, b] = selRange();
+  if ((b - a) / SM.sample.sr < 60 / UI.srcBpm * 0.95) return 1;   // a one-shot: it rolls on the grid instead
+  let r = UI.srcBpm / bpm; while (r > Math.SQRT2) r /= 2; while (r < Math.SQRT1_2) r *= 2;
+  return Math.abs(r - 1) < 0.002 ? 1 : r;
 }
 
 // the part of the sample that is used
@@ -326,11 +499,13 @@ function selRange() { const n = SM.sample.chans[0].length; return [Math.floor(UI
 function selectedSample() { const [a, b] = selRange(); return { chans: SM.sample.chans.map(c => c.subarray(a, b)), sr: SM.sample.sr }; }
 function sampleInfo() {
   if (!SM.sample) return;
-  const [a, b] = selRange(), sr = SM.sample.sr, sec = (b - a) / sr, all = SM.sample.chans[0].length / sr;
+  const [a, b] = selRange(), sr = SM.sample.sr, all = SM.sample.chans[0].length / sr, ratio = stretchRatio(), sec = (b - a) / sr * ratio;
   const f = t => t < 10 ? t.toFixed(2) : t.toFixed(1);
-  const how = sec < 60 / bpm ? 'one-shot → roll' : 'loops';
+  const how = sec < 60 / bpm ? 'one-shot → roll' : ratio !== 1 ? `loops · ${fmtBpm(UI.srcBpm)} → ${fmtBpm(bpm)} BPM` : 'loops';
+  const beats = sec * bpm / 60, bt = Math.abs(beats - Math.round(beats)) < 0.05 ? Math.round(beats) : beats.toFixed(1);
   $('#sampleInfo').textContent = `${f(all)} s`;
-  $('#selInfo').innerHTML = b - a < SM.sample.chans[0].length ? `cut ${f(a / sr)}–${f(b / sr)} s · ${(sec * bpm / 60).toFixed(1)} beats · ${how}` : `all of it · drag across it to cut · ${how}`;
+  $('#selInfo').innerHTML = b - a < SM.sample.chans[0].length ? `cut ${f(a / sr)}–${f(b / sr)} s · ${bt} beats · ${how}` : `all of it · drag across it to cut · ${how}`;
+  showTempo();
 }
 
 function scheduleRender(delay = 140) {
@@ -338,12 +513,24 @@ function scheduleRender(delay = 140) {
   clearTimeout(SM.renderT);
   SM.renderT = setTimeout(doRender, delay);
 }
+// the cut, stretched to the session's tempo (kept while only the knobs change), at the rate the riser is made at
+async function preparedSample() {
+  let s = selectedSample();
+  const ratio = stretchRatio();
+  if (ratio !== 1) {
+    const key = `${SM.id}|${UI.sel[0]}|${UI.sel[1]}|${ratio}`;
+    if (SM.stretchKey !== key) { SM.stretched = { chans: LF.stretch(s.chans, ratio, s.sr), sr: s.sr }; SM.stretchKey = key; }
+    s = SM.stretched;
+  }
+  return resample(s, renderSr());
+}
+const renderOpts = signal => ({ bpm, bpb, signal, reverse: UI.reverse, normalize: UI.norm });
 async function doRender() {
   if (SM.signal) SM.signal.cancelled = true;
   const signal = { cancelled: false }; SM.signal = signal; SM.rendering = true;
-  const sample = await resample(selectedSample(), renderSr());
+  const sample = await preparedSample();
   if (signal.cancelled) return;
-  const r = await LF.renderTransition(sample, { ...V }, { bpm, bpb, signal });
+  const r = await LF.renderTransition(sample, { ...V }, renderOpts(signal));
   if (!r || signal.cancelled) return;
   const pos = previewPos();
   SM.render = r; SM.rendering = false; SM.layersFor = null;
@@ -364,11 +551,12 @@ function stopPreview() { engine.stop(); }
 function pluginEngine() {
   let latency = 0;
   HOST.on('state', st => {
-    if (st.bpm && Math.abs(st.bpm - HS.hostBpm) > 0.01) { HS.hostBpm = st.bpm; bpm = st.bpm; if (UI.view === 'sample') scheduleRender(300); }
+    if (st.bpm && Math.abs(st.bpm - HS.hostBpm) > 0.01) { HS.hostBpm = st.bpm; bpm = st.bpm; if (UI.view === 'sample') { sampleInfo(); scheduleRender(300); } }
     bpb = st.bpb || bpb; latency = st.latency || 0;
     if (st.sr && st.sr !== HS.sr) { HS.sr = st.sr; scheduleRender(0); }
     HS.previewPos = st.previewPos || 0; HS.previewing = !!st.previewing; HS.recording = !!st.recording; HS.recSeconds = st.recSeconds || 0;
     HS.recLevel = st.recLevel || 0; HS.at = performance.now();
+    HS.cueing = !!st.cueing; HS.cuePos = st.cuePos || 0; HS.hostPlaying = !!st.hostPlaying;
     $('#hostInfo').textContent = `${st.hostPlaying ? '▶' : '■'} DAW · ${bpm.toFixed(bpm % 1 ? 1 : 0)} BPM · ${Math.round(bpb)}/4${UI.view === 'live' && latency ? ` · ${Math.round(latency / HS.sr * 1000)} ms` : ''}`;
     receive(st, UI.view === 'live' ? latency / HS.sr * 1000 : 0);
     setPreviewButton(HS.previewing);
@@ -380,38 +568,46 @@ function pluginEngine() {
     gesture(id, begin) { HOST.call('gesture', id, begin); },
     launch() { HOST.call('launch'); },
     renderReady(r) {
-      HOST.call('setRender', toPCM([r.L, r.R]), r.sr, SM.name.replace(/\.[^.]+$/, '') + ' - Liftoff');
+      HOST.call('setRender', toPCM([r.L, r.R]), r.sr, enc(SM.name.replace(/\.[^.]+$/, '') + (r.reversed ? ' - Liftoff down' : ' - Liftoff')), r.endAt);
     },
     play(from) { if (SM.render) { SM.audition = null; setPartButton(false); HOST.call('preview', true, from || 0); } },
     stop() { HOST.call('preview', false, 0); },
     playPart(s) { const c = s.chans.length > 1 ? s.chans : [s.chans[0], s.chans[0]]; HOST.call('audition', toPCM(c), s.sr); },
     stopPart() { HOST.call('preview', false, 0); },
     toggle() { HS.previewing ? this.stop() : this.play(0); },
-    pos() { return HS.previewing ? (HS.previewPos + (performance.now() - HS.at) / 1000) * (SM.render ? SM.render.sr : 48000) : -1; },
-    playing: () => HS.previewing,
+    // the preview, or the riser playing along with the DAW (IN SONG)
+    pos() {
+      const sr = SM.render ? SM.render.sr : 48000, dt = (performance.now() - HS.at) / 1000;
+      return HS.previewing ? (HS.previewPos + dt) * sr : HS.cueing ? (HS.cuePos + dt) * sr : -1;
+    },
+    playing: () => HS.previewing || HS.cueing,
+    cue() { HOST.call('setCue', !!UI.cue, UI.cueBar); },
     async record() {
       if (!HS.recording) { await HOST.call('recStart'); toast('Recording what comes into Liftoff’s track: play it in your DAW, then press REC again'); return; }
       const o = await HOST.call('recStop');
       if (!o || !o.frames) { toast('Nothing was recorded: play some audio into the track while REC is on'); return; }
-      setSample(fromPCM(o), o.name || 'Recording', 'rec', { persist: false, autoplay: true });
+      setSample(fromPCM(o), dec(o.name || 'Recording'), 'rec', { persist: false, autoplay: true });
     },
     async load() {
       const o = await HOST.call('pickSample');
-      if (o && o.frames) setSample(fromPCM(o), o.name, 'file', { persist: false, autoplay: true });
+      if (o && o.frames) setSample(fromPCM(o), dec(o.name), 'file', { persist: false, autoplay: true });
     },
-    async exportWav() { const p = await HOST.call('saveRender'); if (p) toast('Saved ' + p); },
-    persist(bytes, name) { HOST.call('storeSample', name, bytesToB64(new Uint8Array(bytes))); },
+    async exportWav() { const p = await HOST.call('saveRender'); if (p) toast('Saved ' + dec(p)); },
+    persist(bytes, name) { HOST.call('storeSample', enc(name), bytesToB64(new Uint8Array(bytes))); },
     async init() {
       const r = await HOST.call('getParams');
       if (r && r.values) for (const k in r.values) setParam(k, r.values[k], true);
-      if (r && typeof r.preset === 'number') { presetIdx = r.preset; presetSel.value = presetIdx; }
-      if (r && r.ui) { try { const u = JSON.parse(r.ui); if (u.view) UI.view = u.view; if (Array.isArray(u.sel)) UI.sel = u.sel; } catch (e) {} }
+      if (r && r.preset !== undefined) presetKey = typeof r.preset === 'number' ? 'f:' + r.preset : String(r.preset || 'f:0');
+      if (r && r.ui) { try { takeUi(JSON.parse(dec(r.ui))); } catch (e) {} }
+      if (r && r.cue !== undefined) { UI.cue = !!r.cue; UI.cueBar = r.cueBar || UI.cueBar; }
       if (r && r.sr) HS.sr = r.sr;
       if (r && r.bpm) { bpm = r.bpm; HS.hostBpm = r.bpm; }
-      markEdited(); refreshAll(); setView(UI.view);
+      try { const up = JSON.parse(dec(await HOST.call('getUserPresets') || '[]')); if (Array.isArray(up)) userPresets = up; } catch (e) {}
+      fillPresets(); refreshAll(); setView(UI.view); $('#cueBar').value = UI.cueBar;
       const s = await HOST.call('getSample');
-      if (s && s.frames) setSample(fromPCM(s), s.name, 'file', { persist: false, sel: UI.sel });
+      if (s && s.frames) setSample(fromPCM(s), dec(s.name), 'file', { persist: false, sel: UI.sel, keepTempo: true });
       else $('#empty').hidden = false;
+      hist.at = snapshot();
     }
   };
 }
@@ -484,19 +680,22 @@ function browserEngine() {
       toast('Saved ' + name);
     },
     persist() {},
+    cue() {},
     async init() {
-      refreshAll(); setView('sample', false);
-      $('#bpm').value = bpm;
+      fillPresets(); refreshAll(); setView('sample', false);
+      $('#bpm').value = fmtBpm(bpm);
       const s = await idb.get();
-      if (s) setSample({ chans: s.chans, sr: s.sr }, s.name, s.source, { persist: false, sel: UI.sel });
+      if (s) setSample({ chans: s.chans, sr: s.sr }, s.name, s.source, { persist: false, sel: UI.sel, keepTempo: true });
       else loadDemo('loop');
+      hist.at = snapshot();
     }
   };
 }
 
 // after a new sound: point at the way out
 function showReady() {
-  const el = HOST ? $('#trayHint') : $('#dragOut');
+  if (HOST) return;   // the plugin's tray shows the new riser itself
+  const el = $('#dragOut');
   el.classList.remove('ready'); void el.offsetWidth; el.classList.add('ready');
 }
 
@@ -517,8 +716,6 @@ async function loadFile(file, autoplay) {
   try {
     const bytes = await file.arrayBuffer();
     const s = await decode(bytes.slice(0), renderSr());
-    const m = file.name.match(/(\d{2,3}(?:\.\d+)?)\s*bpm/i);
-    if (m && +m[1] >= 60 && +m[1] <= 200 && !HOST) { bpm = +m[1]; $('#bpm').value = bpm; toast(`${file.name} · ${bpm} BPM from the file name`); }
     if (HOST) engine.persist(bytes, file.name);
     setSample(s, file.name, 'file', { autoplay });
   } catch (e) { toast('That file could not be decoded. Try a WAV, MP3 or AIFF.'); }
@@ -531,8 +728,8 @@ async function loadDemo(kind, autoplay) {
   const oc = new OfflineAudioContext(2, Math.round(make[0] * sr), sr);
   make[1](oc, B);
   const b = await oc.startRendering();
-  if (!HOST && bpm !== 124 && kind === 'loop') { bpm = 124; $('#bpm').value = bpm; }
-  setSample({ chans: [b.getChannelData(0).slice(), b.getChannelData(1).slice()], sr }, { loop: 'Demo · house loop', snare: 'Demo · snare', chord: 'Demo · chord stab' }[kind], 'demo', { autoplay });
+  setSample({ chans: [b.getChannelData(0).slice(), b.getChannelData(1).slice()], sr }, { loop: 'Demo · house loop', snare: 'Demo · snare', chord: 'Demo · chord stab' }[kind], 'demo',
+    { autoplay, bpm: kind === 'snare' ? 0 : 124 });
 }
 function noiseBuf(oc) { const n = oc.createBuffer(1, oc.sampleRate, oc.sampleRate), d = n.getChannelData(0), r = LF.rng(99); for (let i = 0; i < d.length; i++) d[i] = r(); return n; }
 const envGain = (g, t, a, peak, dec) => { g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); };
@@ -595,21 +792,22 @@ $('#tabSample').addEventListener('click', () => setView('sample'));
 $('#tabLive').addEventListener('click', () => setView('live'));
 
 /* ---------- sample strip ---------- */
-$('#recBtn').addEventListener('click', () => { engine.unlock(); engine.record(); });
+$('#recBtn').addEventListener('click', () => { engine.unlock(); closeVary(); engine.record(); });
 const loadMenu = $('#loadMenu');
-const closeMenu = () => { loadMenu.hidden = true; $('#loadBtn').setAttribute('aria-expanded', 'false'); };
-$('#loadBtn').addEventListener('click', e => {
-  e.stopPropagation(); engine.unlock();
-  loadMenu.hidden = !loadMenu.hidden; $('#loadBtn').setAttribute('aria-expanded', String(!loadMenu.hidden));
-  if (!loadMenu.hidden) loadMenu.querySelector('button').focus();
-});
+function openMenu(menu, btn) {
+  const was = !menu.hidden; closeMenus();
+  if (was) return;
+  menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); menu.querySelector('button:not([disabled])').focus();
+}
+function closeMenus() { document.querySelectorAll('.menu').forEach(m => { m.hidden = true; }); document.querySelectorAll('[aria-haspopup]').forEach(b => b.setAttribute('aria-expanded', 'false')); }
+$('#loadBtn').addEventListener('click', e => { e.stopPropagation(); engine.unlock(); openMenu(loadMenu, $('#loadBtn')); });
 loadMenu.addEventListener('click', e => {
   const b = e.target.closest('[data-load]'); if (!b) return;
-  closeMenu();
+  closeMenus();
   if (b.dataset.load === 'file') engine.load(); else loadDemo(b.dataset.load, true);
 });
-document.addEventListener('click', e => { if (!loadMenu.hidden && !e.target.closest('#loadMenu')) closeMenu(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !loadMenu.hidden) { closeMenu(); $('#loadBtn').focus(); } });
+document.addEventListener('click', e => { if (!e.target.closest('.menu')) closeMenus(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.menu:not([hidden])')) { closeMenus(); e.stopPropagation(); } }, true);
 $('#fileIn').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0], true); e.target.value = ''; });
 $('#previewBtn').addEventListener('click', () => engine.toggle());
 $('#dragOut').addEventListener('dragstart', e => {
@@ -620,7 +818,17 @@ $('#dragOut').addEventListener('dragstart', e => {
   e.dataTransfer.setData('text/uri-list', SM.wavURL);
 });
 $('#exportBtn').addEventListener('click', () => SM.render ? engine.exportWav() : toast('Load or record a sample first'));
-$('#bpm').addEventListener('change', e => { bpm = clamp(+e.target.value || 120, 40, 300); e.target.value = +bpm.toFixed(2); saveSoon(); scheduleRender(0); });
+$('#bpm').addEventListener('change', e => { bpm = clamp(+e.target.value || 120, 40, 300); bpmByUser = true; e.target.value = fmtBpm(bpm); saveSoon(); if (SM.sample) { sampleInfo(); scheduleRender(0); } });
+$('#bpm').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); });
+
+/* ---------- IN SONG (plugin): the riser plays with your DAW and ends on the drop bar ---------- */
+$('#cueBtn').addEventListener('click', () => {
+  UI.cue = !UI.cue; toggles(); saveUi(); engine.cue();
+  toast(UI.cue ? `IN SONG: press play in your DAW; the riser ends on bar ${UI.cueBar}` : 'IN SONG off');
+});
+$('#cueBar').addEventListener('change', e => { UI.cueBar = clamp(Math.round(+e.target.value) || 1, 1, 9999); e.target.value = UI.cueBar; saveUi(); engine.cue(); });
+$('#cueBar').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') e.target.blur(); });
+
 $('#launch').addEventListener('click', () => engine.launch());
 let dragDepth = 0;
 window.addEventListener('dragenter', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; $('#dropZone').classList.add('on'); } });
@@ -679,26 +887,31 @@ function buildLayers(W, H, dpr) {
   const mk = () => { const c = document.createElement('canvas'); c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); return [c, x]; };
   const [bg, gb] = mk(), [hi, gh] = mk(), [lo, gl] = mk();
   const xs = n => G.padX + n / r.N * G.w;
-  const spb = r.spb, xe = xs(r.endAt);
+  const spb = r.spb, xe = xs(r.endAt), rev = r.reversed;
+  const xb0 = rev ? xe : xs(0), xb1 = rev ? xs(r.N) : xe;   // where the build is: before END, or (reversed) after it
 
-  // background: bar grid, the riser warming up toward its end, labels
+  // background: bar grid (bars count from the riser's start, or from the drop when reversed), the build warming toward END
   screenBase(gb, W, H);
   gb.font = `700 10px ${MONO}`; gb.textBaseline = 'middle';
-  const bars = Math.ceil(r.N / (spb * bpb));
-  for (let k = 0; k <= bars; k++) {
-    const n = k * bpb * spb; if (n > r.N) break;
+  const barN = spb * bpb, k0 = rev ? -Math.floor(r.endAt / barN) : 0;
+  for (let k = k0; ; k++) {
+    const n = (rev ? r.endAt : 0) + k * barN; if (n > r.N) break; if (n < 0) continue;
     gb.fillStyle = 'rgba(255,240,210,.07)'; gb.fillRect(Math.round(xs(n)), G.top - 6, 1, G.bot - G.top + 6);
-    for (let b = 1; b < bpb; b++) { const nb = n + b * spb; if (nb < r.endAt && r.N / spb < 40) { gb.fillStyle = 'rgba(255,240,210,.025)'; gb.fillRect(Math.round(xs(nb)), G.top, 1, G.bot - G.top); } }
-    if (n < r.endAt - 1) { gb.fillStyle = COL.faint; gb.textAlign = 'left'; gb.fillText(`${k + 1}`, xs(n) + 4, G.bot + 14); }
+    for (let b = 1; b < bpb; b++) { const nb = n + b * spb; if (nb < r.N && r.N / spb < 40) { gb.fillStyle = 'rgba(255,240,210,.025)'; gb.fillRect(Math.round(xs(nb)), G.top, 1, G.bot - G.top); } }
+    if (!rev && n < r.endAt - 1) { gb.fillStyle = COL.faint; gb.textAlign = 'left'; gb.fillText(`${k + 1}`, xs(n) + 4, G.bot + 14); }
   }
   gb.fillStyle = 'rgba(255,240,210,.06)'; gb.fillRect(G.padX, Math.round(G.mid), G.w, 1);
-  const warm = gb.createLinearGradient(xs(0), 0, xe, 0); warm.addColorStop(0, 'rgba(227,176,98,0)'); warm.addColorStop(1, 'rgba(227,176,98,.12)');
-  gb.fillStyle = warm; gb.fillRect(xs(0), G.top, xe - xs(0), G.bot - G.top);
-  gb.fillStyle = 'rgba(0,0,0,.25)'; gb.fillRect(xe, G.top, xs(r.N) - xe, G.bot - G.top);
-  gb.fillStyle = 'rgba(160,150,135,.7)'; gb.textAlign = 'center'; gb.fillText('TAIL', (xe + xs(r.N)) / 2, G.top - 10);
-  // the build curve, like an automation lane
+  const warm = gb.createLinearGradient(rev ? xb1 : xb0, 0, xe, 0); warm.addColorStop(0, 'rgba(227,176,98,0)'); warm.addColorStop(1, 'rgba(227,176,98,.12)');
+  gb.fillStyle = warm; gb.fillRect(xb0, G.top, xb1 - xb0, G.bot - G.top);
+  gb.fillStyle = 'rgba(0,0,0,.25)';
+  if (rev) gb.fillRect(xs(0), G.top, xe - xs(0), G.bot - G.top); else gb.fillRect(xe, G.top, xs(r.N) - xe, G.bot - G.top);
+  if (!rev) { gb.fillStyle = 'rgba(160,150,135,.7)'; gb.textAlign = 'center'; gb.fillText('TAIL', (xe + xs(r.N)) / 2, G.top - 10); }
+  // the build curve, like an automation lane (falling from the drop when reversed)
   gb.setLineDash([3, 4]); gb.strokeStyle = 'rgba(227,176,98,.45)'; gb.lineWidth = 1.2; gb.beginPath();
-  for (let i = 0; i <= 100; i++) { const t = i / 100, x = xs(t * r.buildN), y = G.bot - LF.shape(t, V.curve) * (G.bot - G.top); i ? gb.lineTo(x, y) : gb.moveTo(x, y); }
+  for (let i = 0; i <= 100; i++) {
+    const t = i / 100, x = rev ? xs(r.endAt + t * r.buildN) : xs(t * r.buildN), y = G.bot - LF.shape(rev ? 1 - t : t, V.curve) * (G.bot - G.top);
+    i ? gb.lineTo(x, y) : gb.moveTo(x, y);
+  }
   gb.stroke(); gb.setLineDash([]);
 
   // the ghost: the sample as it went in
@@ -710,11 +923,13 @@ function buildLayers(W, H, dpr) {
   for (let c = 0; c < cols; c++) { const y0 = G.mid - dry[c * 2 + 1] * sc, y1 = G.mid - dry[c * 2] * sc; gb.fillRect(G.padX + c * cw, y0, Math.max(1, cw - 1), Math.max(1, y1 - y0)); }
 
   // the riser, from dark gold to bright as it rises; the reverse swell's last beat in violet; the tail in grey
-  const swellFrom = r.verbStart >= 0 ? Math.max(r.verbStart, r.endAt - spb) : r.endAt;
-  const colour = (n, played) => {
+  // colours are worked out on the forward riser: n is mirrored when reversed
+  const fEnd = r.buildN, swellFrom = r.verbStart >= 0 ? Math.max(r.verbStart, fEnd - spb) : fEnd;
+  const colour = (n0, played) => {
+    const n = rev ? (n0 < r.endAt ? fEnd + (r.endAt - n0) : fEnd - (n0 - r.endAt)) : n0;
     let rgb, a;
     if (n < swellFrom) { const p = LF.shape(n / r.buildN, V.curve); rgb = [Math.round(143 + (247 - 143) * p), Math.round(100 + (217 - 100) * p), Math.round(38 + (150 - 38) * p)]; a = 0.6 + 0.4 * p; }
-    else if (n < r.endAt) { const k = (n - swellFrom) / Math.max(1, r.endAt - swellFrom); rgb = [Math.round(247 - 70 * k), Math.round(217 - 60 * k), Math.round(150 + 105 * k)]; a = 1; }
+    else if (n < fEnd) { const k = (n - swellFrom) / Math.max(1, fEnd - swellFrom); rgb = [Math.round(247 - 70 * k), Math.round(217 - 60 * k), Math.round(150 + 105 * k)]; a = 1; }
     else { rgb = [130, 122, 108]; a = 0.7; }
     return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${played ? a : a * 0.32})`;
   };
@@ -732,7 +947,8 @@ function buildLayers(W, H, dpr) {
     // the end of the riser: where your drop goes
     const dl = g.createLinearGradient(0, G.top, 0, G.bot); dl.addColorStop(0, 'rgba(255,246,220,.95)'); dl.addColorStop(1, 'rgba(227,176,98,.25)');
     g.fillStyle = dl; g.fillRect(Math.round(xe) - 1, G.top - 14, 2, G.bot - G.top + 14);
-    g.font = `800 11px ${MONO}`; g.textBaseline = 'middle'; g.textAlign = 'right'; g.fillStyle = COL.goldHi; g.fillText('END', xe - 6, G.top - 10);
+    g.font = `800 11px ${MONO}`; g.textBaseline = 'middle'; g.fillStyle = COL.goldHi;
+    if (rev) { g.textAlign = 'left'; g.fillText('DROP', xe + 6, G.bot + 14); } else { g.textAlign = 'right'; g.fillText('END', xe - 6, G.top - 10); }
   }
   SM.layers = { bg, hi, lo, G, xs };
   SM.layersFor = SM.render;
@@ -765,24 +981,31 @@ function drawSample(now) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   // where we are
-  let label = 'RISER', big = `${fmtBars(r.buildBars)}`, sub = playing ? '' : W < 600 ? '▶ PREVIEW · or tap the screen' : '▶ PREVIEW or Space · click the screen to play from there', hot = false, pct = 0, phase = 'rest';
+  const rev = r.reversed;
+  let label = rev ? 'DOWNLIFTER' : 'RISER', big = `${fmtBars(r.buildBars)}`, hot = false, pct = 0, phase = 'rest';
+  let sub = playing ? '' : HOST && UI.cue ? `IN SONG · ${rev ? 'drops' : 'ends'} on bar ${UI.cueBar} when your DAW plays` : W < 600 ? '▶ PREVIEW · or tap the screen' : '▶ PREVIEW or Space · click the screen to play from there';
   if (playing && pos >= 0) {
     const x = L.xs(pos);
     g.fillStyle = 'rgba(255,246,220,.9)'; g.shadowColor = COL.gold; g.shadowBlur = 14; g.fillRect(Math.round(x), G.top - 14, 1.5, G.bot - G.top + 14); g.shadowBlur = 0;
     g.beginPath(); g.moveTo(x - 5, G.top - 20); g.lineTo(x + 5, G.top - 20); g.lineTo(x, G.top - 13); g.fillStyle = COL.goldHi; g.fill();
     const beats = (r.endAt - pos) / r.spb;
-    if (pos < r.endAt) {
+    if (rev) {
+      if (pos < r.endAt) { phase = 'build'; label = 'DROP IN'; hot = true; pct = 1; big = `T–${Math.max(1, Math.ceil(beats - 1e-6))}`; sub = 'the swell into the drop'; }
+      else if (pos < r.endAt + 1.5 * r.spb) { phase = 'end'; label = 'DROP'; big = 'DROP'; sub = 'your drop goes here'; hot = true; pct = 1; }
+      else { phase = 'fall'; label = 'FALLING'; pct = 1 - LF.shape(Math.min(1, (pos - r.endAt) / r.buildN), V.curve); big = `${Math.round(pct * 100)}%`; sub = 'falling away from the drop'; }
+    } else if (pos < r.endAt) {
       phase = 'build'; label = 'LIFTOFF IN'; hot = true; pct = LF.shape(pos / r.buildN, V.curve);
       big = beats > bpb ? `T–${Math.ceil(beats / bpb - 1e-6)} BAR${Math.ceil(beats / bpb - 1e-6) > 1 ? 'S' : ''}` : `T–${Math.max(1, Math.ceil(beats - 1e-6))}`;
       sub = beats > bpb ? 'rising' : 'beats to the end';
     } else if (pos < r.endAt + 1.5 * r.spb) { phase = 'end'; label = 'END'; big = 'LIFTOFF'; sub = 'your drop goes here'; hot = true; pct = 1; }
     else { phase = 'tail'; label = 'TAIL'; big = 'TAIL'; sub = 'the effects ring out'; }
     if (phase === 'end' && lastPhase !== 'end') flash();
+    if (HS.cueing && !HS.previewing) sub = `IN SONG · bar ${UI.cueBar}${sub ? ' · ' + sub : ''}`;
   }
   lastPhase = phase;
   if (SM.rendering) sub = 'rendering…';
   hud(label, big, sub, hot, pct);
-  modulation(phase === 'build' ? pct : 0);
+  modulation(phase === 'build' || phase === 'fall' ? pct : 0);
   scanlines(g, W, H);
 }
 
@@ -815,6 +1038,15 @@ function drawLane() {
     g.fillStyle = 'rgba(227,176,98,.55)'; g.fillRect(xa, 2, xb - xa, 10);
     g.fillStyle = '#1d1407'; for (let k = -2; k <= 2; k++) g.fillRect(Math.round((xa + xb) / 2 + k * 4), 5, 2, 4);
   }
+  // the loop's beats along the bottom (bars taller): the cut snaps to them
+  const grid = laneGrid();
+  if (grid && grid.step / SM.sample.chans[0].length * w >= 5) {
+    const n = SM.sample.chans[0].length;
+    for (let k = 0, at = grid.first; at <= n; k++, at += grid.step) {
+      const x = Math.round(pad + at / n * w), bar = (k + grid.k0) % 4 === 0;
+      g.fillStyle = bar ? 'rgba(247,217,150,.55)' : 'rgba(255,240,210,.22)'; g.fillRect(x, Hh - (bar ? 9 : 5), 1, bar ? 9 : 5);
+    }
+  }
   // the handles
   for (const x of [xa, xb]) {
     g.fillStyle = COL.goldHi; g.fillRect(Math.round(x) - 1, 2, 2, Hh - 4);
@@ -829,6 +1061,19 @@ function drawLane() {
   }
 }
 const laneT = e => { const r = lane.getBoundingClientRect(), { pad, w } = laneGeom(); return clamp(((e.clientX - r.left) / r.width * lane.clientWidth - pad) / w, 0, 1); };
+// the loop's beat grid in samples: first beat at or after 0, and its index from the loop's first beat
+function laneGrid() {
+  if (!SM.sample || !UI.srcBpm) return null;
+  const step = 60 / UI.srcBpm * SM.sample.sr, off = UI.srcGrid * SM.sample.sr, k0 = Math.ceil(-off / step);
+  return { step, first: off + k0 * step, k0: ((k0 % 4) + 4) % 4 };
+}
+// cuts land on beats (and the ends) unless Shift is held
+function snapT(t, e) {
+  const grid = laneGrid(); if (!grid || (e && e.shiftKey)) return t;
+  const n = SM.sample.chans[0].length, at = t * n, k = Math.round((at - grid.first) / grid.step), b = grid.first + k * grid.step;
+  const best = [0, n, b].reduce((p, c) => Math.abs(c - at) < Math.abs(p - at) ? c : p);
+  return Math.abs(best - at) < grid.step / 2 ? clamp(best / n, 0, 1) : t;
+}
 lane.addEventListener('pointerdown', e => {
   if (!SM.sample) return;
   const t = laneT(e), { w } = laneGeom(), near = 8 / w, lr = lane.getBoundingClientRect(), y = (e.clientY - lr.top) / lr.height * lane.clientHeight;
@@ -847,21 +1092,23 @@ lane.addEventListener('pointermove', e => {
     return;
   }
   const min = 0.02 * SM.sample.sr / SM.sample.chans[0].length;   // 20 ms at the least
-  if (laneDrag.kind === 'a') UI.sel = [clamp(t, 0, UI.sel[1] - min), UI.sel[1]];
-  else if (laneDrag.kind === 'b') UI.sel = [UI.sel[0], clamp(t, UI.sel[0] + min, 1)];
-  else if (laneDrag.kind === 'move') { const len = laneDrag.sel[1] - laneDrag.sel[0], a = clamp(laneDrag.sel[0] + t - laneDrag.from, 0, 1 - len); UI.sel = [a, a + len]; }
-  else UI.sel = [Math.min(laneDrag.from, t), Math.max(laneDrag.from, t)];
+  const ts = snapT(t, e);
+  if (laneDrag.kind === 'a') UI.sel = [clamp(ts, 0, UI.sel[1] - min), UI.sel[1]];
+  else if (laneDrag.kind === 'b') UI.sel = [UI.sel[0], clamp(ts, UI.sel[0] + min, 1)];
+  else if (laneDrag.kind === 'move') { const len = laneDrag.sel[1] - laneDrag.sel[0], a = clamp(snapT(laneDrag.sel[0] + t - laneDrag.from, e), 0, 1 - len); UI.sel = [a, a + len]; }
+  else { const f = snapT(laneDrag.from, e); UI.sel = [Math.min(f, ts), Math.max(f, ts)]; }
   sampleInfo();
 });
 const laneUp = () => {
   if (!laneDrag) return;
   const min = 0.02 * SM.sample.sr / SM.sample.chans[0].length;
   if (UI.sel[1] - UI.sel[0] < min) UI.sel = [0, 1];   // a click, not a drag: the whole sample
-  laneDrag = null; sampleInfo(); saveUi(); stopPreview(); scheduleRender(0);
+  laneDrag = null; sampleInfo(); saveUi(); stopPreview(); scheduleRender(0); commitSoon(0);
 };
 lane.addEventListener('pointerup', laneUp); lane.addEventListener('pointercancel', laneUp);
-lane.addEventListener('dblclick', () => { if (!SM.sample) return; UI.sel = [0, 1]; sampleInfo(); saveUi(); scheduleRender(0); });
-$('#selAll').addEventListener('click', () => { if (!SM.sample) return; UI.sel = [0, 1]; sampleInfo(); saveUi(); scheduleRender(0); });
+const selectAll = () => { if (!SM.sample) return; UI.sel = [0, 1]; sampleInfo(); saveUi(); scheduleRender(0); commitSoon(0); };
+lane.addEventListener('dblclick', selectAll);
+$('#selAll').addEventListener('click', selectAll);
 function setPartButton(on) { $('#selPlayIcon').setAttribute('d', on ? 'M6 5h4.5v14H6zM13.5 5H18v14h-4.5z' : 'M7 4.5v15l13-7.5z'); }
 function playPart() {
   if (!SM.sample) return;
@@ -900,6 +1147,111 @@ cv.addEventListener('click', e => {
   const t = clamp(((e.clientX - rect.left) / rect.width * cv.clientWidth - G.padX) / G.w, 0, 1);
   engine.play(Math.round(t * SM.render.N));
 });
+
+/* ---------- VARY: four takes on your settings; hear them, keep the best ---------- */
+const VARY = { takes: [], run: 0, play: null };
+const varyEl = $('#vary'), varyGrid = $('#varyGrid');
+function varyValues(rnd) {
+  const v = { ...V }, pick = a => a[Math.floor((rnd() + 1) / 2 * a.length) % a.length], maybe = p => (rnd() + 1) / 2 < p;
+  const nudge = (k, amt) => { if (k in v) v[k] = clamp(V[k] + amt * rnd(), DEFS[k].min, DEFS[k].max); };
+  nudge('curve', 0.45); ['filter', 'wash', 'stutter', 'noise', 'width'].forEach(k => nudge(k, 0.35));
+  if (maybe(0.6)) v.pitch = pick(UI.snap ? SNAP_STEPS : [0, 3, 5, 7, 12, 12, 19, 24]);
+  if (maybe(0.5)) v.tremRate = pick([0, 1, 2, 3, 4, 5]);
+  if (maybe(0.4)) v.tremShape = pick([0, 1, 2, 3]);
+  if (maybe(0.2)) v.trem = V.trem ? 0 : 1;
+  nudge('tremDepth', 0.25); nudge('chorusDepth', 0.3); nudge('chorusMix', 0.25); nudge('chorusRate', 1.2);
+  if (maybe(0.15)) v.chorus = V.chorus ? 0 : 1;
+  if (maybe(0.35)) v.verbLen = clamp(V.verbLen + (rnd() > 0 ? 1 : -1), 0, 3);
+  if (maybe(0.2)) v.verbMode = pick([0, 0, 1, 2]);
+  nudge('verbMix', 0.25); nudge('verbSize', 0.3);
+  return v;
+}
+function varyLabel(v) {
+  const out = [];
+  if (Math.abs(v.pitch - V.pitch) > 0.5) out.push(`${v.pitch >= 0.5 ? '+' : ''}${Math.round(v.pitch)} st`);
+  if (v.trem !== V.trem) out.push(v.trem ? 'tremolo on' : 'no tremolo');
+  else if (v.trem && (v.tremRate !== V.tremRate || v.tremShape !== V.tremShape)) out.push(`trem ${SEG_LABEL.tremRate[v.tremRate]} ${STEP_LABEL.tremShape[v.tremShape]}`);
+  if (v.chorus !== V.chorus) out.push(v.chorus ? 'chorus on' : 'no chorus');
+  if (v.verbMode !== V.verbMode) out.push(`${SEG_LABEL.verbMode[v.verbMode]} swell`);
+  else if (v.verbLen !== V.verbLen) out.push(`swell ${SEG_LABEL.verbLen[v.verbLen]}`);
+  if (Math.abs(v.curve - V.curve) > 0.2) out.push(fmt('curve', v.curve));
+  if (Math.abs(v.wash - V.wash) > 0.2) out.push(`wash ${Math.round(v.wash * 100)}%`);
+  return out.slice(0, 3).join(' · ') || 'a small turn';
+}
+async function vary() {
+  if (!SM.sample) { toast('Load or record a sample first'); return; }
+  if (UI.view !== 'sample') return;
+  stopPreview(); stopTake();
+  const run = ++VARY.run, rnd = LF.rng((Date.now() & 0xfffff) + run);
+  VARY.takes = [0, 1, 2, 3].map(k => ({ v: varyValues(rnd), r: null, k }));
+  varyGrid.innerHTML = VARY.takes.map(t => `<div class="take" data-k="${t.k}" role="button" tabindex="0" aria-label="Take ${t.k + 1}: ${esc(varyLabel(t.v))}">
+      <div class="take-wave"><canvas></canvas><i class="head"></i></div><div class="take-meta"><b>TAKE ${t.k + 1}</b><span>${esc(varyLabel(t.v))}</span></div>
+      <button class="mini-btn use" data-use="${t.k}" disabled>USE</button></div>`).join('');
+  varyEl.hidden = false; $('#varyBtn').setAttribute('aria-pressed', 'true');
+  const sample = await preparedSample();
+  for (const t of VARY.takes) {
+    if (run !== VARY.run) return;
+    const signal = { cancelled: false };
+    t.r = await LF.renderTransition(sample, t.v, renderOpts(signal));
+    if (run !== VARY.run) return;
+    const el = varyGrid.querySelector(`[data-k="${t.k}"]`); el.classList.add('ready'); el.querySelector('.use').disabled = false;
+    drawTake(t);
+  }
+}
+function drawTake(t) {
+  const el = varyGrid.querySelector(`[data-k="${t.k}"] canvas`); if (!el || !t.r) return;
+  const dpr = window.devicePixelRatio || 1, W = el.clientWidth, H = el.clientHeight;
+  el.width = Math.round(W * dpr); el.height = Math.round(H * dpr);
+  const g = el.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const r = t.r, cols = Math.max(40, Math.floor(W / 3)), pk = LF.peaks(r.L, r.R, 0, r.N, cols);
+  let mx = 0.05; for (const v of pk) mx = Math.max(mx, Math.abs(v));
+  const mid = H / 2, sc = (H / 2 - 4) / mx, cw = W / cols, xe = r.endAt / r.N * W;
+  for (let c = 0; c < cols; c++) {
+    const n = (c + 0.5) / cols * r.N, warm = r.reversed ? (n < r.endAt ? 1 : 1 - (n - r.endAt) / r.buildN) : n < r.endAt ? n / r.endAt : 0.15;
+    g.fillStyle = `rgba(${Math.round(143 + 104 * warm)},${Math.round(100 + 117 * warm)},${Math.round(38 + 112 * warm)},${0.55 + 0.45 * warm})`;
+    const y0 = mid - pk[c * 2 + 1] * sc, y1 = mid - pk[c * 2] * sc; g.fillRect(c * cw, y0, Math.max(1, cw - 1), Math.max(1, y1 - y0));
+  }
+  g.fillStyle = 'rgba(255,246,220,.8)'; g.fillRect(Math.round(xe), 2, 1.5, H - 4);
+  t.drawnW = W;
+}
+function playTake(k) {
+  const t = VARY.takes[k]; if (!t || !t.r) return;
+  if (VARY.play && VARY.play.k === k) { stopTake(); return; }
+  stopPreview(); engine.stopPart();
+  engine.playPart({ chans: [t.r.L, t.r.R], sr: t.r.sr });
+  VARY.play = { k, at: performance.now(), dur: t.r.N / t.r.sr };
+  varyGrid.querySelectorAll('.take').forEach(el => el.classList.toggle('playing', +el.dataset.k === k));
+}
+function stopTake() {
+  if (!VARY.play) return;
+  VARY.play = null; engine.stopPart(); SM.audition = null;
+  varyGrid.querySelectorAll('.take').forEach(el => el.classList.remove('playing'));
+}
+function useTake(k) {
+  const t = VARY.takes[k]; if (!t || !t.r) return;
+  stopTake();
+  const label = varyLabel(t.v);
+  for (const id of HIST_KEYS) if (V[id] !== t.v[id]) { gesture(id, true); setParam(id, t.v[id]); gesture(id, false); }
+  closeVary(); commitSoon(0);
+  toast(`Take ${k + 1} kept${label === 'a small turn' ? '' : ': ' + label} · Ctrl/Cmd+Z to go back`);
+}
+function closeVary() { if (varyEl.hidden) return; VARY.run++; stopTake(); varyEl.hidden = true; $('#varyBtn').setAttribute('aria-pressed', 'false'); }
+// the playhead over the take that is playing
+function drawVary() {
+  const p = VARY.play; if (!p) return;
+  const t = (performance.now() - p.at) / 1000 / p.dur;
+  if (t >= 1) { stopTake(); return; }
+  const h = varyGrid.querySelector(`[data-k="${p.k}"] .head`); if (h) h.style.left = (t * 100).toFixed(2) + '%';
+}
+$('#varyBtn').addEventListener('click', () => { engine.unlock(); varyEl.hidden ? vary() : closeVary(); });
+$('#varyAgain').addEventListener('click', () => vary());
+$('#varyClose').addEventListener('click', closeVary);
+varyGrid.addEventListener('click', e => {
+  const u = e.target.closest('[data-use]'); if (u) { useTake(+u.dataset.use); return; }
+  const t = e.target.closest('.take'); if (t) playTake(+t.dataset.k);
+});
+varyGrid.addEventListener('dblclick', e => { const t = e.target.closest('.take'); if (t && !e.target.closest('[data-use]')) useTake(+t.dataset.k); });
+varyGrid.addEventListener('keydown', e => { const t = e.target.closest('.take'); if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); e.key === 'Enter' && e.shiftKey ? useTake(+t.dataset.k) : playTake(+t.dataset.k); } });
 
 /* ---------- LIVE mode: the build following the DAW (plugin) ---------- */
 function live(now) {
@@ -1035,19 +1387,25 @@ function meters() {
 function frame(now) {
   pump(now);
   if (UI.view === 'live') drawLive(now); else drawSample(now);
+  if (!varyEl.hidden) drawVary();
   meters();
   requestAnimationFrame(frame);
 }
 
 /* ---------- keys ---------- */
 window.addEventListener('keydown', e => {
-  if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest('input, textarea')) return;
+  const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
+  if (mod && !e.altKey && (k === 'z' || k === 'y')) { e.preventDefault(); (k === 'y' || e.shiftKey) ? redo() : undo(); return; }
+  if (e.target.closest('select') || mod || e.altKey) return;
+  if (e.key === 'Escape' && !varyEl.hidden) { closeVary(); return; }
+  if ((e.key === 'v' || e.key === 'V') && UI.view === 'sample') { engine.unlock(); varyEl.hidden ? vary() : closeVary(); return; }
   if (e.code === 'Space' && UI.view === 'sample') { e.preventDefault(); engine.toggle(); }
   else if ((e.key === 'r' || e.key === 'R') && UI.view === 'sample') engine.record();
   else if ((e.key === 'a' || e.key === 'A') && UI.view === 'sample') playPart();
   else if (e.key === 'l' || e.key === 'L') { if (UI.view === 'live' && V.mode === MODE.TRIGGER) engine.launch(); }
-  else if (e.key === 'ArrowLeft' && !e.target.closest('.knob, .seg, .fader')) loadPreset(presetIdx - 1);
-  else if (e.key === 'ArrowRight' && !e.target.closest('.knob, .seg, .fader')) loadPreset(presetIdx + 1);
+  else if (e.key === 'ArrowLeft' && !e.target.closest('.knob, .seg, .fader, .step, .take')) stepPreset(-1);
+  else if (e.key === 'ArrowRight' && !e.target.closest('.knob, .seg, .fader, .step, .take')) stepPreset(1);
 });
 window.addEventListener('resize', () => { SM.layersFor = null; });
 
@@ -1063,8 +1421,7 @@ window.addEventListener('resize', fit);
 fit();
 
 refreshAll();
-presetSel.value = clamp(presetIdx, 0, LIFTOFF_PRESETS.length - 1);
-markEdited();
+fillPresets(); histButtons();
 engine.init();
 requestAnimationFrame(frame);
 })();

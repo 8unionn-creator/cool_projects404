@@ -93,6 +93,16 @@ console.log('Liftoff core');
   check('RISE pitch: +12 semitones is an octave up', Math.abs(f / 880 - 1) < 0.03, `${f.toFixed(1)} Hz`);
 }
 
+{ // the shifter splices where the waveform matches: a shifted tone keeps a steady level (no 20-60 Hz flutter)
+  const tone = i => { let v = 0; for (let h = 1; h <= 10; h++) v += Math.sin(2 * Math.PI * 220 * h * i / SR) / h; return 0.3 * v; };
+  const worst = [5, 12, 24].map(st => {
+    const o = run({ ...OFF, mode: MODE.MANUAL, build: 1, rise: 1, pitch: st, filter: 0, wash: 0, stutter: 0, noise: 0, width: 0 }, 2, tone);
+    const F = 960, v = []; for (let s = SR / 2; s + F <= o.L.length; s += F) v.push(rms(o.L, s, s + F));
+    const mean = v.reduce((a, b) => a + b) / v.length; return Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / v.length) / mean;
+  });
+  check('RISE pitch: a shifted tone stays steady (+5, +12, +24)', Math.max(...worst) < 0.04, worst.map(w => (w * 100).toFixed(1) + '%').join(', '));
+}
+
 { // the high-pass sweep thins the low end out
   const o = run({ ...OFF, mode: MODE.MANUAL, build: 1, rise: 1, pitch: 0, filter: 1, wash: 0, stutter: 0, noise: 0, width: 0 }, 1, sine(150));
   check('RISE filter: 150 Hz is gone at the top of the build', db(rms(o.L, SR / 2, SR)) < db(0.35) - 30, `${db(rms(o.L, SR / 2, SR)).toFixed(1)} dB`);

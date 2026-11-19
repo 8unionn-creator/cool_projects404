@@ -107,15 +107,19 @@ private:
     double target (int k) const;
     void dropNow();
     double readHist (const std::vector<float>& buf, double pos) const;
+    double psRead (const std::vector<float>& buf, int pw, double d) const;
+    double splice (int pw, double d, double drift);
 
     double sr = 48000, smoothA = 0, gateA = 0, cutA = 0;
     std::array<double, numSmoothed> S {};
-    int W = 2400, psN = 4096, psW = 0, hN = 1 << 18;
+    int psN = 16384, psW = 0, psK = 576, psXF = 384, psX = -1, hN = 1 << 18;
+    double psD = 0, psDo = 0, psG = 0, psA = 0;
+    std::vector<double> psCmp;
     std::vector<float> psL, psR, hL, hR, chL, chR;
     int chN = 2048, chW = 0;
     double chPh = 0, tremSm = 1;
     long long hW = 0;
-    double phase = 0, gate = 1, gapEnv = 0;
+    double gate = 1, gapEnv = 0;
     SVF hpL, hpR, lpL, lpR, nL, nR;
     Wash wash;
     Rng noise { 0xa11ce };
@@ -129,6 +133,23 @@ private:
     int drops = 0;
     unsigned coefT = 0;
 };
+
+/* IN SONG: the riser plays along with the DAW so that its drop (endAt samples into it) lands on the downbeat of
+   bar dropBar (1-based; bar 1 starts at ppq 0). cueStart is where in the riser the DAW is at quarter-note position ppq;
+   cueMix adds the riser to a block starting there, and says whether any of it sounded. */
+inline long long cueStart (double ppq, int dropBar, double bpb, double bpm, double sr, long long endAt)
+{
+    return endAt + std::llround ((ppq - (double) (dropBar - 1) * bpb) * 60.0 / bpm * sr);
+}
+inline bool cueMix (juce::AudioBuffer<float>& out, const juce::AudioBuffer<float>& riser, long long start, int n)
+{
+    const long long len = riser.getNumSamples();
+    const long long a = std::max (0LL, -start), b = std::min ((long long) n, len - start);
+    if (b <= a) return false;
+    for (int c = 0; c < out.getNumChannels(); ++c)
+        out.addFrom (c, (int) a, riser, std::min (c, riser.getNumChannels() - 1), (int) (start + a), (int) (b - a));
+    return true;
+}
 
 // The whole effect: the core, then the dry/processed signal delayed by the backverb length L
 // plus the send convolved with the reversed reverb. L is the plugin's latency.
