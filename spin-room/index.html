@@ -358,6 +358,17 @@ label.f input[type="range"] { padding: 0; border: 0; background: none; }
 #vidList li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 13px; }
 #vidList li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #vidList .d { font-family: var(--font-mono); color: var(--ui-dim); font-size: 12px; }
+.daw { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--ui-raise); border: 1px solid var(--ui-line); }
+.daw-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.daw-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ui-dim); flex: none; }
+.daw.rec .daw-dot { background: #e5333f; animation: blink 1s ease-in-out infinite; }
+.daw-time { margin-left: auto; font: 500 13px var(--font-mono); color: var(--ui-dim); font-variant-numeric: tabular-nums; }
+.daw .tracks li { grid-template-columns: 44px minmax(0, 1fr) auto auto; cursor: default; }
+.daw .tracks:empty { display: none; }
+.ytbox { display: flex; flex-direction: column; gap: 10px; }
+.yt { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--ui-bg); border: 1px solid var(--ui-line); }
+.yt-head { display: flex; align-items: center; justify-content: space-between; font: 500 11px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ui-dim); }
+.yt-out { margin: 0; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .alt { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--ui-line); }
 .alt h3 { margin: 0; font: 500 11px/1 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--ui-dim); }
 .alt .btn { align-self: flex-start; }
@@ -632,6 +643,13 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
 
     <section class="grp">
       <h3>Beats</h3>
+      <div class="daw" id="dawBox" hidden>
+        <div class="daw-head"><span class="daw-dot"></span><span id="dawStatus">Connecting…</span><span class="daw-time" id="dawTime"></span></div>
+        <label class="tg">Catch the beat when I press play<input type="checkbox" id="dawAuto"></label>
+        <div class="detect-btns"><button class="btn sm" id="dawRec">Record</button><button class="btn sm" id="dawStop" hidden>Stop</button><button class="btn sm" id="dawFolder">Show takes</button></div>
+        <ul class="tracks" id="dawTakes"></ul>
+        <p class="hint" id="dawHint"></p>
+      </div>
       <label class="drop" id="drop">
         <input type="file" id="fileBeats" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" multiple>
         <strong>Add beats</strong>
@@ -819,6 +837,23 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
       </div>
       <p class="hint">Shortcuts: <kbd>Space</kbd> play / pause · <kbd>R</kbd> record video · <kbd>F</kbd> full-screen mode · <kbd>←</kbd> <kbd>→</kbd> skip 5 s</p>
     </section>
+
+    <section class="grp">
+      <h3>Title, description and tags</h3>
+      <div class="fields">
+        <label class="f">Type beat for<input id="fArtist" data-k="ytArtist" maxlength="60" placeholder="Drake, Future" autocomplete="off"></label>
+        <label class="f">Genre<input id="fGenre" data-k="ytGenre" maxlength="30" placeholder="Trap" autocomplete="off"></label>
+        <label class="f wide">Buy or lease link<input id="fLink" data-k="ytLink" maxlength="200" placeholder="https://" inputmode="url" autocomplete="off"></label>
+      </div>
+      <div class="toggles"><label class="tg">Free for non-profit use (adds [FREE])<input type="checkbox" id="tFree" data-b="ytFree"></label></div>
+      <div class="ytbox" id="ytBox">
+        <div class="yt"><div class="yt-head"><span>YouTube title</span><button class="linkbtn" data-copy="ytTitle" data-label="Title">Copy</button></div><p class="yt-out" id="ytTitle"></p></div>
+        <div class="yt"><div class="yt-head"><span>Description</span><button class="linkbtn" data-copy="ytDesc" data-label="Description">Copy</button></div><p class="yt-out" id="ytDesc"></p></div>
+        <div class="yt"><div class="yt-head"><span>Tags</span><button class="linkbtn" data-copy="ytTags" data-label="Tags">Copy</button></div><p class="yt-out" id="ytTags"></p></div>
+        <div class="yt"><div class="yt-head"><span>TikTok caption</span><button class="linkbtn" data-copy="ytTikTok" data-label="Caption">Copy</button></div><p class="yt-out" id="ytTikTok"></p></div>
+      </div>
+      <p class="hint">Written from this beat's title, BPM and key. Paste them when you upload.</p>
+    </section>
   </aside>
 </div>
 
@@ -834,7 +869,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     <p class="hint" id="vidInfo"></p>
     <video id="vidPrev" controls playsinline></video>
     <ul id="vidList"></ul>
-    <div class="modal-btns"><button class="btn big save" id="vidSave">Save video</button><button class="btn" id="vidClose">Close</button></div>
+    <div class="modal-btns"><button class="btn big save" id="vidSave">Save video</button><button class="btn" id="vidReveal" hidden>Show in Finder</button><button class="btn" id="vidClose">Close</button></div>
     <p class="hint" id="vidHint"></p>
   </div>
 </div>
@@ -854,11 +889,13 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
   const SPIN_MODES = ['vinyl', 'both', 'record', 'jukebox']; // these say "Now spinning"; the rest "Now playing"
   const DEFAULTS = { producer: 'YOUR NAME', handle: '@yourname', tagline: 'Beats in bio', format: 'tall', mode: 'vinyl', rpm: '33', room: 'oxblood', vinyl: 'black', accent: '', font: 'wide', coverBg: true, viz: true, safe: false, startAt: '0:00', clip: '30', countdown: '3', cover: null,
     logo: null, useLogo: true, hook: '', endOn: true, endBig: 'Lease this beat', endSmall: 'Link in bio', endPrice: '',
-    tagOn: true, tagVol: '1', tagDuck: true, cam: 'none', dropFx: true, bgfx: 'none', vizStyle: 'bars', packCount: '4', packSecs: '8', packSwitch: true };
+    tagOn: true, tagVol: '1', tagDuck: true, cam: 'none', dropFx: true, bgfx: 'none', vizStyle: 'bars', packCount: '4', packSecs: '8', packSwitch: true,
+    ytArtist: '', ytGenre: '', ytLink: '', ytFree: true };
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
   const state = Object.assign({}, DEFAULTS, saved);
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage full or blocked: keep going */ } };
+  let onSave = null; // set inside the DAW plugin, which also keeps the settings
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage full or blocked: keep going */ } if (onSave) onSave(); };
   const ROOM_ACCENT = { oxblood: '#f0b35b', midnight: '#8fd0ff', forest: '#f2c2a0', chrome: '#ff6b4a', cream: '#c43f2a' };
 
   const stage = $('#stage');
@@ -1289,7 +1326,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
   const LOOK_KEYS = ['format', 'mode', 'rpm', 'room', 'vinyl', 'accent', 'font', 'coverBg', 'viz', 'vizStyle', 'bgfx', 'cam', 'dropFx'];
   let looks = [];
   try { looks = JSON.parse(localStorage.getItem('spinroom.looks') || '[]') || []; } catch (e) { looks = []; }
-  const saveLooks = () => { try { localStorage.setItem('spinroom.looks', JSON.stringify(looks)); } catch (e) {} };
+  const saveLooks = () => { try { localStorage.setItem('spinroom.looks', JSON.stringify(looks)); } catch (e) {} if (onSave) onSave(); };
   function renderLooks() {
     $('#looks').innerHTML = looks.length
       ? looks.map((l, i) => `<span class="look"><button class="look-apply" data-look="${i}">${esc(l.name)}</button><button class="look-del" data-del="${i}" aria-label="Delete ${esc(l.name)}">×</button></span>`).join('')
@@ -1385,6 +1422,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     $('#sTag').textContent = state.tagline || '';
     const hook = (state.hook || '').trim();
     $('#sHook').textContent = hook; stage.classList.toggle('has-hook', !!hook);
+    renderYt();
   }
   function renderList() {
     const ul = $('#tracks');
@@ -2201,11 +2239,14 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
       ? 'This browser saves WebM videos. TikTok on a computer accepts them; for your phone, export from Safari or the Claude app to get an MP4.'
       : XW > XH ? 'On iPhone, choose Save Video in the share menu to put it in Photos. Then in the YouTube app tap + → Upload a video.'
         : 'On iPhone, choose Save Video in the share menu to put it in Photos. Then in TikTok tap + → Upload.';
+    $('#vidReveal').hidden = true;
+    if (native) $('#vidHint').textContent = 'Save puts the video in Movies › Spin Room. Then upload it from there.';
     $('#vidModal').hidden = false;
   }
   async function saveVideo(i = 0) {
     const v = videos[i]; if (!v) return;
     const btn = videos.length === 1 ? $('#vidSave') : $(`[data-save="${i}"]`);
+    if (native) { if (btn) btn.disabled = true; try { await saveViaPlugin(v, btn); } finally { if (btn) btn.disabled = false; } return; }
     if (downloadsNS) {
       if (btn) btn.disabled = true;
       try { await downloadsNS.save({ filename: v.name, data: v.blob }); if (btn) btn.disabled = false; toast('Video saved.'); return; }
@@ -3137,6 +3178,154 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     else if (e.key === 'ArrowLeft') seek(position() - 5);
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && playing) wake(true); });
+
+  /* ---------- title, description and tags for YouTube and TikTok ---------- */
+  function ytText() {
+    const t = track() || {}, title = curTitle(), year = new Date().getFullYear();
+    const artists = (state.ytArtist || '').split(/[,&/+]+|\bx\b/i).map(s => s.trim()).filter(Boolean).slice(0, 3);
+    const genre = (state.ytGenre || '').trim(), free = !!state.ytFree;
+    const bpm = t.bpm ? `${String(t.bpm).replace(/\s*bpm/i, '')} BPM` : '', key = t.key || '';
+    const prod = state.producer && state.producer !== 'YOUR NAME' ? state.producer.trim() : '';
+    const tag = free ? '[FREE] ' : '';
+    const lead = artists.length ? `${tag}${artists.join(' x ')} Type Beat` : genre ? `${tag}${genre} Type Beat` : `${tag}Type Beat`;
+    let yTitle = `${lead} - "${title}"`;
+    const facts = [bpm, key].filter(Boolean).join(' ');
+    if (facts) yTitle += ` | ${facts}`;
+    if (yTitle.length > 100) yTitle = yTitle.slice(0, 99) + '…';
+    const d = [`${lead} - "${title}"${prod ? ` (prod. ${prod})` : ''}`];
+    if (state.ytLink) d.push('', `💰 Buy or lease this beat: ${state.ytLink.trim()}`);
+    if (facts) d.push('', `🎹 ${[bpm, key].filter(Boolean).join(' · ')}`);
+    if (prod) d.push(`🎛 Prod. by ${prod}`);
+    if (state.handle) d.push(`📲 ${state.handle}`);
+    if (free) d.push('', `Free for non-profit use only, with credit (prod. ${prod || 'me'}) in your title. For anything that earns money, like streaming, sales or monetised videos, buy a lease first.`);
+    const tags = [];
+    const add = s => { s = String(s).toLowerCase().replace(/[^\p{L}\p{N}#♯ ]+/gu, ' ').replace(/\s+/g, ' ').trim(); if (s && !tags.includes(s)) tags.push(s); };
+    artists.forEach(a => { add(`${a} type beat`); add(`${a} type beat ${year}`); if (free) add(`free ${a} type beat`); add(a); });
+    if (artists.length > 1) add(`${artists.join(' x ')} type beat`);
+    if (genre) { add(`${genre} type beat`); add(`${genre} beat`); add(`${genre} instrumental`); }
+    add('type beat'); add(`type beat ${year}`); if (free) add('free type beat'); add('instrumental');
+    if (bpm) add(`${bpm} beat`);
+    if (key) add(`${key} beat`);
+    if (prod) add(`prod ${prod}`);
+    add(title);
+    const kept = []; let len = 0; // YouTube allows about 500 characters of tags
+    for (const x of tags) { if (len + x.length + 2 > 480) break; kept.push(x); len += x.length + 2; }
+    const hash = s => '#' + s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    const hashtags = ['#typebeat', ...artists.map(a => hash(`${a}typebeat`)), genre ? hash(genre) : '', '#producer', '#beats', free ? '#freebeat' : ''].filter(Boolean);
+    const tiktok = `${title}${prod ? ` (prod. ${prod})` : ''}${facts ? ` · ${facts}` : ''} 🔥${state.ytLink ? '\nBeats in bio' : ''}\n${[...new Set(hashtags)].join(' ')}`;
+    return { title: yTitle, desc: d.join('\n'), tags: kept.join(', '), tiktok };
+  }
+  function renderYt() {
+    const box = $('#ytTitle'); if (!box) return;
+    const y = ytText();
+    box.textContent = y.title; $('#ytDesc').textContent = y.desc; $('#ytTags').textContent = y.tags; $('#ytTikTok').textContent = y.tiktok;
+  }
+  async function copyText(text, label) {
+    let ok = false;
+    try {
+      if (native) ok = !!(await native('spinroom_copy', text));
+      else if (navigator.clipboard) { await navigator.clipboard.writeText(text); ok = true; }
+    } catch (e) { ok = false; }
+    toast(ok ? `${label} copied.` : 'Copying is blocked here. Select the text and copy it.');
+  }
+  $('#ytBox').addEventListener('click', e => {
+    const b = e.target.closest('[data-copy]'); if (!b) return;
+    const el = $('#' + b.dataset.copy); copyText(el.textContent, b.dataset.label || 'Text');
+  });
+
+  /* ---------- inside the DAW plugin ----------
+     When this page runs in the Spin Room plugin, window.__JUCE__ is there. The plugin catches the
+     beat as the DAW plays and tells the page; videos are saved through the plugin. */
+  const native = (() => {
+    const be = window.__JUCE__ && window.__JUCE__.backend;
+    if (!be) return null;
+    let nextId = 1; const waiting = new Map();
+    be.addEventListener('__juce__complete', ({ promiseId, result }) => { const r = waiting.get(promiseId); if (r) { waiting.delete(promiseId); r(result); } });
+    return (name, ...params) => new Promise(res => { const id = nextId++; waiting.set(id, res); be.emitEvent('__juce__invoke', { name, params, resultId: id }); });
+  })();
+  let dawTakes = [];
+  const takeTime = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  function renderDawStatus(s) {
+    if (!s) return;
+    const box = $('#dawBox');
+    box.classList.toggle('rec', !!s.recording);
+    $('#dawAuto').checked = !!s.auto;
+    $('#dawStatus').textContent = s.recording ? 'Catching the beat…'
+      : s.standalone ? 'Ready. Press Record, then play your beat.'
+      : s.auto ? 'Waiting for you to press play' : 'Ready. Press Record, then play your beat.';
+    $('#dawTime').textContent = s.recording ? fmt(s.seconds) : (s.bpm > 0 ? `${Math.round(s.bpm * 100) / 100} BPM` : '');
+    $('#dawRec').hidden = !!s.recording; $('#dawStop').hidden = !s.recording;
+    $('#dawHint').textContent = s.standalone
+      ? 'Choose your audio input under Options (top left of this window). With a loopback device such as BlackHole, Spin Room hears your DAW.'
+      : 'Put Spin Room on your Master channel and play the beat from the top. Each run is caught, trimmed and added to your beats, with the DAW\'s exact BPM.';
+  }
+  function renderDawTakes() {
+    const used = new Set(tracks.map(t => t.takeId).filter(Boolean));
+    $('#dawTakes').innerHTML = dawTakes.slice(0, 6).map(t => `<li data-take="${esc(t.id)}">
+      <span class="n">${takeTime(t.time)}</span><span class="t">${esc(t.name)}</span><span class="d">${fmt(t.seconds)}</span>
+      ${used.has(t.id) ? '<span class="d">added</span>' : `<button class="btn sm" data-addtake="${esc(t.id)}">Add</button>`}</li>`).join('');
+  }
+  async function addTake(take) {
+    if (tracks.some(t => t.takeId === take.id)) return;
+    try {
+      const res = await fetch(`takes/${encodeURIComponent(take.id)}.wav`);
+      if (!res.ok) throw new Error('missing');
+      const blob = await res.blob();
+      const file = new File([blob], `${take.name}.wav`, { type: 'audio/wav' });
+      addFiles([file]);
+      const t = tracks[tracks.length - 1];
+      t.takeId = take.id;
+      t.title = `New beat ${takeTime(take.time)}`;
+      if (take.bpm > 0) { t.bpm = String(Math.round(take.bpm * 100) / 100); t.bpmAuto = false; }
+      select(tracks.length - 1, false);
+      persistTrack(t);
+      toast(`Caught a ${fmt(take.seconds)} beat${take.bpm > 0 ? ` at ${Math.round(take.bpm)} BPM` : ''}. Rename it under This beat.`);
+    } catch (e) { toast("That take couldn't be opened."); }
+    renderDawTakes();
+  }
+  async function saveViaPlugin(v, btn) {
+    const label = btn ? btn.textContent : '';
+    const token = await native('spinroom_saveBegin', v.name);
+    if (!token) { toast("The video couldn't be saved. Check that the Movies folder is writable."); return; }
+    const CH = 768 * 1024;
+    for (let off = 0; off < v.blob.size; off += CH) {
+      const bytes = new Uint8Array(await v.blob.slice(off, off + CH).arrayBuffer());
+      let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      if (!(await native('spinroom_saveChunk', token, btoa(bin)))) { toast('Saving stopped part way. Try again.'); return; }
+      if (btn) btn.textContent = `Saving… ${Math.min(100, Math.round((off + CH) / v.blob.size * 100))}%`;
+    }
+    const path = await native('spinroom_saveEnd', token);
+    if (btn) btn.textContent = label;
+    if (!path) { toast("The video couldn't be saved."); return; }
+    v.path = path;
+    const rv = $('#vidReveal'); rv.hidden = false; rv.dataset.path = path;
+    toast('Saved to Movies › Spin Room.');
+  }
+  if (native) {
+    document.body.classList.add('in-plugin');
+    $('#dawBox').hidden = false;
+    $('.brand p').textContent = 'Play your beat in the DAW. Spin Room catches it and makes the video.';
+    window.__JUCE__.backend.addEventListener('spinroom_status', renderDawStatus);
+    window.__JUCE__.backend.addEventListener('spinroom_take', take => { dawTakes.unshift(take); renderDawTakes(); addTake(take); });
+    native('spinroom_status').then(renderDawStatus);
+    native('spinroom_takes').then(list => { dawTakes = Array.isArray(list) ? list : []; renderDawTakes(); });
+    $('#dawAuto').addEventListener('change', e => native('spinroom_setAuto', e.target.checked).then(renderDawStatus));
+    $('#dawRec').addEventListener('click', () => native('spinroom_record'));
+    $('#dawStop').addEventListener('click', () => native('spinroom_stop'));
+    $('#dawFolder').addEventListener('click', () => native('spinroom_openFolder', 'takes'));
+    $('#dawTakes').addEventListener('click', e => { const b = e.target.closest('[data-addtake]'); if (b) { const t = dawTakes.find(x => x.id === b.dataset.addtake); if (t) addTake(t); } });
+    $('#vidReveal').addEventListener('click', e => native('spinroom_reveal', e.currentTarget.dataset.path));
+    // Settings and looks are saved inside the DAW project
+    native('spinroom_getState').then(s => {
+      try {
+        const o = JSON.parse(s || '{}');
+        if (o.state) Object.assign(state, o.state);
+        if (Array.isArray(o.looks)) { looks = o.looks; renderLooks(); }
+        renderAll();
+      } catch (e) {}
+      let t; onSave = () => { clearTimeout(t); t = setTimeout(() => native('spinroom_setState', JSON.stringify({ state, looks })), 600); };
+    });
+  }
 
   /* ---------- start ---------- */
   function loadDemo() {

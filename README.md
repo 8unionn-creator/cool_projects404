@@ -6,7 +6,7 @@ Things I build to sharpen my skills and make my own work easier.
 |---|---|---|
 | [⏪ Rewind](rewind/) | Undo history and a code map for AI coding agents: every agent step saved as a Git snapshot you can restore, `rewind bisect` to find the step that broke the tests, an interactive map that replays what the agent changed, and an MCP server so agents can use it themselves | Go, Git internals, static analysis, MCP |
 | [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
-| [💿 Spin Room](spin-room/) | A record player and CD player that spin to your beats, made to screen-record for TikTok | HTML, CSS, JS, Web Audio |
+| [💿 Spin Room](spin-room/) | Eleven players (turntable, CD, cassette, jukebox and more) that spin to your beats and make the TikTok, Reels or YouTube video, with your tag, title and tags. Runs in the browser and as an AU/VST3 plugin that catches the beat as your DAW plays | HTML, CSS, JS, Web Audio, WebCodecs, C++, JUCE |
 | [🎛️ Stencil](stencil/) | Arrangement stencils for Logic Pro and FL Studio: 20 MIDI song structures for trap, R&B, Afrobeats and rap, with visual maps. A drag-and-drop plugin is planned | MIDI, Python, JUCE (planned) |
 | [🥁 Groove Rack](groove-rack/) | A drum and bass groove maker: channel rack, a piano roll on every channel with a chord lane, your own samples, MIDI in and out, 15 genre starters from Afrobeats and Amapiano to trap, drill and pop. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, C++, JUCE |
 | [🛫 Liftoff](liftoff/) | Record or load a sample, cut the part you want, and it becomes a riser: pitch, filter, stutter, wash, noise, a chorus, a tremolo on your grid, and a reverse swell landing on the end. Loops sync to your tempo; hear it in your song, then drag it into your DAW. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, AudioWorklet, C++, JUCE |
@@ -41,6 +41,8 @@ A focus timer that works like a real kitchen timer. Drag the dial to set the min
 
 ## 💿 Spin Room — [`spin-room/`](spin-room/index.html)
 
+![spin-room plugin CI](https://github.com/8unionn-creator/cool_projects404/actions/workflows/spin-room-plugin.yml/badge.svg)
+
 A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable CD player spins them: the tonearm drops and tracks across the record as the beat plays, the platter spins up and slows down like a real one, and the sound bars and background glow move with the bass.
 
 **What it does**
@@ -55,6 +57,7 @@ A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable
 - **Looks:** 6 vinyl colors, 5 rooms, any accent color, 3 title styles, 33⅓ or 45 RPM
 - **Record video:** makes a 1080 × 1920, 1920 × 1080 or 1080 × 1080 MP4 (H.264 + AAC, a steady 30 fps) with the beat's sound: 15, 30 or 60 seconds, or the whole beat, from any start time. It fades out at the end and the tonearm lifts. Frames are drawn and encoded one by one with WebCodecs, so nothing is dropped even on a busy phone; browsers without it record live instead. Save it straight to your phone and upload it to TikTok, Reels or YouTube Shorts. Also makes a **beat pack** (several beats in one video, switching players) or **one video for every beat** at once
 - **Full-screen mode** for screen recorders instead: hides the controls, counts down and plays. A guide shows where TikTok's buttons and caption will cover the video
+- **Title, description and tags:** a YouTube title like `[FREE] Drake Type Beat - "Night Drive" | 140 BPM F# min`, a description with your buy link, a tag list and a TikTok caption with hashtags, each with a copy button
 - Comes with a built-in demo beat made in the browser, so it works before you add anything
 
 **How to use it:** open `spin-room/index.html` in a browser. Add beats, style it, pick a start time and length, then tap **Record** and keep the screen open while it records. Tap **Save video** when it's done. Beats stay on your device and are never uploaded.
@@ -62,6 +65,8 @@ A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable
 **Install it as an app:** with GitHub Pages turned on for this repo (Settings → Pages → Deploy from a branch → the default branch, `/ (root)`), it lives at `https://8unionn-creator.github.io/cool_projects404/spin-room/`. Open that in Safari and choose Share → Add to Home Screen (on Android, Chrome → Install app). It then opens full screen with no browser bars, which keeps them out of your recordings, and works offline.
 
 **Where the video goes:** **Save video** opens the share menu on iPhone (choose Save Video to put it in Photos) and downloads it elsewhere. Then in TikTok tap **+** → **Upload**.
+
+**In your DAW: the Spin Room plugin** ([`spin-room-plugin/`](spin-room-plugin/)). An Audio Unit and VST3 for Mac, plus a standalone app. Put it in the last slot of your Master channel and play your beat: it catches the beat as it plays, with no export, trims it, and adds it to Spin Room with your DAW's exact BPM. Make the video right in the plugin window; it's saved to Movies → Spin Room. Your settings are saved with the DAW project. [Install and use it →](spin-room-plugin/INSTALL.md)
 
 ## 🎛️ Stencil — [`stencil/`](stencil/)
 
