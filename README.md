@@ -6,7 +6,7 @@ Things I build to sharpen my skills and make my own work easier.
 |---|---|---|
 | [⏪ Rewind](rewind/) | Undo history and a code map for AI coding agents: every agent step saved as a Git snapshot you can restore, `rewind bisect` to find the step that broke the tests, an interactive map that replays what the agent changed, and an MCP server so agents can use it themselves | Go, Git internals, static analysis, MCP |
 | [🍅 Tomato Dial](tomato-dial/) | A focus timer you set by dragging a kitchen-timer dial, with tasks, ambient sounds and stats | HTML, CSS, JS, Web Audio |
-| [💿 Spin Room](spin-room/) | A record player and CD player that spin to your beats, made to screen-record for TikTok | HTML, CSS, JS, Web Audio |
+| [💿 Spin Room](spin-room/) | Eleven players (turntable, CD, cassette, jukebox and more) that spin to your beats and make the TikTok, Reels or YouTube video, with your tag, title and tags. Drop a beat in, check the video, and post it to YouTube from the browser | HTML, CSS, JS, Web Audio, WebCodecs, YouTube Data API |
 | [🎛️ Stencil](stencil/) | Arrangement stencils for Logic Pro and FL Studio: 20 MIDI song structures for trap, R&B, Afrobeats and rap, with visual maps. A drag-and-drop plugin is planned | MIDI, Python, JUCE (planned) |
 | [🥁 Groove Rack](groove-rack/) | A drum and bass groove maker: channel rack, a piano roll on every channel with a chord lane, your own samples, MIDI in and out, 15 genre starters from Afrobeats and Amapiano to trap, drill and pop. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, C++, JUCE |
 | [🛫 Liftoff](liftoff/) | Record or load a sample, cut the part you want, and it becomes a riser: pitch, filter, stutter, wash, noise, a chorus, a tremolo on your grid, and a reverse swell landing on the end. Loops sync to your tempo; hear it in your song, then drag it into your DAW. Runs in the browser and as a VST3/AU plugin | HTML, CSS, JS, Web Audio, AudioWorklet, C++, JUCE |
@@ -55,13 +55,26 @@ A 9:16 music showcase for TikTok. Load your beats, and a turntable or a portable
 - **Looks:** 6 vinyl colors, 5 rooms, any accent color, 3 title styles, 33⅓ or 45 RPM
 - **Record video:** makes a 1080 × 1920, 1920 × 1080 or 1080 × 1080 MP4 (H.264 + AAC, a steady 30 fps) with the beat's sound: 15, 30 or 60 seconds, or the whole beat, from any start time. It fades out at the end and the tonearm lifts. Frames are drawn and encoded one by one with WebCodecs, so nothing is dropped even on a busy phone; browsers without it record live instead. Save it straight to your phone and upload it to TikTok, Reels or YouTube Shorts. Also makes a **beat pack** (several beats in one video, switching players) or **one video for every beat** at once
 - **Full-screen mode** for screen recorders instead: hides the controls, counts down and plays. A guide shows where TikTok's buttons and caption will cover the video
+- **Title, description and tags:** a YouTube title like `[FREE] Drake Type Beat - "Night Drive" | 140 BPM F# min`, a description with your buy link, a tag list and a TikTok caption with hashtags, each with a copy button
+- **Drop a beat, get a video, post it:** with **Make the video for me** on, adding a beat makes the video by itself (a 16:9 YouTube video of the whole beat, a 9:16 Short from the hook, or both). It lands in **Ready to post** with the title, description, tags and who can see it filled in. Change anything, then tap **Post to YouTube**, **Share** (opens your phone's share sheet with the caption copied, for TikTok or Instagram) or **Save**
+- **Sign in with Google:** your name, logo, voice tag, looks and settings are saved in your Google account (a private Spin Room folder in your Google Drive that only Spin Room can see), so they follow you to any phone or computer. Your beats stay on your device
 - Comes with a built-in demo beat made in the browser, so it works before you add anything
 
 **How to use it:** open `spin-room/index.html` in a browser. Add beats, style it, pick a start time and length, then tap **Record** and keep the screen open while it records. Tap **Save video** when it's done. Beats stay on your device and are never uploaded.
 
 **Install it as an app:** with GitHub Pages turned on for this repo (Settings → Pages → Deploy from a branch → the default branch, `/ (root)`), it lives at `https://8unionn-creator.github.io/cool_projects404/spin-room/`. Open that in Safari and choose Share → Add to Home Screen (on Android, Chrome → Install app). It then opens full screen with no browser bars, which keeps them out of your recordings, and works offline.
 
+**Set up YouTube posting (once):** posting goes straight from your browser to YouTube, with no server. It needs your own free Google Cloud project:
+1. Make a project at [console.cloud.google.com](https://console.cloud.google.com/projectcreate).
+2. In **APIs & Services → Library**, turn on **YouTube Data API v3** and **Google Drive API**.
+3. In **Google Auth Platform** (OAuth consent screen), choose **External** and add your Gmail under **Audience → Test users**.
+4. In **Clients**, create a **Web application** client with `https://8unionn-creator.github.io` under **Authorized JavaScript origins**.
+5. In Spin Room, open **Set up YouTube posting**, paste the client ID, and tap **Sign in with Google**.
+
+Until YouTube approves the project (the [YouTube API audit form](https://support.google.com/youtube/contact/yt_api_form)), YouTube keeps every video it posts private; switch them to public in YouTube Studio. YouTube also limits a new project to a handful of uploads a day. Sign-in only works on the GitHub Pages site (or `localhost`), not inside a preview window. TikTok and Instagram don't let a browser-only app post for you, so for those use **Share** or **Save**.
+
 **Where the video goes:** **Save video** opens the share menu on iPhone (choose Save Video to put it in Photos) and downloads it elsewhere. Then in TikTok tap **+** → **Upload**.
+
 
 ## 🎛️ Stencil — [`stencil/`](stencil/)
 

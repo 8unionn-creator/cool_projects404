@@ -358,6 +358,42 @@ label.f input[type="range"] { padding: 0; border: 0; background: none; }
 #vidList li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 13px; }
 #vidList li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #vidList .d { font-family: var(--font-mono); color: var(--ui-dim); font-size: 12px; }
+.ytbox { display: flex; flex-direction: column; gap: 10px; }
+.yt { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--ui-bg); border: 1px solid var(--ui-line); }
+.yt-head { display: flex; align-items: center; justify-content: space-between; font: 500 11px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ui-dim); }
+.yt-out { margin: 0; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
+label.f textarea { width: 100%; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--ui-line); background: var(--ui-bg); color: var(--ui-ink); font: 13.5px/1.45 inherit; font-family: inherit; resize: vertical; }
+label.f textarea:focus, label.f select:focus { border-color: var(--accent); outline: none; }
+label.f input:disabled, label.f textarea:disabled, label.f select:disabled { opacity: .6; }
+.gbtn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 12px; font-weight: 600; background: #fff; color: #1f1f1f; border-color: #dadce0; }
+.gbtn svg { width: 18px; height: 18px; flex: none; }
+.acct-row { display: flex; align-items: center; gap: 12px; }
+.acct-row img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; }
+.acct-row div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.acct-row strong { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-row span { font-size: 12.5px; color: var(--ui-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup { border: 1px solid var(--ui-line); border-radius: 10px; padding: 0 12px; background: var(--ui-bg); }
+.setup summary { cursor: pointer; padding: 10px 0; font-size: 13.5px; font-weight: 600; }
+.setup ol { margin: 0 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--ui-ink); }
+.setup code { font: 12px var(--font-mono); background: var(--ui-raise); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+.setup a { color: var(--accent); }
+.setup label.f { margin-bottom: 12px; }
+.rp { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--ui-raise); border: 1px solid var(--ui-line); }
+.rp + .rp { margin-top: 10px; }
+.rp-head { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rp-head strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-kind { font: 500 11px/1 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+.rp-vid { width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background: #000; }
+.rp-vid.tall { width: 203px; height: 360px; aspect-ratio: auto; align-self: center; }
+.rp-bar { height: 6px; border-radius: 3px; background: var(--ui-bg); overflow: hidden; }
+.rp-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.rp-count { font: 11px var(--font-mono); color: var(--ui-dim); }
+.rp-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rp-btns .btn.big { flex: 1 1 100%; }
+.btn.big.post::before { display: none; }
+.rp-done { margin: 0; font-size: 13.5px; color: var(--ui-ink); }
+.rp-done a { color: var(--accent); font-weight: 600; }
+.rp-err { margin: 0; font-size: 13px; color: #ff6b6b; }
 .alt { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--ui-line); }
 .alt h3 { margin: 0; font: 500 11px/1 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--ui-dim); }
 .alt .btn { align-self: flex-start; }
@@ -630,6 +666,36 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
       <button class="ibtn close-sheet" id="closeSheet" aria-label="Close controls"><svg viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z"/></svg></button>
     </div>
 
+    <section class="grp" id="acct">
+      <h3>Your account</h3>
+      <div id="acctOut">
+        <button class="btn gbtn" id="gSignIn"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.4-4.6 7l7.4 5.8c4.3-4 6.9-9.9 6.9-17.3z"/><path fill="#FBBC05" d="M10.5 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.6 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.8c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.1-13.5-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg><span id="gSignInLabel">Sign in with Google</span></button>
+        <p class="hint">Keeps your name, logo, voice tag, looks and settings in your Google account so they follow you to any phone or computer, and lets you post to YouTube.</p>
+      </div>
+      <div id="acctIn" hidden>
+        <div class="acct-row"><img id="acctPic" alt="" referrerpolicy="no-referrer"><div><strong id="acctName"></strong><span id="acctChannel"></span></div><button class="linkbtn" id="gSignOut">Sign out</button></div>
+        <p class="hint" id="syncNote"></p>
+      </div>
+      <p class="hint" id="acctFrame" hidden>Google sign-in only opens on your own Spin Room site, not inside this preview.</p>
+      <details class="setup" id="gSetup">
+        <summary>Set up YouTube posting (once)</summary>
+        <ol>
+          <li>Open <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud</a> and make a project called Spin Room.</li>
+          <li>In <b>APIs &amp; Services › Library</b>, turn on <b>YouTube Data API v3</b> and <b>Google Drive API</b>.</li>
+          <li>In <b>Google Auth Platform</b> (the OAuth consent screen), choose <b>External</b>, and add your Gmail under <b>Audience › Test users</b>.</li>
+          <li>In <b>Clients</b>, create a <b>Web application</b> client. Under <b>Authorized JavaScript origins</b> add <code id="gOrigin">https://8unionn-creator.github.io</code>.</li>
+          <li>Copy the client ID and paste it below.</li>
+        </ol>
+        <label class="f">Google client ID<input id="fClientId" placeholder="1234-abc.apps.googleusercontent.com" autocomplete="off" spellcheck="false"></label>
+        <p class="hint" style="margin-bottom:12px">Until YouTube approves your project (the API audit form), videos you post go up as private and you switch them to public in YouTube Studio.</p>
+      </details>
+    </section>
+
+    <section class="grp" id="readySec" hidden>
+      <h3>Ready to post</h3>
+      <div id="readyList"></div>
+    </section>
+
     <section class="grp">
       <h3>Beats</h3>
       <label class="drop" id="drop">
@@ -819,6 +885,33 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
       </div>
       <p class="hint">Shortcuts: <kbd>Space</kbd> play / pause · <kbd>R</kbd> record video · <kbd>F</kbd> full-screen mode · <kbd>←</kbd> <kbd>→</kbd> skip 5 s</p>
     </section>
+
+    <section class="grp">
+      <h3>Title, description and tags</h3>
+      <div class="fields">
+        <label class="f">Type beat for<input id="fArtist" data-k="ytArtist" maxlength="60" placeholder="Drake, Future" autocomplete="off"></label>
+        <label class="f">Genre<input id="fGenre" data-k="ytGenre" maxlength="30" placeholder="Trap" autocomplete="off"></label>
+        <label class="f wide">Buy or lease link<input id="fLink" data-k="ytLink" maxlength="200" placeholder="https://" inputmode="url" autocomplete="off"></label>
+      </div>
+      <div class="toggles"><label class="tg">Free for non-profit use (adds [FREE])<input type="checkbox" id="tFree" data-b="ytFree"></label></div>
+      <div class="ytbox" id="ytBox">
+        <div class="yt"><div class="yt-head"><span>YouTube title</span><button class="linkbtn" data-copy="ytTitle" data-label="Title">Copy</button></div><p class="yt-out" id="ytTitle"></p></div>
+        <div class="yt"><div class="yt-head"><span>Description</span><button class="linkbtn" data-copy="ytDesc" data-label="Description">Copy</button></div><p class="yt-out" id="ytDesc"></p></div>
+        <div class="yt"><div class="yt-head"><span>Tags</span><button class="linkbtn" data-copy="ytTags" data-label="Tags">Copy</button></div><p class="yt-out" id="ytTags"></p></div>
+        <div class="yt"><div class="yt-head"><span>TikTok caption</span><button class="linkbtn" data-copy="ytTikTok" data-label="Caption">Copy</button></div><p class="yt-out" id="ytTikTok"></p></div>
+      </div>
+      <p class="hint">Written from this beat's title, BPM and key. Each video in Ready to post gets its own copy you can change before posting.</p>
+      <div class="alt">
+        <h3>When I add a beat</h3>
+        <div class="toggles"><label class="tg">Make the video for me<input type="checkbox" id="tAuto" data-b="autoMake"></label></div>
+        <div class="fields">
+          <label class="f wide">Make<select id="fYtFormat" data-k="ytFormat"><option value="full">A YouTube video (16:9, the whole beat)</option><option value="short">A YouTube Short (9:16, from the hook)</option><option value="both">Both</option></select></label>
+          <label class="f">Short length<select id="fShortSecs" data-k="shortSecs"><option value="30">30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option></select></label>
+          <label class="f">Who can see it<select id="fYtPrivacy" data-k="ytPrivacy"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select></label>
+        </div>
+        <p class="hint">The video shows up in Ready to post at the top with its title, description and tags filled in. Check it, then tap Post to YouTube.</p>
+      </div>
+    </section>
   </aside>
 </div>
 
@@ -854,11 +947,13 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
   const SPIN_MODES = ['vinyl', 'both', 'record', 'jukebox']; // these say "Now spinning"; the rest "Now playing"
   const DEFAULTS = { producer: 'YOUR NAME', handle: '@yourname', tagline: 'Beats in bio', format: 'tall', mode: 'vinyl', rpm: '33', room: 'oxblood', vinyl: 'black', accent: '', font: 'wide', coverBg: true, viz: true, safe: false, startAt: '0:00', clip: '30', countdown: '3', cover: null,
     logo: null, useLogo: true, hook: '', endOn: true, endBig: 'Lease this beat', endSmall: 'Link in bio', endPrice: '',
-    tagOn: true, tagVol: '1', tagDuck: true, cam: 'none', dropFx: true, bgfx: 'none', vizStyle: 'bars', packCount: '4', packSecs: '8', packSwitch: true };
+    tagOn: true, tagVol: '1', tagDuck: true, cam: 'none', dropFx: true, bgfx: 'none', vizStyle: 'bars', packCount: '4', packSecs: '8', packSwitch: true,
+    ytArtist: '', ytGenre: '', ytLink: '', ytFree: true, ytFormat: 'full', ytPrivacy: 'public', autoMake: true, shortSecs: '45' };
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
   const state = Object.assign({}, DEFAULTS, saved);
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage full or blocked: keep going */ } };
+  let onSave = null; // set inside the DAW plugin, which also keeps the settings
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage full or blocked: keep going */ } if (onSave) onSave(); };
   const ROOM_ACCENT = { oxblood: '#f0b35b', midnight: '#8fd0ff', forest: '#f2c2a0', chrome: '#ff6b4a', cream: '#c43f2a' };
 
   const stage = $('#stage');
@@ -1213,6 +1308,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
   const trackStart = t => clamp(parseTime(t && t.startAt ? t.startAt : '0:00'), 0, Math.max(0, ((t && t.duration) || 1) - 1));
   const trackDrop = t => (t && t.drop && String(t.drop).trim() ? parseTime(t.drop) : -1);
 
+  const autoPending = new WeakSet(); // beats added with "Make the video for me" on
   // Reads length, BPM, key and the hook for beats that don't have them yet, one at a time.
   async function processPending(list) {
     for (const t of list) {
@@ -1225,7 +1321,8 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
         persistTrack(t);
         if (t === track()) { renderText(); renderLabels(); renderFields(); }
         else t.buffer = null;
-      } catch (e) { t.title += ' (unreadable)'; }
+        if (autoPending.has(t)) { autoPending.delete(t); queueAuto(t); }
+      } catch (e) { t.title += ' (unreadable)'; autoPending.delete(t); }
       renderList();
     }
   }
@@ -1264,9 +1361,9 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
   }
   function setTag(file) {
     tagBlob = file; tagName = file.name; tagBuffer = null; renderTag();
-    ensureTag().then(() => { DB.putAsset('tag', { blob: file, name: file.name }); toast('Voice tag added.'); }, () => { toast("That voice tag couldn't be read. Try an MP3 or WAV."); clearTag(); });
+    ensureTag().then(() => { DB.putAsset('tag', { blob: file, name: file.name }); toast('Voice tag added.'); if (gAuth.token) syncTag(); }, () => { toast("That voice tag couldn't be read. Try an MP3 or WAV."); clearTag(); });
   }
-  function clearTag() { tagBlob = null; tagName = ''; tagBuffer = null; DB.delAsset('tag'); renderTag(); }
+  function clearTag() { tagBlob = null; tagName = ''; tagBuffer = null; DB.delAsset('tag'); renderTag(); if (gAuth.token) syncTag(); }
 
   // ---- logo ----
   function setLogo(file) {
@@ -1289,7 +1386,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
   const LOOK_KEYS = ['format', 'mode', 'rpm', 'room', 'vinyl', 'accent', 'font', 'coverBg', 'viz', 'vizStyle', 'bgfx', 'cam', 'dropFx'];
   let looks = [];
   try { looks = JSON.parse(localStorage.getItem('spinroom.looks') || '[]') || []; } catch (e) { looks = []; }
-  const saveLooks = () => { try { localStorage.setItem('spinroom.looks', JSON.stringify(looks)); } catch (e) {} };
+  const saveLooks = () => { try { localStorage.setItem('spinroom.looks', JSON.stringify(looks)); } catch (e) {} if (onSave) onSave(); };
   function renderLooks() {
     $('#looks').innerHTML = looks.length
       ? looks.map((l, i) => `<span class="look"><button class="look-apply" data-look="${i}">${esc(l.name)}</button><button class="look-del" data-del="${i}" aria-label="Delete ${esc(l.name)}">×</button></span>`).join('')
@@ -1385,6 +1482,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     $('#sTag').textContent = state.tagline || '';
     const hook = (state.hook || '').trim();
     $('#sHook').textContent = hook; stage.classList.toggle('has-hook', !!hook);
+    renderYt();
   }
   function renderList() {
     const ul = $('#tracks');
@@ -1942,24 +2040,30 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
 
   const END = 3.2; // seconds the end card stays up
   const tailLen = () => (state.endOn ? END : TAIL);
-  const formatDims = () => state.format === 'wide' ? [1920, 1080] : state.format === 'square' ? [1080, 1080] : [1080, 1920];
+  const dimsFor = f => f === 'wide' ? [1920, 1080] : f === 'square' ? [1080, 1080] : [1080, 1920];
+  const formatDims = () => dimsFor(state.format);
   function clipLenFor(t, start) { const clip = +state.clip, rest = t.loop ? t.duration : t.duration - start; return clip > 0 ? (t.loop ? clip : Math.min(clip, rest)) : rest; }
   const slug = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const fmtSuffix = () => state.format === 'wide' ? '-youtube' : state.format === 'square' ? '-square' : '';
   const PACK_MODES = ['vinyl', 'cassette', 'mp3', 'jukebox', 'boombox', 'cd', 'reel', 'car', 'record', 'disc'];
 
   // kind: 'single' (this beat), 'pack' (several beats in one video) or 'batch' (one video per beat)
-  async function startExport(kind = 'single') {
+  // opts (used when a video is made for you): track, format, whole (the whole beat from 0:00), secs (length from the hook),
+  // label, onProgress, quiet (hand the videos back instead of opening the video window)
+  async function startExport(kind = 'single', opts = {}) {
     if (xp) return;
-    if (!track()) { toast('Add a beat first.'); return; }
-    [XW, XH] = formatDims();
+    const one = opts.track ?? cur;
+    if (!tracks[one]) { toast('Add a beat first.'); return; }
+    const fmtWanted = opts.format || state.format;
+    [XW, XH] = dimsFor(fmtWanted);
     const codecs = await frameByFrameCodecs(), live = liveCodec();
     let Muxer = null;
     if (codecs) { try { Muxer = await loadMuxer(); } catch (e) { Muxer = null; } }
     const frames = !!(codecs && Muxer);
     if (!frames && kind !== 'single') { toast('Beat packs and batch videos need Chrome, or Safari 26 or newer. Record video still works here.'); return; }
     if (!frames && !live) { toast("This browser can't make videos. Use Chrome or Safari, or use full-screen mode with your screen recorder."); return; }
-    let list = [cur];
+    if (!frames && opts.quiet) return;
+    let list = [one];
     if (kind === 'pack') list = tracks.map((_, i) => i).slice(0, Math.min(+state.packCount || 4, tracks.length));
     if (kind === 'batch') list = tracks.map((_, i) => i);
     if (kind === 'pack' && list.length < 2) { toast('Add at least 2 beats to make a beat pack.'); return; }
@@ -1970,11 +2074,12 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     catch (e) { stage.classList.remove('loading'); toast("Couldn't open one of the beats."); return; }
     try { await ensureTag(); } catch (e) {}
     stage.classList.remove('loading');
-    const keepCur = cur, keepMode = state.mode;
-    xp = { cancelled: false, mode: frames ? 'frames' : 'live', kind, keep: { cur: keepCur, mode: keepMode } };
+    const keepCur = cur, keepMode = state.mode, keepFormat = state.format;
+    xp = { cancelled: false, mode: frames ? 'frames' : 'live', kind, keep: { cur: keepCur, mode: keepMode, format: keepFormat } };
     deckArea.style.transform = '';
     document.body.classList.add('exporting'); document.body.classList.remove('sheet');
-    $('#expLabel').textContent = kind === 'pack' ? 'Making beat pack' : kind === 'batch' ? 'Making videos' : frames ? 'Making video' : 'Recording video';
+    $('#expLabel').textContent = opts.label || (kind === 'pack' ? 'Making beat pack' : kind === 'batch' ? 'Making videos' : frames ? 'Making video' : 'Recording video');
+    if (fmtWanted !== state.format) { state.format = fmtWanted; renderAll(); }
     $('#expTime').textContent = frames ? '0%' : '';
     await nextFrame();
     const cv = mk(XW, XH); cv.className = 'xp-canvas';
@@ -1982,22 +2087,25 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     stage.parentElement.appendChild(cv); document.body.classList.add('xp-preview');
     xp.cv = cv; xp.g = cv.getContext('2d');
     const job = xp;
-    const restore = () => { cur = keepCur; state.mode = keepMode; trackLabel = null; renderAll(); };
+    const restore = () => { cur = keepCur; state.mode = keepMode; state.format = keepFormat; trackLabel = null; renderAll(); };
     // set the stage to a beat and player, then measure and pre-draw it
-    const buildSeg = async (i, mode, label, len) => {
+    const buildSeg = async (i, mode, label, len, from) => {
       cur = i; state.mode = mode; trackLabel = label; renderAll(); await nextFrame();
-      const t = tracks[i], start = trackStart(t), scene = await buildScene(job.base);
+      const t = tracks[i], start = from ?? trackStart(t), scene = await buildScene(job.base);
       job.base = job.base || scene;
       return { t, start, mode, scene, len: len ?? clipLenFor(t, start) };
     };
+    const onTick = p => { $('#expTime').textContent = `${Math.floor(p * 100)}%`; if (opts.onProgress) opts.onProgress(p); };
     const results = [];
     try {
       if (kind === 'single') {
-        const seg = await buildSeg(cur, state.mode, null);
+        const t1 = tracks[one], from = opts.whole ? 0 : trackStart(t1), rest = t1.loop ? t1.duration : t1.duration - from;
+        const len = opts.whole ? rest : opts.secs ? (t1.loop ? opts.secs : Math.min(opts.secs, rest)) : undefined;
+        const seg = await buildSeg(one, state.mode, null, len, from);
         if (job.cancelled) return;
         if (frames) {
-          const blob = await exportFrames([seg], codecs, Muxer, p => { $('#expTime').textContent = `${Math.floor(p * 100)}%`; });
-          if (blob) results.push({ blob, len: seg.len, name: `${slug(seg.t.title) || 'beat'}${state.producer ? '-' + slug(state.producer) : ''}${fmtSuffix()}.mp4` });
+          const blob = await exportFrames([seg], codecs, Muxer, onTick);
+          if (blob) results.push({ blob, len: seg.len, w: XW, h: XH, name: `${slug(seg.t.title) || 'beat'}${state.producer ? '-' + slug(state.producer) : ''}${opts.secs ? '-short' : fmtSuffix()}.mp4` });
         } else { restore(); job.seg = seg; job.scene = seg.scene; job.len = seg.len; await exportLive(live, seg); return; }
       } else if (kind === 'pack') {
         const secs = +state.packSecs || 8, segs = [];
@@ -2007,7 +2115,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
           segs.push(await buildSeg(list[n], modes[n % modes.length], `${String(n + 1).padStart(2, '0')} / ${String(list.length).padStart(2, '0')}`, len));
           if (job.cancelled) return;
         }
-        const blob = await exportFrames(segs, codecs, Muxer, p => { $('#expTime').textContent = `${Math.floor(p * 100)}%`; });
+        const blob = await exportFrames(segs, codecs, Muxer, onTick);
         if (blob) results.push({ blob, len: segs.reduce((s, x) => s + x.len, 0), name: `beat-pack${state.producer ? '-' + slug(state.producer) : ''}${fmtSuffix()}.mp4` });
       } else {
         for (let n = 0; n < list.length; n++) {
@@ -2021,11 +2129,12 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
       }
     } catch (e) {
       const was = !job.cancelled; restore(); cleanupExport();
-      if (was) toast("The video couldn't be made on this device. Try a shorter length, or use full-screen mode with your screen recorder.");
+      if (was && !opts.quiet) toast("The video couldn't be made on this device. Try a shorter length, or use full-screen mode with your screen recorder.");
       return;
     }
     if (job.cancelled) return;
     restore(); cleanupExport();
+    if (opts.quiet) return results;
     if (results.length) showVideos(results);
   }
 
@@ -2179,7 +2288,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     if (xp.rec && xp.rec.state !== 'inactive') { try { xp.rec.stop(); } catch (e) {} }
     const keep = xp.keep;
     cleanupExport();
-    if (keep) { cur = keep.cur; state.mode = keep.mode; }
+    if (keep) { cur = keep.cur; state.mode = keep.mode; state.format = keep.format; }
     trackLabel = null; renderAll();
     toast('Video cancelled.');
   }
@@ -2205,17 +2314,21 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
   }
   async function saveVideo(i = 0) {
     const v = videos[i]; if (!v) return;
-    const btn = videos.length === 1 ? $('#vidSave') : $(`[data-save="${i}"]`);
+    await saveBlob(v.blob, v.name, videos.length === 1 ? $('#vidSave') : $(`[data-save="${i}"]`), v.url);
+  }
+  async function saveBlob(blob, name, btn, url) {
     if (downloadsNS) {
       if (btn) btn.disabled = true;
-      try { await downloadsNS.save({ filename: v.name, data: v.blob }); if (btn) btn.disabled = false; toast('Video saved.'); return; }
+      try { await downloadsNS.save({ filename: name, data: blob }); if (btn) btn.disabled = false; toast('Video saved.'); return; }
       catch (e) { if (btn) btn.disabled = false; if (e && (e.code === 'declined' || e.code === 'rate_limited')) return; if (e && e.code === 'too_large') { toast('That video is too big to save here. Try a shorter length.'); return; } }
     }
     try {
-      const file = new File([v.blob], v.name, { type: v.blob.type });
+      const file = new File([blob], name, { type: blob.type });
       if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
     } catch (e) { if (e && e.name === 'AbortError') return; }
-    const a = document.createElement('a'); a.href = v.url; a.download = v.name; document.body.appendChild(a); a.click(); a.remove();
+    const own = !url; if (own) url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    if (own) setTimeout(() => URL.revokeObjectURL(url), 60000);
     toast('Downloading your video.');
   }
   $('#vidSave').addEventListener('click', () => saveVideo(0));
@@ -3013,6 +3126,7 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     if (hadDemo || !track()) cur = first;
     renderAll();
     tracks.slice(first).forEach(persistTrack);
+    if (state.autoMake) tracks.slice(first).forEach(t => autoPending.add(t));
     // read lengths, BPM, key and hooks one by one, without holding every beat in memory
     processPending(tracks.slice(first));
     toast(audioFiles.length === 1 ? `Added "${tracks[tracks.length - 1].title}".` : `Added ${audioFiles.length} beats.`);
@@ -3137,6 +3251,461 @@ body.exporting .stage[data-format="square"] { width: min(calc(100vw - 32px), cal
     else if (e.key === 'ArrowLeft') seek(position() - 5);
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && playing) wake(true); });
+
+  /* ---------- title, description and tags for YouTube and TikTok ---------- */
+  function ytText(t0, kind) {
+    const t = t0 || track() || {}, title = (t0 ? t0.title : curTitle()) || 'Untitled', year = new Date().getFullYear(), short = kind === 'short';
+    const artists = (state.ytArtist || '').split(/[,&/+]+|\bx\b/i).map(s => s.trim()).filter(Boolean).slice(0, 3);
+    const genre = (state.ytGenre || '').trim(), free = !!state.ytFree;
+    const bpm = t.bpm ? `${String(t.bpm).replace(/\s*bpm/i, '')} BPM` : '', key = t.key || '';
+    const prod = state.producer && state.producer !== 'YOUR NAME' ? state.producer.trim() : '';
+    const tag = free ? '[FREE] ' : '';
+    const lead = artists.length ? `${tag}${artists.join(' x ')} Type Beat` : genre ? `${tag}${genre} Type Beat` : `${tag}Type Beat`;
+    let yTitle = `${lead} - "${title}"`;
+    const facts = [bpm, key].filter(Boolean).join(' ');
+    if (facts) yTitle += ` | ${facts}`;
+    if (short && yTitle.length <= 92) yTitle += ' #shorts';
+    if (yTitle.length > 100) yTitle = yTitle.slice(0, 99) + '…';
+    const d = [`${lead} - "${title}"${prod ? ` (prod. ${prod})` : ''}`];
+    if (state.ytLink) d.push('', `💰 Buy or lease this beat: ${state.ytLink.trim()}`);
+    if (facts) d.push('', `🎹 ${[bpm, key].filter(Boolean).join(' · ')}`);
+    if (prod) d.push(`🎛 Prod. by ${prod}`);
+    if (state.handle) d.push(`📲 ${state.handle}`);
+    if (free) d.push('', `Free for non-profit use only, with credit (prod. ${prod || 'me'}) in your title. For anything that earns money, like streaming, sales or monetised videos, buy a lease first.`);
+    const tags = [];
+    const add = s => { s = String(s).toLowerCase().replace(/[^\p{L}\p{N}#♯ ]+/gu, ' ').replace(/\s+/g, ' ').trim(); if (s && !tags.includes(s)) tags.push(s); };
+    artists.forEach(a => { add(`${a} type beat`); add(`${a} type beat ${year}`); if (free) add(`free ${a} type beat`); add(a); });
+    if (artists.length > 1) add(`${artists.join(' x ')} type beat`);
+    if (genre) { add(`${genre} type beat`); add(`${genre} beat`); add(`${genre} instrumental`); }
+    add('type beat'); add(`type beat ${year}`); if (free) add('free type beat'); add('instrumental');
+    if (bpm) add(`${bpm} beat`);
+    if (key) add(`${key} beat`);
+    if (prod) add(`prod ${prod}`);
+    add(title);
+    const kept = []; let len = 0; // YouTube allows about 500 characters of tags
+    for (const x of tags) { if (len + x.length + 2 > 480) break; kept.push(x); len += x.length + 2; }
+    const hash = s => '#' + s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    const hashtags = ['#typebeat', ...artists.map(a => hash(`${a}typebeat`)), genre ? hash(genre) : '', '#producer', '#beats', free ? '#freebeat' : ''].filter(Boolean);
+    const tiktok = `${title}${prod ? ` (prod. ${prod})` : ''}${facts ? ` · ${facts}` : ''} 🔥${state.ytLink ? '\nBeats in bio' : ''}\n${[...new Set(hashtags)].join(' ')}`;
+    d.push('', [...new Set(short ? ['#shorts', ...hashtags] : hashtags)].join(' '));
+    return { title: yTitle, desc: d.join('\n'), tags: kept.join(', '), tiktok };
+  }
+  function renderYt() {
+    const box = $('#ytTitle'); if (!box) return;
+    const y = ytText();
+    box.textContent = y.title; $('#ytDesc').textContent = y.desc; $('#ytTags').textContent = y.tags; $('#ytTikTok').textContent = y.tiktok;
+  }
+  async function copyText(text, label) {
+    let ok = false;
+    try {
+      if (navigator.clipboard) { await navigator.clipboard.writeText(text); ok = true; }
+    } catch (e) { ok = false; }
+    toast(ok ? `${label} copied.` : 'Copying is blocked here. Select the text and copy it.');
+  }
+  $('#ytBox').addEventListener('click', e => {
+    const b = e.target.closest('[data-copy]'); if (!b) return;
+    const el = $('#' + b.dataset.copy); copyText(el.textContent, b.dataset.label || 'Text');
+  });
+
+  /* ---------- Google sign-in, your profile, and posting to YouTube ----------
+     Everything runs in the browser, with no server: Google Identity Services gives an access token, the profile
+     is a JSON file (plus the voice tag) in the private app folder of your Google Drive so it follows you to any
+     device, and videos go up with the YouTube Data API's resumable upload. */
+  const GOOGLE_CLIENT_ID = ''; // your OAuth client ID ("Web application"); it can also be pasted in the app
+  const G_SCOPES = 'openid email profile https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/drive.appdata';
+  const LS = {
+    get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
+  };
+  const gAuth = { token: '', expires: 0, scope: '', user: null, channel: null, profileId: null, tagId: null };
+  const gClientId = () => (LS.get('spinroom.gClientId') || GOOGLE_CLIENT_ID || '').trim();
+  const inFrame = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+  const PROFILE_FILE = 'spinroom-profile.json', TAG_FILE = 'spinroom-voice-tag';
+  const PROFILE_KEYS = [...new Set([...LOOK_KEYS, 'producer', 'handle', 'tagline', 'logo', 'useLogo', 'cover', 'coverBg', 'hook',
+    'endOn', 'endBig', 'endSmall', 'endPrice', 'tagOn', 'tagVol', 'tagDuck', 'ytArtist', 'ytGenre', 'ytLink', 'ytFree',
+    'ytFormat', 'ytPrivacy', 'autoMake', 'shortSecs', 'clip', 'packCount', 'packSecs', 'packSwitch', 'safe'])];
+
+  function loadGis() {
+    const ok = () => !!(window.google && google.accounts && google.accounts.oauth2);
+    if (ok()) return Promise.resolve();
+    return loadScript('https://accounts.google.com/gsi/client').then(() => { if (!ok()) throw new Error('gis'); });
+  }
+  function requestToken(prompt) {
+    return new Promise(res => {
+      let done = false;
+      const finish = v => { if (!done) { done = true; res(v); } };
+      try {
+        const client = google.accounts.oauth2.initTokenClient({
+          client_id: gClientId(), scope: G_SCOPES, include_granted_scopes: true,
+          callback: r => finish(r && r.access_token ? r : null),
+          error_callback: () => finish(null),
+        });
+        client.requestAccessToken({ prompt, hint: LS.get('spinroom.gEmail') || undefined });
+      } catch (e) { finish(null); }
+    });
+  }
+  // quiet: renew the token without asking again (still opens Google's window for a moment)
+  async function gSignIn(quiet) {
+    if (!gClientId()) {
+      const d = $('#gSetup'); d.open = true; d.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      toast('First add your Google client ID under "Set up YouTube posting".');
+      return false;
+    }
+    try { await loadGis(); }
+    catch (e) { toast("Google sign-in can't open here. Use your Spin Room site (the GitHub Pages link) to sign in."); return false; }
+    const r = await requestToken(quiet ? '' : 'select_account');
+    if (!r) { if (!quiet) toast('Sign-in was cancelled.'); return false; }
+    gAuth.token = r.access_token;
+    gAuth.expires = Date.now() + (Number(r.expires_in) || 3600) * 1000 - 60000;
+    gAuth.scope = String(r.scope || '');
+    if (!quiet) await afterSignIn();
+    return true;
+  }
+  async function gFetch(url, opts = {}, retried = false) {
+    if (!gAuth.token || Date.now() > gAuth.expires) {
+      if (!(await gSignIn(true))) { const e = new Error('signin'); e.reason = 'signin'; throw e; }
+    }
+    const res = await fetch(url, Object.assign({}, opts, { headers: Object.assign({ Authorization: `Bearer ${gAuth.token}` }, opts.headers || {}) }));
+    if (res.status === 401 && !retried) { gAuth.token = ''; return gFetch(url, opts, true); }
+    return res;
+  }
+  async function apiError(res) {
+    let j = null;
+    try { j = await res.json(); } catch (e) {}
+    const er = j && j.error;
+    const e = new Error((er && er.message) || `HTTP ${res.status}`);
+    e.status = res.status;
+    e.reason = (er && er.errors && er.errors[0] && er.errors[0].reason) || (er && er.status) || '';
+    return e;
+  }
+  function friendly(e) {
+    const r = (e && e.reason) || '';
+    if (r === 'signin') return 'Sign in with Google first.';
+    if (/quotaExceeded|uploadLimitExceeded|rateLimitExceeded|dailyLimitExceeded/.test(r)) return "YouTube's daily upload limit for Spin Room is used up. Try again tomorrow.";
+    if (/youtubeSignupRequired/.test(r)) return 'This Google account has no YouTube channel yet. Create one on youtube.com, then try again.';
+    if (/insufficientPermissions|ACCESS_TOKEN_SCOPE_INSUFFICIENT/.test(r)) return 'Spin Room needs permission to upload. Sign out, sign in again and allow everything Google asks.';
+    if (/invalidTitle|invalidDescription|invalidTags/.test(r)) return 'YouTube turned down the title, description or tags. Shorten them and try again.';
+    if (/accessNotConfigured|SERVICE_DISABLED/.test(r)) return 'An API is turned off in your Google project. Turn on the YouTube Data API v3 and the Google Drive API (see "Set up YouTube posting").';
+    return e && e.message ? `Google said: ${e.message}` : 'Something went wrong talking to Google.';
+  }
+  async function afterSignIn() {
+    try {
+      const u = await (await gFetch('https://www.googleapis.com/oauth2/v3/userinfo')).json();
+      gAuth.user = u;
+      if (u && u.email) LS.set('spinroom.gEmail', u.email);
+    } catch (e) { gAuth.user = { name: 'Signed in' }; }
+    try {
+      const r = await gFetch('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true');
+      const j = r.ok ? await r.json() : {};
+      gAuth.channel = (j.items && j.items[0]) || null;
+    } catch (e) { gAuth.channel = null; }
+    renderAccount();
+    await loadProfile();
+  }
+  function gSignOut() {
+    try { if (gAuth.token && window.google) google.accounts.oauth2.revoke(gAuth.token, () => {}); } catch (e) {}
+    Object.assign(gAuth, { token: '', expires: 0, scope: '', user: null, channel: null, profileId: null, tagId: null });
+    LS.set('spinroom.gEmail', null);
+    onSave = null;
+    renderAccount();
+    toast('Signed out. Your profile stays saved in your Google account.');
+  }
+  function renderAccount() {
+    const signedIn = !!(gAuth.token && gAuth.user);
+    $('#acctOut').hidden = signedIn; $('#acctIn').hidden = !signedIn;
+    if (signedIn) {
+      const pic = $('#acctPic'); pic.hidden = !gAuth.user.picture; if (gAuth.user.picture) pic.src = gAuth.user.picture;
+      $('#acctName').textContent = gAuth.user.name || gAuth.user.email || 'Signed in';
+      $('#acctChannel').textContent = gAuth.channel ? `YouTube: ${gAuth.channel.snippet.title}` : 'No YouTube channel on this account yet';
+    } else {
+      const em = LS.get('spinroom.gEmail');
+      $('#gSignInLabel').textContent = em ? `Sign in as ${em}` : 'Sign in with Google';
+    }
+    $('#acctFrame').hidden = !inFrame;
+    if (document.activeElement !== $('#fClientId')) $('#fClientId').value = gClientId();
+    $('#gOrigin').textContent = location.origin && location.origin !== 'null' ? location.origin : 'https://8unionn-creator.github.io';
+  }
+
+  // ---- the profile file in your Drive's private app folder ----
+  async function driveFind(name) {
+    const q = encodeURIComponent(`name='${name}' and trashed=false`);
+    const r = await gFetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime)&pageSize=10`);
+    if (!r.ok) throw await apiError(r);
+    const j = await r.json();
+    return (j.files || [])[0] || null;
+  }
+  async function driveDownload(id) {
+    const r = await gFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`);
+    if (!r.ok) throw await apiError(r);
+    return r;
+  }
+  async function driveSave(name, blob, id) {
+    const type = blob.type || 'application/octet-stream';
+    if (id) {
+      const r = await gFetch(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(id)}?uploadType=media&fields=id`, { method: 'PATCH', headers: { 'Content-Type': type }, body: blob });
+      if (r.ok) return (await r.json()).id;
+      if (r.status !== 404) throw await apiError(r);
+    }
+    const b = 'spinroom' + Math.random().toString(36).slice(2);
+    const body = new Blob([
+      `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: ['appDataFolder'] })}\r\n`,
+      `--${b}\r\nContent-Type: ${type}\r\n\r\n`, blob, `\r\n--${b}--`]);
+    const r = await gFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${b}` }, body });
+    if (!r.ok) throw await apiError(r);
+    return (await r.json()).id;
+  }
+  function profileJson() {
+    const s = {};
+    PROFILE_KEYS.forEach(k => { if (k in state) s[k] = state[k]; });
+    if (xp && xp.keep) { s.format = xp.keep.format; s.mode = xp.keep.mode; } // not the settings borrowed while a video is made
+    return JSON.stringify({ app: 'spin-room', v: 1, saved: Date.now(), state: s, looks, tagName: tagBlob ? tagName : '' });
+  }
+  function setSyncNote(t) { const el = $('#syncNote'); if (el) el.textContent = t; }
+  let syncT = 0;
+  function scheduleSync() {
+    if (!gAuth.token) return;
+    clearTimeout(syncT);
+    setSyncNote('Saving your profile…');
+    syncT = setTimeout(() => { syncProfile(); }, 2500);
+  }
+  async function syncProfile() {
+    if (!gAuth.token) return;
+    try {
+      gAuth.profileId = await driveSave(PROFILE_FILE, new Blob([profileJson()], { type: 'application/json' }), gAuth.profileId);
+      setSyncNote('Profile saved to your Google account.');
+    } catch (e) { setSyncNote("Couldn't save your profile to Google just now. It will try again on your next change."); }
+  }
+  async function syncTag() {
+    if (!gAuth.token) return;
+    try {
+      if (tagBlob) gAuth.tagId = await driveSave(TAG_FILE, tagBlob, gAuth.tagId);
+      else if (gAuth.tagId) { await gFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(gAuth.tagId)}`, { method: 'DELETE' }); gAuth.tagId = null; }
+    } catch (e) {}
+    scheduleSync();
+  }
+  async function loadProfile() {
+    setSyncNote('Loading your profile…');
+    try {
+      const f = await driveFind(PROFILE_FILE);
+      const tf = await driveFind(TAG_FILE).catch(() => null);
+      gAuth.tagId = tf ? tf.id : null;
+      if (f) {
+        gAuth.profileId = f.id;
+        const p = await (await driveDownload(f.id)).json();
+        if (p && p.state) PROFILE_KEYS.forEach(k => { if (k in p.state) state[k] = p.state[k]; });
+        if (p && Array.isArray(p.looks)) { looks = p.looks; try { localStorage.setItem('spinroom.looks', JSON.stringify(looks)); } catch (e) {} renderLooks(); }
+        if (tf && p && p.tagName) {
+          const blob = await (await driveDownload(tf.id)).blob();
+          tagBlob = new File([blob], p.tagName, { type: blob.type || 'audio/mpeg' }); tagName = p.tagName; tagBuffer = null;
+          DB.putAsset('tag', { blob: tagBlob, name: tagName }); renderTag();
+        }
+        try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+        renderAll();
+        setSyncNote('Profile loaded from your Google account.');
+        toast(`Welcome back${gAuth.user && gAuth.user.given_name ? ', ' + gAuth.user.given_name : ''}. Your profile is loaded.`);
+      } else {
+        await syncProfile();
+        if (tagBlob) await syncTag();
+        toast('Signed in. Your profile is now saved to your Google account.');
+      }
+    } catch (e) {
+      setSyncNote(/accessNotConfigured|SERVICE_DISABLED/.test(e.reason || '') ? 'Turn on the Google Drive API in your Google project to save your profile there.' : "Couldn't reach your Google Drive to load your profile.");
+    }
+    onSave = scheduleSync;
+  }
+
+  // ---- uploading to YouTube ----
+  const cleanText = (s, max) => String(s || '').replace(/[<>]/g, '').slice(0, max);
+  function cleanTags(s) {
+    const out = []; let len = 0;
+    for (const raw of String(s || '').split(',')) {
+      const t = raw.replace(/[<>"]/g, '').trim();
+      if (!t || out.includes(t)) continue;
+      const cost = t.length + (t.includes(' ') ? 2 : 0) + 1; // YouTube counts quotes around tags with spaces
+      if (len + cost > 490) break;
+      out.push(t); len += cost;
+    }
+    return out;
+  }
+  async function ytUpload(item, onProgress) {
+    const meta = {
+      snippet: { title: cleanText(item.title, 100) || 'Type Beat', description: cleanText(item.desc, 5000), tags: cleanTags(item.tags), categoryId: '10' },
+      status: { privacyStatus: item.privacy || 'public', selfDeclaredMadeForKids: false },
+    };
+    const init = await gFetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': item.blob.type || 'video/mp4', 'X-Upload-Content-Length': String(item.blob.size) },
+      body: JSON.stringify(meta),
+    });
+    if (!init.ok) throw await apiError(init);
+    const url = init.headers.get('Location');
+    if (!url) throw new Error('YouTube did not give an upload address. Try again.');
+    return new Promise((res, rej) => {
+      const x = new XMLHttpRequest();
+      x.open('PUT', url);
+      x.setRequestHeader('Content-Type', item.blob.type || 'video/mp4');
+      x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      x.onload = () => {
+        if (x.status >= 200 && x.status < 300) { try { res(JSON.parse(x.responseText)); } catch (e) { rej(new Error('YouTube sent an answer Spin Room could not read.')); } }
+        else {
+          let j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
+          const e = new Error((j && j.error && j.error.message) || `Upload failed (${x.status})`);
+          e.reason = (j && j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || ''; e.status = x.status; rej(e);
+        }
+      };
+      x.onerror = () => rej(new Error('The upload was interrupted. Check your connection and try again.'));
+      x.send(item.blob);
+    });
+  }
+
+  /* ---------- drop a beat: the video is made, then you check it and post ---------- */
+  const ready = [];
+  const autoJobs = [];
+  let readyId = 0, autoBusy = false, canAuto = null;
+  async function autoSupported() {
+    if (canAuto !== null) return canAuto;
+    const prev = [XW, XH]; [XW, XH] = dimsFor('wide');
+    try { canAuto = !!(await frameByFrameCodecs()) && !!(await loadMuxer().catch(() => null)); } catch (e) { canAuto = false; }
+    [XW, XH] = prev;
+    return canAuto;
+  }
+  function queueAuto(t) {
+    const kinds = state.ytFormat === 'both' ? ['full', 'short'] : [state.ytFormat === 'short' ? 'short' : 'full'];
+    kinds.forEach(kind => { const item = { id: ++readyId, t, kind, status: 'waiting', progress: 0 }; ready.unshift(item); autoJobs.push(item); });
+    renderReady();
+    runAuto();
+  }
+  async function runAuto() {
+    if (autoBusy) return;
+    autoBusy = true;
+    try {
+      while (autoJobs.length) {
+        if (xp) { await sleep(400); continue; }
+        const item = autoJobs[0], idx = tracks.indexOf(item.t);
+        if (idx < 0 || !ready.includes(item)) { autoJobs.shift(); continue; }
+        if (!(await autoSupported())) {
+          autoJobs.splice(0).forEach(it => { it.status = 'failed'; it.error = "This browser can't make videos by itself. Use Chrome, or Safari 26 or newer, or press Record video."; });
+          renderReady(); break;
+        }
+        item.status = 'making'; item.progress = 0; renderReady();
+        const short = item.kind === 'short';
+        const res = await startExport('single', {
+          quiet: true, track: idx, format: short ? 'tall' : 'wide', whole: !short, secs: short ? (+state.shortSecs || 45) : 0,
+          label: short ? 'Making the Short' : 'Making the YouTube video',
+          onProgress: p => { item.progress = p; renderReadyProgress(item); },
+        });
+        autoJobs.shift();
+        if (!res || !res.length) { item.status = 'failed'; item.error = 'The video was cancelled or could not be made.'; renderReady(); continue; }
+        const r = res[0], y = ytText(item.t, item.kind);
+        Object.assign(item, { status: 'ready', blob: r.blob, url: URL.createObjectURL(r.blob), len: r.len, name: r.name, w: r.w, h: r.h,
+          title: y.title, desc: y.desc, tags: y.tags, caption: y.tiktok, privacy: state.ytPrivacy || 'public' });
+        renderReady();
+        toast(`"${item.t.title}" is ready to post.`);
+      }
+    } finally { autoBusy = false; }
+  }
+  const kindLabel = it => (it.kind === 'short' ? 'YouTube Short' : 'YouTube video');
+  function cardHtml(it) {
+    const head = `<div class="rp-head"><span class="rp-kind">${kindLabel(it)}</span><strong>${esc(it.t.title || 'Untitled')}</strong></div>`;
+    if (it.status === 'waiting') return `${head}<p class="hint">Waiting its turn…</p>`;
+    if (it.status === 'making') return `${head}<div class="rp-bar"><i style="width:${Math.round(it.progress * 100)}%"></i></div><p class="hint rp-pct">Making the video ${Math.round(it.progress * 100)}%</p>`;
+    if (it.status === 'failed') return `${head}<p class="hint">${esc(it.error || 'Something went wrong.')}</p><div class="detect-btns"><button class="btn sm" data-act="again">Try again</button><button class="linkbtn" data-act="remove">Remove</button></div>`;
+    const busy = it.status === 'uploading', done = it.status === 'posted';
+    const tagsLen = cleanTags(it.tags).join(',').length;
+    return `${head}
+      <video class="rp-vid${it.h > it.w ? ' tall' : ''}" src="${it.url}" controls playsinline preload="metadata"></video>
+      <p class="hint">${fmt(it.len)} · ${it.w} × ${it.h} · ${(it.blob.size / 1048576).toFixed(1)} MB</p>
+      <label class="f">YouTube title<input data-f="title" maxlength="100" value="${esc(it.title)}" ${busy || done ? 'disabled' : ''}></label>
+      <label class="f">Description<textarea data-f="desc" rows="6" ${busy || done ? 'disabled' : ''}>${esc(it.desc)}</textarea></label>
+      <label class="f"><span>Tags · <span class="rp-count">${tagsLen}/500</span></span><textarea data-f="tags" rows="3" ${busy || done ? 'disabled' : ''}>${esc(it.tags)}</textarea></label>
+      <label class="f">Who can see it<select data-f="privacy" ${busy || done ? 'disabled' : ''}>
+        ${[['public', 'Public'], ['unlisted', 'Unlisted (only people with the link)'], ['private', 'Private (only you)']].map(([v, l]) => `<option value="${v}"${it.privacy === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select></label>
+      ${busy ? `<div class="rp-bar"><i style="width:${Math.round(it.progress * 100)}%"></i></div><p class="hint rp-pct">Uploading to YouTube ${Math.round(it.progress * 100)}%</p>` : ''}
+      ${done ? `<p class="rp-done">Posted to YouTube. <a href="https://youtu.be/${esc(it.videoId)}" target="_blank" rel="noopener">Watch it</a> · <a href="https://studio.youtube.com/video/${esc(it.videoId)}/edit" target="_blank" rel="noopener">Open in YouTube Studio</a></p>${it.note ? `<p class="hint">${esc(it.note)}</p>` : ''}` : ''}
+      ${it.error ? `<p class="rp-err">${esc(it.error)}</p>` : ''}
+      <div class="rp-btns">
+        ${done ? '' : `<button class="btn big post" data-act="post" ${busy ? 'disabled' : ''}>${gAuth.token ? 'Post to YouTube' : 'Sign in and post to YouTube'}</button>`}
+        <button class="btn" data-act="share">Share…</button><button class="btn" data-act="save">Save</button><button class="linkbtn" data-act="remove">Remove</button>
+      </div>`;
+  }
+  function renderReady() {
+    const sec = $('#readySec'), list = $('#readyList');
+    sec.hidden = !ready.length;
+    const keepIds = new Set(ready.map(it => String(it.id)));
+    $$('.rp', list).forEach(el => { if (!keepIds.has(el.dataset.id)) el.remove(); });
+    ready.forEach((it, i) => {
+      let el = $(`.rp[data-id="${it.id}"]`, list);
+      const sig = `${it.status}|${it.error || ''}|${gAuth.token ? 1 : 0}`;
+      if (!el || el.dataset.sig !== sig) {
+        const fresh = document.createElement('div');
+        fresh.className = 'rp'; fresh.dataset.id = it.id; fresh.dataset.sig = sig; fresh.innerHTML = cardHtml(it);
+        if (el) el.replaceWith(fresh); else list.appendChild(fresh);
+        el = fresh;
+      }
+      if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null);
+    });
+  }
+  function renderReadyProgress(it) {
+    const el = $(`.rp[data-id="${it.id}"]`); if (!el) return;
+    const bar = $('.rp-bar i', el), pct = $('.rp-pct', el), p = Math.round(it.progress * 100);
+    if (bar) bar.style.width = `${p}%`;
+    if (pct) pct.textContent = `${it.status === 'uploading' ? 'Uploading to YouTube' : 'Making the video'} ${p}%`;
+  }
+  function removeReady(it) {
+    const i = ready.indexOf(it); if (i < 0) return;
+    ready.splice(i, 1);
+    const j = autoJobs.indexOf(it); if (j > 0) autoJobs.splice(j, 1);
+    if (it.url) URL.revokeObjectURL(it.url);
+    renderReady();
+  }
+  async function postItem(it) {
+    if (!gAuth.token && !(await gSignIn(false))) return;
+    it.status = 'uploading'; it.progress = 0; it.error = ''; renderReady();
+    try {
+      const v = await ytUpload(it, p => { it.progress = p; renderReadyProgress(it); });
+      it.videoId = v.id; it.status = 'posted';
+      const got = v.status && v.status.privacyStatus;
+      it.note = got && got !== it.privacy
+        ? `YouTube kept it ${got}. Uploads from a Google project that YouTube hasn't approved yet stay private until it is (see "Set up YouTube posting").`
+        : it.privacy === 'public' ? 'If YouTube marks it "Private (locked)", your Google project needs YouTube\'s approval first (see "Set up YouTube posting").' : '';
+      toast('Posted to YouTube.');
+    } catch (e) { it.status = 'ready'; it.error = friendly(e); }
+    renderReady();
+  }
+  async function shareItem(it) {
+    const text = it.h > it.w ? it.caption : `${it.title}\n\n${it.desc}`;
+    try { if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) {}
+    const file = new File([it.blob], it.name, { type: it.blob.type || 'video/mp4' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text }); toast('The caption is copied: paste it in the app.'); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    toast("Sharing isn't available in this browser. Use Save, then upload it in the app. The caption is copied.");
+  }
+  $('#readyList').addEventListener('input', e => {
+    const f = e.target.closest('[data-f]'), card = e.target.closest('.rp'); if (!f || !card) return;
+    const it = ready.find(x => String(x.id) === card.dataset.id); if (!it) return;
+    it[f.dataset.f] = f.value;
+    if (f.dataset.f === 'tags') { const c = $('.rp-count', card); if (c) c.textContent = `${cleanTags(it.tags).join(',').length}/500`; }
+  });
+  $('#readyList').addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'), card = e.target.closest('.rp'); if (!b || !card) return;
+    const it = ready.find(x => String(x.id) === card.dataset.id); if (!it) return;
+    const act = b.dataset.act;
+    if (act === 'post') postItem(it);
+    else if (act === 'share') shareItem(it);
+    else if (act === 'save') saveBlob(it.blob, it.name, b, it.url);
+    else if (act === 'remove') removeReady(it);
+    else if (act === 'again') { it.status = 'waiting'; it.error = ''; autoJobs.push(it); renderReady(); runAuto(); }
+  });
+  $('#gSignIn').addEventListener('click', () => gSignIn(false));
+  $('#gSignOut').addEventListener('click', gSignOut);
+  $('#fClientId').addEventListener('change', e => {
+    const v = e.target.value.trim();
+    if (v && !/\.apps\.googleusercontent\.com$/.test(v)) { toast('That doesn\'t look like a client ID. It ends in ".apps.googleusercontent.com".'); return; }
+    LS.set('spinroom.gClientId', v || null); renderAccount(); if (v) toast('Client ID saved. Now sign in with Google.');
+  });
+  renderAccount();
 
   /* ---------- start ---------- */
   function loadDemo() {
